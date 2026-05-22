@@ -62,9 +62,9 @@ export default function NewIdeaPage() {
       <div className="vp-card" style={{ marginBottom: 18 }}>
         <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>选择模式</label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-          <ModeButton active={mode === 'beginner'} title="Beginner" desc="解释更多术语" onClick={() => setMode('beginner')} />
-          <ModeButton active={mode === 'builder'} title="Builder" desc="更快生成交付" onClick={() => setMode('builder')} />
-          <ModeButton active={mode === 'review'} title="Review" desc="直接审查风险" onClick={() => setMode('review')} />
+          <ModeButton active={mode === 'beginner'} title="Quick" desc="10 分钟出方案" onClick={() => setMode('beginner')} />
+          <ModeButton active={mode === 'builder'} title="Standard" desc="30 分钟认真构思" onClick={() => setMode('builder')} />
+          <ModeButton active={mode === 'review'} title="Review" desc="审查已有方案" onClick={() => setMode('review')} />
         </div>
       </div>
 

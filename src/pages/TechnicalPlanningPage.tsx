@@ -3,9 +3,11 @@ import { useParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
+import DecisionCard from '../components/DecisionCard';
 import GlossaryHelp from '../components/GlossaryHelp';
 import { explainSuggestion, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
+import { extractCoreDecision } from '../rules/coreDecisionExtractor';
 import type { AiSuggestion, GlossaryKey, SuggestionKey, TechnicalPlanningState, TechnicalTranslation } from '../types';
 
 const FIELDS: Array<{ key: keyof TechnicalPlanningState; title: string; desc: string; glossaryKey?: GlossaryKey }> = [
@@ -24,6 +26,7 @@ export default function TechnicalPlanningPage() {
   const { id } = useParams<{ id: string }>();
   const { brief, loading, updateStage, updateSuggestion } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
+  const [view, setView] = useState<'focus' | 'detail'>('focus');
 
   const generate = async () => {
     if (!brief || generating) return;
@@ -43,35 +46,52 @@ export default function TechnicalPlanningPage() {
 
   if (loading || !brief) return <Loader />;
   const technical = brief.stages.technical;
+  const decision = extractCoreDecision(brief, 'tech');
 
   return (
     <StageLayout
-      title="Technical Translation / 技术翻译"
-      subtitle="你不需要先懂技术名词。这里把用户需求翻译成技术能力，再说明 V1 怎么低成本实现，以及什么时候才需要升级。"
-      current={4}
+      title="Tech Decision / 技术决策"
+      subtitle="AI 把需求翻译成最低成本技术方案。你只确认：第一版是否足够简单、可开发、可替换。"
+      current={2}
       briefId={brief.id}
-      previousPath={`/business/${brief.id}`}
-      nextPath={`/scope/${brief.id}`}
-      nextLabel="进入 MVP 压缩"
-      aside={<Aside generating={generating} onGenerate={generate} />}
+      previousPath={`/scope/${brief.id}`}
+      nextPath={`/handoff/${brief.id}`}
+      nextLabel="生成开发交付"
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} />}
     >
-      <TranslationTable translations={technical.translations || []} />
-      <MockStrategyPanel technical={technical} />
-      {FIELDS.map((field) => (
-        <SuggestionCard
-          key={field.key}
-          title={field.title}
-          description={field.desc}
-          glossaryKey={field.glossaryKey}
-          showGlossaryByDefault={brief.mode === 'beginner' && Boolean(field.glossaryKey)}
-          suggestion={technical[field.key] as AiSuggestion | undefined}
-          regenerating={generating}
-          onAccept={() => updateSuggestion('technical', field.key as SuggestionKey, { accepted: true })}
-          onChange={(value) => updateSuggestion('technical', field.key as SuggestionKey, { value, editedByUser: true, accepted: false })}
-          onRegenerate={generate}
-          onExplain={() => explainSuggestion(field.title, brief)}
+      {view === 'focus' ? (
+        <DecisionCard
+          decision={decision}
+          glossaryKey="mockStrategy"
+          accepted={Boolean(technical.frontend?.accepted)}
+          loading={generating}
+          onAccept={() => updateSuggestion('technical', 'frontend', { accepted: true })}
+          onSimplify={generate}
+          onExplain={() => explainSuggestion('最低成本技术方案', brief)}
+          editableValue={technical.frontend?.value || ''}
+          onEdit={(value) => updateSuggestion('technical', 'frontend', { value, editedByUser: true, accepted: false })}
         />
-      ))}
+      ) : (
+        <>
+          <TranslationTable translations={technical.translations || []} />
+          <MockStrategyPanel technical={technical} />
+          {FIELDS.map((field) => (
+            <SuggestionCard
+              key={field.key}
+              title={field.title}
+              description={field.desc}
+              glossaryKey={field.glossaryKey}
+              showGlossaryByDefault={brief.mode === 'beginner' && Boolean(field.glossaryKey)}
+              suggestion={technical[field.key] as AiSuggestion | undefined}
+              regenerating={generating}
+              onAccept={() => updateSuggestion('technical', field.key as SuggestionKey, { accepted: true })}
+              onChange={(value) => updateSuggestion('technical', field.key as SuggestionKey, { value, editedByUser: true, accepted: false })}
+              onRegenerate={generate}
+              onExplain={() => explainSuggestion(field.title, brief)}
+            />
+          ))}
+        </>
+      )}
     </StageLayout>
   );
 }
@@ -137,10 +157,14 @@ function Info({ title, value, mono }: { title: string; value?: string | string[]
   );
 }
 
-function Aside({ generating, onGenerate }: { generating: boolean; onGenerate: () => void }) {
+function Aside({ view, onViewChange, generating, onGenerate }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第三钻：技术翻译</h3>
+      <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第三关：技术决策</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+        <button className={view === 'focus' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('focus')}>Focus</button>
+        <button className={view === 'detail' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('detail')}>Detail</button>
+      </div>
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 12 }}>
         V1 优先验证闭环，不默认引入数据库、认证、文件上传、复杂后端。
       </p>

@@ -3,8 +3,10 @@ import { useParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
+import DecisionCard from '../components/DecisionCard';
 import { explainSuggestion, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
+import { extractCoreDecision } from '../rules/coreDecisionExtractor';
 import type { AiSuggestion, DemandDiscoveryState, SuggestionKey } from '../types';
 
 const FIELDS: Array<{ key: keyof DemandDiscoveryState; title: string; desc: string }> = [
@@ -21,6 +23,7 @@ export default function DemandDiscoveryPage() {
   const { id } = useParams<{ id: string }>();
   const { brief, loading, updateStage, updateSuggestion } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
+  const [view, setView] = useState<'focus' | 'detail'>('focus');
 
   const generate = async () => {
     if (!brief || generating) return;
@@ -39,19 +42,32 @@ export default function DemandDiscoveryPage() {
   }, [brief?.id, loading]);
 
   if (loading || !brief) return <Loader />;
+  const decision = extractCoreDecision(brief, 'idea');
 
   return (
     <StageLayout
-      title="Demand Discovery / 需求洞察"
-      subtitle="先别急着定义产品。AI 会帮你反推：谁真的痛、现在怎么解决、什么证据能证明需求成立或不成立。"
-      current={1}
+      title="Idea Diagnosis / 想法诊断"
+      subtitle="AI 先完成需求、产品和业务的发散分析；你只需要确认：这个想法是否值得进入 MVP 收敛。"
+      current={0}
       briefId={brief.id}
       previousPath="/new"
-      nextPath={`/product/${brief.id}`}
-      nextLabel="进入产品定义"
-      aside={<Aside mode={brief.mode} generating={generating} onGenerate={generate} />}
+      nextPath={`/scope/${brief.id}`}
+      nextLabel="进入第一版决策"
+      aside={<Aside mode={brief.mode} view={view} onViewChange={setView} generating={generating} onGenerate={generate} />}
     >
-      {FIELDS.map((field) => (
+      {view === 'focus' ? (
+        <DecisionCard
+          decision={decision}
+          glossaryKey="valueHypothesis"
+          accepted={Boolean(brief.stages.discovery.targetUserEvidence?.accepted)}
+          loading={generating}
+          onAccept={() => updateSuggestion('discovery', 'targetUserEvidence', { accepted: true })}
+          onSimplify={generate}
+          onExplain={() => explainSuggestion('想法诊断核心决策', brief)}
+          editableValue={brief.stages.discovery.targetUserEvidence?.value || ''}
+          onEdit={(value) => updateSuggestion('discovery', 'targetUserEvidence', { value, editedByUser: true, accepted: false })}
+        />
+      ) : FIELDS.map((field) => (
         <SuggestionCard
           key={field.key}
           title={field.title}
@@ -68,19 +84,24 @@ export default function DemandDiscoveryPage() {
   );
 }
 
-function Aside({ mode, generating, onGenerate }: { mode: string; generating: boolean; onGenerate: () => void }) {
+function Aside({ mode, view, onViewChange, generating, onGenerate }: { mode: string; view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void }) {
+  const modeLabel = mode === 'review' ? 'Review Mode · 审查已有方案' : mode === 'builder' ? 'Standard Mode · 30 分钟认真构思' : 'Quick Mode · 10 分钟出方案';
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>三钻模型 · 第一钻</h3>
+      <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第一关：想法诊断</h3>
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 10 }}>
-        当前模式：{mode === 'review' ? 'Review 审查' : mode === 'builder' ? 'Builder 快速构建' : 'Beginner 新手解释'}
+        当前模式：{modeLabel}
       </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+        <button className={view === 'focus' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('focus')}>Focus</button>
+        <button className={view === 'detail' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('detail')}>Detail</button>
+      </div>
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
-        这一钻先确认“需求是否真的存在”，再进入产品方案。
+        默认只看一个核心判断；需要完整产品/业务地图时再切到 Detail。
       </p>
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : null}
-        {generating ? 'AI 正在生成...' : '重新生成洞察'}
+        {generating ? 'AI 正在生成...' : '重新生成诊断'}
       </button>
     </div>
   );

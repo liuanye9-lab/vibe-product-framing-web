@@ -43,9 +43,9 @@ export default function BlindSpotReviewPage() {
     <StageLayout
       title="Blind Spot Review / 盲点审查"
       subtitle="最后让 AI 反过来挑战你的方案：需求可能不成立在哪里？业务哪里不划算？技术哪里过度？第一版是否仍然太大？"
-      current={6}
+      current={3}
       briefId={brief.id}
-      previousPath={`/scope/${brief.id}`}
+      previousPath={`/technical/${brief.id}`}
       nextPath={`/handoff/${brief.id}`}
       nextLabel="生成开发交付"
       aside={<Aside generating={generating} onGenerate={generate} />}

@@ -3,13 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 const STAGES = [
-  { label: 'Idea', path: 'new' },
-  { label: 'Demand', path: 'discovery' },
-  { label: 'Product', path: 'product' },
-  { label: 'Business', path: 'business' },
-  { label: 'Technical', path: 'technical' },
-  { label: 'MVP', path: 'scope' },
-  { label: 'Review', path: 'blind-spot' },
+  { label: 'Idea Diagnosis', path: 'discovery' },
+  { label: 'MVP Decision', path: 'scope' },
+  { label: 'Tech Decision', path: 'technical' },
   { label: 'Handoff', path: 'handoff' },
 ];
 
@@ -64,8 +60,8 @@ export default function StageLayout({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {STAGES.map((stage, index) => {
               const active = index === current;
-              const enabled = index === 0 || briefId;
-              const path = index === 0 ? '/new' : `/${stage.path}/${briefId}`;
+              const enabled = Boolean(briefId);
+              const path = `/${stage.path}/${briefId}`;
               return (
                 <button
                   key={stage.label}
@@ -80,7 +76,7 @@ export default function StageLayout({
                     color: active ? 'var(--color-primary)' : 'var(--color-text-hint)',
                   }}
                 >
-                  {index + 1}. {stage.label}
+                  {stage.label}
                 </button>
               );
             })}

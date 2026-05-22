@@ -43,7 +43,7 @@ export default function ProductFramingPage() {
     <StageLayout
       title="Product Framing / 产品理解"
       subtitle="AI 会先根据你的输入生成产品理解草案。你只需要接受、编辑或要求解释。"
-      current={2}
+      current={0}
       briefId={brief.id}
       previousPath={`/discovery/${brief.id}`}
       nextPath={`/business/${brief.id}`}

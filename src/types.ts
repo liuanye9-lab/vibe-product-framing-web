@@ -6,6 +6,18 @@ export type CopilotMode = 'beginner' | 'builder' | 'review';
 
 export type FramingStage = 'discovery' | 'product' | 'business' | 'technical' | 'mvp' | 'blindSpot';
 
+export type DecisionStage = 'idea' | 'mvp' | 'tech' | 'handoff';
+
+export interface CoreDecision {
+  stage: DecisionStage;
+  mainDecision: string;
+  recommendedChoice: string;
+  why: string;
+  keyRisk: string;
+  alternatives: string[];
+  details?: string[];
+}
+
 export type GlossaryKey =
   | 'mvp'
   | 'mockStrategy'

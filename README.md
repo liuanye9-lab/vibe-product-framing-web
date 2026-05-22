@@ -1,138 +1,203 @@
-# VibePilot 🚀
+# VibePilot
 
-> **教 Vibe Coding 新手学会产品思维的训练工具**
+> 面向 vibe coding 新手的 AI 产品构思 Copilot。
 
-不是帮你填表，而是教你**如何思考**——像产品经理一样思考。
+VibePilot 帮助用户在写代码前完成需求诊断、MVP 收敛、技术决策和开发交付。它不是传统问卷，也不是把一句话直接丢给 AI 编程工具，而是让 AI 先完成发散、推理和默认假设，用户只确认最核心的产品决策，最后输出可交给 Codex / Claude Code / Cursor 的 Development Prompt。
 
-## ✨ 核心理念
+## 核心定位
 
-**问题**：很多 vibe coding 新手能写出代码，但做不出真正的产品。  
-**原因**：他们从未认真思考过「为谁解决什么问题」。
+很多 vibe coding 新手的问题不是不会让 AI 写代码，而是不知道：
 
-**VibePilot 的答案**：不直接给答案，而是通过 **引导 + 评价 + 追问 + 反例对比**，让你真正学会产品思维。
+- 这个需求是否真实？
+- 第一版到底只做什么？
+- 技术方案怎样才算够用？
+- 怎么把方案交给 AI 编程工具开发？
 
-## 🎯 适合谁用？
+VibePilot 的答案是：
 
-- 刚接触 vibe coding，想做出「能用的产品」而非「玩具 Demo」
-- 对产品思维、业务思维、技术思维不敏感
-- 写完代码发现「好像没人需要这个功能」
+> AI 先分析，用户做决策；默认看重点，需要时再展开详情。
 
-## 🧠 核心功能
+## 四个决策关卡
 
-### 1️⃣ 10 步产品思考引导
+前台体验压缩为 4 个注意力友好的关卡：
 
-| 步骤 | 思考问题 | 为什么重要 |
-|------|---------|-----------|
-| 1 | 目标用户是谁？ | 不知道为谁做，就等于为所有人做（= 没人用） |
-| 2 | 使用场景是什么？ | 场景越具体，功能越聚焦 |
-| 3 | 核心痛点是什么？ | 痛点不痛 = 产品没价值 |
-| 4 | 现有替代方案？ | 竞品分析 → 找到差异化 |
-| 5 | AI 是否必要？ | 避免「为了 AI 而 AI」 |
-| 6 | MVP 功能范围？ | 第一个版本只做最核心的 |
-| 7 | 暂时不做的功能？ | 克制 = 更清晰的产品边界 |
-| 8 | 技术架构？ | 技术选型影响开发效率 |
-| 9 | 数据结构？ | 数据模型 = 产品的骨架 |
-| 10 | 验收标准？ | 不知道怎么验收 = 做不完 |
+| 关卡 | 核心问题 | 产出 |
+| --- | --- | --- |
+| Idea Diagnosis / 想法诊断 | 这个需求是否值得继续？ | 需求证据、目标用户、产品判断、业务判断摘要 |
+| MVP Decision / 第一版决策 | 第一版只验证哪个闭环？ | Must Have、Out of Scope、最小闭环、范围膨胀提醒 |
+| Tech Decision / 技术决策 | 最低成本技术方案是什么？ | 技术翻译、Mock 策略、AI API 规则、升级条件 |
+| Developer Handoff / 开发交付 | 是否可以交给 Codex 开发？ | Product Brief、技术架构、验收标准、Development Prompt |
 
-### 2️⃣ AI 评价系统
+后台仍保留完整 stages 数据：discovery、product、business、technical、mvp、blindSpot，用于生成更完整的交付文档和兼容旧项目。
 
-你写完每个步骤的答案后，AI 会：
-- ✅ **评价质量**：具体 / 还行 / 太模糊
-- 💬 **追问引导**：帮你发现思考漏洞
-- 📝 **反例对比**：展示「好答案 vs 坏答案」
+## 关键功能
 
-> **关键设计**：AI 不替你写答案，只评价你的答案。
+### 1. 核心决策优先
 
-### 3️⃣ 生成 Development Prompt
+每个核心页面默认显示一个主决策：
 
-完成 10 步思考后，一键生成**可直接用于 vibe coding 的 Development Prompt**，包含：
-- 项目背景
-- 功能需求
-- 技术栈建议
-- 数据结构设计
+- 当前用户只需要判断什么
+- AI 推荐方案
+- 一句话理由
+- 最大风险
+- 接受推荐 / 换一个更简单版本 / 为什么这样设计 / 展开详情
+
+详细理由、风险列表、替代方案、术语解释和编辑内容默认折叠，避免信息过载。
+
+### 2. Focus / Detail 视图
+
+- Focus View：默认，只看核心决策和必要操作。
+- Detail View：展开完整产品、业务、技术地图。
+
+Quick Mode 和 Standard Mode 默认更偏 Focus；Review Mode 更适合查看风险和详情。
+
+### 3. 三种使用模式
+
+| 显示模式 | 底层模式 | 适合场景 |
+| --- | --- | --- |
+| Quick Mode：10 分钟出方案 | beginner | 只有一句模糊想法，想快速得到推荐路径 |
+| Standard Mode：30 分钟认真构思 | builder | 已有基础想法，想更完整地整理方案 |
+| Review Mode：审查已有方案 | review | 已有产品想法或草稿，想重点看风险和盲点 |
+
+### 4. 新手解释层
+
+内置术语解释，帮助新手理解：
+
+- MVP
+- Mock 策略
+- 数据结构
+- 数据流
+- 后端
+- 数据库
+- 认证
+- AI API
 - 验收标准
+- 价值假设
+- ROI
+- Out of Scope
+- Scope Creep
 
-## 🛠️ 技术栈
+### 5. AI 自定义接入
 
-- **框架**：React 18 + TypeScript
-- **构建工具**：Vite
-- **样式**：Tailwind CSS v4
-- **路由**：React Router v6
-- **图标**：Lucide React
-- **持久化**：localStorage
-- **部署**：GitHub Pages (自动)
+用户可以在设置页配置自己的：
 
-## 🚀 快速开始
+- API URL
+- API Key
+- Model
+
+调用路径：
+
+```text
+前端页面
+→ 同源 /api/ai-proxy
+→ 用户配置的 OpenAI-compatible API
+```
+
+没有配置模型或模型调用失败时，会自动使用 mock fallback，保证产品流程可体验。
+
+### 6. 最终 Development Prompt
+
+最终输出不是用户原文拼接，而是整合：
+
+1. 产品目标
+2. 目标用户
+3. 需求洞察
+4. 用户主流程
+5. MVP 范围
+6. 页面结构
+7. 技术架构
+8. 数据结构
+9. Mock 策略
+10. AI API 规则
+11. 验收标准
+12. Out of Scope
+13. 风险与盲点
+14. 禁止事项
+
+## 技术栈
+
+- React 19
+- Vite 8
+- TypeScript 6
+- React Router v6
+- Tailwind CSS v4 / 自定义 CSS Components
+- lucide-react
+- localStorage
+- Vercel / API proxy
+
+## 快速开始
 
 ### 安装依赖
+
 ```bash
 npm install
 ```
 
 ### 本地开发
+
 ```bash
 npm run dev
 ```
-访问 `http://localhost:5173`
+
+访问：
+
+```text
+http://localhost:5173
+```
 
 ### 构建生产版本
+
 ```bash
 npm run build
 ```
 
 ### 预览生产版本
+
 ```bash
 npm run preview
 ```
 
-## 📁 项目结构
+## 项目结构
 
-```
+```text
 vibepilot/
+├── api/
+│   └── ai-proxy.ts                 # Vercel AI 代理
 ├── src/
-│   ├── pages/          # 页面组件
-│   │   ├── LandingPage      # 落地页
-│   │   ├── NewIdeaPage     # 输入想法
-│   │   ├── GuidePage       # 10 步引导（核心）
-│   │   ├── PreviewPage     # 预览 Product Brief
-│   │   └── OutputPage      # 生成 Development Prompt
-│   ├── data/
-│   │   └── steps.ts        # 10 步定义
-│   ├── hooks/
-│   │   └── useProductBrief.ts  # 数据持久化
 │   ├── api/
-│   │   └── evaluate.ts     # AI 评价逻辑（V1 使用 mock）
-│   └── types.ts            # TypeScript 类型定义
-├── public/               # 静态资源
-└── .github/workflows/   # GitHub Actions 自动部署
+│   │   └── evaluate.ts             # API 调用、fallback 调度、导出函数
+│   ├── components/
+│   │   ├── DecisionCard.tsx        # 核心决策卡片
+│   │   ├── SuggestionCard.tsx      # 详情建议卡片
+│   │   ├── GlossaryHelp.tsx        # 术语解释
+│   │   └── StageLayout.tsx         # 四关卡页面布局
+│   ├── data/
+│   │   └── glossary.ts             # 新手术语解释数据
+│   ├── hooks/
+│   │   └── useProductBrief.ts      # brief 存储、迁移与更新
+│   ├── pages/
+│   │   ├── NewIdeaPage.tsx         # 输入想法与模式选择
+│   │   ├── DemandDiscoveryPage.tsx # Idea Diagnosis
+│   │   ├── MvpScopePage.tsx        # MVP Decision
+│   │   ├── TechnicalPlanningPage.tsx # Tech Decision
+│   │   └── DeveloperHandoffPage.tsx # Developer Handoff
+│   ├── prompts/                    # 模型提示词构造
+│   ├── rules/                      # 核心决策提取规则
+│   ├── skill/                      # 产品构思规则、质量门与示例
+│   └── types.ts                    # TypeScript 类型
+└── vite.config.ts                  # 本地 /api/ai-proxy middleware
 ```
 
-## 🎨 设计系统
+## V1 明确不做
 
-VibePilot 使用 **CSS Component 系统**（`src/index.css`），包括：
-- `.vp-btn` - 按钮
-- `.vp-card` - 卡片
-- `.vp-textarea` - 文本域
-- `.vp-collapse` - 折叠面板
-- `.vp-quality-badge` - 质量标签
-- 支持 **Dark/Light** 模式
+- 登录
+- 支付
+- 数据库
+- 团队协作
+- 完整 SaaS 后台
+- 自动代码生成
+- 复杂项目管理系统
 
-## 🔮 后续计划
+## License
 
-- [ ] 接入真实 AI API（OpenAI / Claude）
-- [ ] 支持多语言（中/英）
-- [ ] 用户账号系统（保存历史 Brief）
-- [ ] 社区分享（看看别人怎么思考的）
-- [ ] VibeCoding 模式（边做边学）
-
-## 📄 许可证
-
-MIT License
-
-## 🙏 致谢
-
-给所有想做出「真正产品」的 vibe coding 新手 ✊
-
----
-
-**Made with ❤️ by VibePilot Team**
+MIT

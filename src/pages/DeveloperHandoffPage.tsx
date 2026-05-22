@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Check, Copy, Download, Loader2, RefreshCw } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
+import DecisionCard from '../components/DecisionCard';
 import { optimizeHandoff } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
+import { extractCoreDecision } from '../rules/coreDecisionExtractor';
 import type { FinalHandoff } from '../types';
 
 const SECTIONS: Array<{ key: keyof FinalHandoff; title: string }> = [
@@ -20,6 +22,7 @@ export default function DeveloperHandoffPage() {
   const { brief, loading, saveFinalHandoff } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState('');
+  const [view, setView] = useState<'focus' | 'detail'>('focus');
 
   const generate = async () => {
     if (!brief || generating) return;
@@ -40,6 +43,7 @@ export default function DeveloperHandoffPage() {
   if (loading || !brief) return <Loader />;
 
   const handoff = brief.finalHandoff;
+  const decision = extractCoreDecision(brief, 'handoff');
 
   const copyText = async (key: keyof FinalHandoff, text: string) => {
     await navigator.clipboard.writeText(text);
@@ -62,12 +66,25 @@ export default function DeveloperHandoffPage() {
   return (
     <StageLayout
       title="Developer Handoff / 开发交付"
-      subtitle="最终内容会整合需求洞察、产品定义、业务 ROI、技术翻译、MVP 范围、盲点审查和验收标准，生成可直接交给 AI 编程工具的开发 Prompt。"
-      current={7}
+      subtitle="最后只判断一件事：这份方案是否已经足够清晰，可以交给 Codex / Claude Code / Cursor 开发。"
+      current={3}
       briefId={brief.id}
-      previousPath={`/blind-spot/${brief.id}`}
-      aside={<Aside generating={generating} onGenerate={generate} onDownload={download} hasHandoff={Boolean(handoff)} />}
+      previousPath={`/technical/${brief.id}`}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} onDownload={download} hasHandoff={Boolean(handoff)} />}
     >
+      {view === 'focus' && (
+        <DecisionCard
+          decision={decision}
+          glossaryKey="acceptanceCriteria"
+          accepted={Boolean(handoff?.developmentPrompt)}
+          loading={generating}
+          onAccept={generate}
+          onSimplify={generate}
+          editableValue={handoff?.developmentPrompt || ''}
+          onEdit={() => undefined}
+        />
+      )}
+
       {generating && !handoff && (
         <div className="vp-card" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Loader2 size={16} className="vp-spin" />
@@ -75,7 +92,7 @@ export default function DeveloperHandoffPage() {
         </div>
       )}
 
-      {handoff && SECTIONS.map((section) => (
+      {view === 'detail' && handoff && SECTIONS.map((section) => (
         <div className="vp-card" key={section.key} style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
             <h2 style={{ fontSize: 16, fontWeight: 650 }}>{section.title}</h2>
@@ -93,10 +110,14 @@ export default function DeveloperHandoffPage() {
   );
 }
 
-function Aside({ generating, onGenerate, onDownload, hasHandoff }: { generating: boolean; onGenerate: () => void; onDownload: () => void; hasHandoff: boolean }) {
+function Aside({ view, onViewChange, generating, onGenerate, onDownload, hasHandoff }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; hasHandoff: boolean }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>交付操作</h3>
+      <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第四关：开发交付</h3>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+        <button className={view === 'focus' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('focus')}>Focus</button>
+        <button className={view === 'detail' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('detail')}>Detail</button>
+      </div>
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
         Development Prompt 包含 14 个部分，可直接交给 Codex / Claude Code / Cursor。
       </p>

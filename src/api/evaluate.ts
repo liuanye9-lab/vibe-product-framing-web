@@ -16,6 +16,10 @@ import type {
   TechnicalPlanningState,
 } from '../types';
 import type { StepConfig } from '../data/steps';
+import { buildBriefContext, buildSuggestStagePrompt } from '../prompts/suggestStagePrompt';
+import { buildExplainSuggestionPrompt } from '../prompts/explainSuggestionPrompt';
+import { buildOptimizeHandoffPrompt } from '../prompts/optimizeHandoffPrompt';
+import { SCOPE_CREEP_TERMS } from '../skill/systemRules';
 
 // --- AI Configuration (from localStorage) ---
 
@@ -514,10 +518,7 @@ function getDefaultFollowUp(quality: string): string {
 
 // --- Copilot AI Capabilities: Evaluate / Suggest / Explain / Optimize ---
 
-export const SCOPE_CREEP_TERMS = [
-  '全能', '一站式', '平台', '市场调研', '竞品分析', 'PRD', '原型', '代码生成',
-  '项目管理', '团队协作', '上线部署', '数据分析', '商业化',
-];
+export { SCOPE_CREEP_TERMS } from '../skill/systemRules';
 
 function makeSuggestion<T extends SuggestionValue>(
   value: T,
@@ -539,19 +540,6 @@ function acceptedText(value: AiSuggestion | undefined): string {
   if (!value) return '';
   if (Array.isArray(value.value)) return value.value.join('；');
   return String(value.value || '');
-}
-
-function buildBriefContext(brief: ProductBrief): string {
-  return JSON.stringify({
-    mode: brief.mode,
-    ideaInput: brief.ideaInput,
-    discovery: brief.stages.discovery,
-    product: brief.stages.product,
-    business: brief.stages.business,
-    technical: brief.stages.technical,
-    mvp: brief.stages.mvp,
-    blindSpot: brief.stages.blindSpot,
-  }, null, 2);
 }
 
 function extractJson<T>(content: string): T | null {
@@ -781,12 +769,7 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
             : mockMvpSuggestions(brief);
 
   const ai = await callCopilotJson<Record<string, Partial<AiSuggestion>>>(
-    `你是 AI 辅助的 Vibe Coding 产品前期构思 Copilot。请基于用户输入生成 ${stage} 阶段建议。
-要求：
-1. 只返回 JSON，不要 Markdown。
-2. 每个字段格式必须是 {"value": string 或 string[], "reason": string, "risks": string[], "alternatives": string[]}。
-3. 技术规划必须包含推荐方案、推荐理由、风险、替代方案，避免过度工程化。
-4. MVP 阶段如果发现范围膨胀，必须给出 scopeCreepWarning。`,
+    buildSuggestStagePrompt(stage),
     buildBriefContext(brief),
     2200
   );
@@ -796,7 +779,7 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
 
 export async function explainSuggestion(section: string, brief: ProductBrief): Promise<string> {
   const ai = await callCopilotJson<{ explanation: string }>(
-    '你是产品和技术架构导师。请解释为什么推荐这个方案，语言要适合 vibe coding 新手。只返回 JSON：{"explanation":"..."}',
+    buildExplainSuggestionPrompt(),
     `要解释的项：${section}\n\n当前项目上下文：\n${buildBriefContext(brief)}`,
     600
   );
@@ -843,9 +826,7 @@ function buildMockHandoff(brief: ProductBrief): FinalHandoff {
 export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff> {
   const fallback = buildMockHandoff(brief);
   const ai = await callCopilotJson<FinalHandoff>(
-    `你是资深产品架构师和 AI 编程交付专家。请把用户输入与 AI 建议整合为高质量 Developer Handoff。
-只返回 JSON，字段必须为：productBrief, mvpScope, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt。
-Development Prompt 必须可直接交给 Codex / Claude Code / Cursor 执行，必须包含：产品目标、目标用户、需求洞察、用户主流程、MVP 范围、页面结构、技术架构、数据结构、Mock 策略、AI API 规则、验收标准、Out of Scope、风险与盲点、禁止事项。`,
+    buildOptimizeHandoffPrompt(),
     buildBriefContext(brief),
     3200
   );

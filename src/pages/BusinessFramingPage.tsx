@@ -44,7 +44,7 @@ export default function BusinessFramingPage() {
     <StageLayout
       title="Business Reasoning / 业务推理"
       subtitle="这里不用写复杂商业计划书，只做新手能理解的成本收益判断：用户得到什么、做出来贵不贵、是否值得先做 MVP。"
-      current={3}
+      current={0}
       briefId={brief.id}
       previousPath={`/product/${brief.id}`}
       nextPath={`/technical/${brief.id}`}
