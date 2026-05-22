@@ -1,8 +1,17 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Lightbulb, Brain, Target } from 'lucide-react';
+import { ArrowRight, Lightbulb, Brain, Target, Clock } from 'lucide-react';
 
 export default function LandingPage() {
   const navigate = useNavigate();
+
+  // Check if user has any history
+  const hasHistory = (() => {
+    try {
+      const raw = localStorage.getItem('vibepilot_briefs');
+      const briefs = raw ? JSON.parse(raw) : [];
+      return briefs.length > 0;
+    } catch { return false; }
+  })();
 
   return (
     <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -10,6 +19,16 @@ export default function LandingPage() {
         <div className="vp-header-inner">
           <Brain size={20} style={{ color: 'var(--color-primary)' }} />
           <span style={{ fontWeight: 500, fontSize: 15 }}>VibePilot</span>
+          {hasHistory && (
+            <button
+              className="vp-btn-text"
+              onClick={() => navigate('/history')}
+              style={{ marginLeft: 'auto', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <Clock size={14} />
+              历史记录
+            </button>
+          )}
         </div>
       </header>
 

@@ -12,7 +12,41 @@ import {
   Eye,
   Brain,
   Edit3,
+  Share2,
+  Check,
 } from 'lucide-react';
+
+function generateShareData(brief: NonNullable<ReturnType<typeof useProductBrief>['brief']>) {
+  const minimal = {
+    v: 1,
+    idea: brief.rawIdea,
+    steps: {} as Record<string, { a: string; q?: string }>,
+  };
+  for (const s of STEPS) {
+    const data = brief.steps[s.key];
+    if (data?.userAnswer) {
+      minimal.steps[s.key] = { a: data.userAnswer, q: data.aiQuality };
+    }
+  }
+  return btoa(unescape(encodeURIComponent(JSON.stringify(minimal))));
+}
+
+function parseShareData(hash: string): { rawIdea: string; steps: Record<string, { userAnswer: string; aiQuality: string }> } | null {
+  try {
+    const data = JSON.parse(decodeURIComponent(escape(atob(hash))));
+    if (data.v !== 1 || !data.idea) return null;
+    const steps: Record<string, { userAnswer: string; aiQuality: string }> = {};
+    for (const [key, val] of Object.entries(data.steps || {})) {
+      const v = val as { a: string; q?: string };
+      steps[key] = { userAnswer: v.a, aiQuality: v.q || 'vague' };
+    }
+    return { rawIdea: data.idea, steps };
+  } catch {
+    return null;
+  }
+}
+
+export { parseShareData };
 
 export default function PreviewPage() {
   const { id } = useParams<{ id: string }>();
@@ -20,9 +54,19 @@ export default function PreviewPage() {
   const { brief, loading, save } = useProductBrief(id);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [generating, setGenerating] = useState(false);
+  const [shareLinkCopied, setShareLinkCopied] = useState(false);
 
   const toggle = (key: string) => {
     setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleShare = async () => {
+    if (!brief) return;
+    const shareData = generateShareData(brief);
+    const shareUrl = `${window.location.origin}${window.location.pathname}#share=${shareData}`;
+    await navigator.clipboard.writeText(shareUrl);
+    setShareLinkCopied(true);
+    setTimeout(() => setShareLinkCopied(false), 2500);
   };
 
   const handleGeneratePrompt = async () => {
@@ -204,7 +248,7 @@ export default function PreviewPage() {
                 <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
                   Development Prompt 已生成
                 </h3>
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
                   <button
                     className="vp-btn vp-btn-primary"
                     onClick={() => navigate(`/output/${id}`)}
@@ -215,6 +259,10 @@ export default function PreviewPage() {
                   <button className="vp-btn vp-btn-ghost" onClick={handleDownloadMd}>
                     <Download size={14} />
                     下载 Markdown
+                  </button>
+                  <button className="vp-btn vp-btn-ghost" onClick={handleShare}>
+                    {shareLinkCopied ? <Check size={14} /> : <Share2 size={14} />}
+                    {shareLinkCopied ? '链接已复制' : '分享链接'}
                   </button>
                 </div>
               </>
