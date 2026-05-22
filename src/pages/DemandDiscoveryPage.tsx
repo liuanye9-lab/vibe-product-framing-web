@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
@@ -23,14 +23,18 @@ export default function DemandDiscoveryPage() {
   const { id } = useParams<{ id: string }>();
   const { brief, loading, updateStage, updateSuggestion } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
   const [view, setView] = useState<'focus' | 'detail'>('focus');
 
   const generate = async () => {
     if (!brief || generating) return;
     setGenerating(true);
+    setError('');
     try {
       const suggestions = await suggestStage('discovery', brief);
       updateStage<DemandDiscoveryState>('discovery', suggestions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
     } finally {
       setGenerating(false);
     }
@@ -53,7 +57,7 @@ export default function DemandDiscoveryPage() {
       previousPath="/new"
       nextPath={`/scope/${brief.id}`}
       nextLabel="进入第一版决策"
-      aside={<Aside mode={brief.mode} view={view} onViewChange={setView} generating={generating} onGenerate={generate} />}
+      aside={<Aside mode={brief.mode} view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} />}
     >
       {view === 'focus' ? (
         <DecisionCard
@@ -84,7 +88,7 @@ export default function DemandDiscoveryPage() {
   );
 }
 
-function Aside({ mode, view, onViewChange, generating, onGenerate }: { mode: string; view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void }) {
+function Aside({ mode, view, onViewChange, generating, onGenerate, error }: { mode: string; view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string }) {
   const modeLabel = mode === 'review' ? 'Review Mode · 审查已有方案' : mode === 'builder' ? 'Standard Mode · 30 分钟认真构思' : 'Quick Mode · 10 分钟出方案';
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
@@ -99,8 +103,9 @@ function Aside({ mode, view, onViewChange, generating, onGenerate }: { mode: str
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
         默认只看一个核心判断；需要完整产品/业务地图时再切到 Detail。
       </p>
+      {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
-        {generating ? <Loader2 size={14} className="vp-spin" /> : null}
+        {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在生成...' : '重新生成诊断'}
       </button>
     </div>

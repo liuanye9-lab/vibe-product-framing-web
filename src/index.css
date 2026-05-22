@@ -63,6 +63,30 @@ body {
   min-height: 100vh;
 }
 
+.vp-boot-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.vp-boot-card {
+  max-width: 420px;
+  padding: 20px;
+  border-radius: var(--color-radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.vp-boot-card p {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
 input, textarea, select, button {
   font-family: inherit;
   font-size: inherit;

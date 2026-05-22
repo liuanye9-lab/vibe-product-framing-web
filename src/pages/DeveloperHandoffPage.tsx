@@ -21,15 +21,19 @@ export default function DeveloperHandoffPage() {
   const { id } = useParams<{ id: string }>();
   const { brief, loading, saveFinalHandoff } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
   const [view, setView] = useState<'focus' | 'detail'>('focus');
 
   const generate = async () => {
     if (!brief || generating) return;
     setGenerating(true);
+    setError('');
     try {
       const handoff = await optimizeHandoff(brief);
       saveFinalHandoff(handoff);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成交付内容失败，请稍后重试。');
     } finally {
       setGenerating(false);
     }
@@ -70,7 +74,7 @@ export default function DeveloperHandoffPage() {
       current={3}
       briefId={brief.id}
       previousPath={`/technical/${brief.id}`}
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} onDownload={download} hasHandoff={Boolean(handoff)} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} onDownload={download} hasHandoff={Boolean(handoff)} error={error} />}
     >
       {view === 'focus' && (
         <DecisionCard
@@ -110,7 +114,7 @@ export default function DeveloperHandoffPage() {
   );
 }
 
-function Aside({ view, onViewChange, generating, onGenerate, onDownload, hasHandoff }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; hasHandoff: boolean }) {
+function Aside({ view, onViewChange, generating, onGenerate, onDownload, hasHandoff, error }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; hasHandoff: boolean; error: string }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第四关：开发交付</h3>
@@ -121,6 +125,7 @@ function Aside({ view, onViewChange, generating, onGenerate, onDownload, hasHand
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
         Development Prompt 包含 14 个部分，可直接交给 Codex / Claude Code / Cursor。
       </p>
+      {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button className="vp-btn vp-btn-primary" onClick={onGenerate} disabled={generating}>
           {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}

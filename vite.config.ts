@@ -3,6 +3,42 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
+function normalizeChatCompletionsEndpoint(rawApiUrl: string): string {
+  const cleanUrl = rawApiUrl.trim().replace(/\/+$/, '')
+
+  if (/\/chat\/completions$/i.test(cleanUrl)) {
+    return cleanUrl
+  }
+
+  if (/\/v1$/i.test(cleanUrl)) {
+    return `${cleanUrl}/chat/completions`
+  }
+
+  if (/\/v1\/chat$/i.test(cleanUrl)) {
+    return `${cleanUrl}/completions`
+  }
+
+  return `${cleanUrl}/v1/chat/completions`
+}
+
+function getAbortSignal(timeoutMs: number): AbortSignal {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs)
+  }
+
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(), timeoutMs)
+  return controller.signal
+}
+
+function getUpstreamErrorMessage(error: unknown, endpoint: string): string {
+  if (error instanceof Error) {
+    return `代理无法连接到上游 API：${error.message}。已尝试请求：${endpoint}`
+  }
+
+  return `代理无法连接到上游 API。已尝试请求：${endpoint}`
+}
+
 function localAiProxy(): Plugin {
   return {
     name: 'local-ai-proxy',
@@ -44,12 +80,15 @@ function localAiProxy(): Plugin {
               return
             }
 
-            const upstream = await fetch(`${apiUrl}/v1/chat/completions`, {
+            const endpoint = normalizeChatCompletionsEndpoint(apiUrl)
+
+            const upstream = await fetch(endpoint, {
               method: 'POST',
               headers: {
                 Authorization: `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
               },
+              signal: getAbortSignal(90000),
               body: JSON.stringify(payload.body),
             })
 
@@ -58,9 +97,11 @@ function localAiProxy(): Plugin {
             res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json; charset=utf-8')
             res.end(text)
           } catch (error) {
+            const payload = JSON.parse(rawBody || '{}') as { apiUrl?: string }
+            const endpoint = payload.apiUrl ? normalizeChatCompletionsEndpoint(payload.apiUrl) : 'unknown endpoint'
             res.statusCode = 502
             res.setHeader('Content-Type', 'application/json; charset=utf-8')
-            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'AI proxy request failed' }))
+            res.end(JSON.stringify({ error: getUpstreamErrorMessage(error, endpoint) }))
           }
         })
       })

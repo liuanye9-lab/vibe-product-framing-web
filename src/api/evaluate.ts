@@ -31,20 +31,32 @@ export interface AIConfig {
 
 const AI_CONFIG_KEY = 'vibepilot_ai_config';
 
+export function normalizeApiUrl(apiUrl: string): string {
+  return apiUrl.trim().replace(/\/+$/, '');
+}
+
 export function getAIConfig(): AIConfig | null {
   try {
     const raw = localStorage.getItem(AI_CONFIG_KEY);
     if (!raw) return null;
     const config = JSON.parse(raw) as AIConfig;
     if (!config.apiUrl || !config.apiKey || !config.model) return null;
-    return config;
+    return {
+      apiUrl: normalizeApiUrl(config.apiUrl),
+      apiKey: config.apiKey.trim(),
+      model: config.model.trim(),
+    };
   } catch {
     return null;
   }
 }
 
 export function saveAIConfig(config: AIConfig): void {
-  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
+  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify({
+    apiUrl: normalizeApiUrl(config.apiUrl),
+    apiKey: config.apiKey.trim(),
+    model: config.model.trim(),
+  }));
 }
 
 export function clearAIConfig(): void {
@@ -108,7 +120,31 @@ export function extractAIContent(data: Record<string, unknown>): string {
   return content.trim();
 }
 
-async function callAIProxy(config: AIConfig, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+const DEFAULT_AI_TIMEOUT_MS = 45000;
+const SUGGEST_AI_TIMEOUT_MS = 60000;
+const EXPLAIN_AI_TIMEOUT_MS = 30000;
+const HANDOFF_AI_TIMEOUT_MS = 75000;
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isLikelyTimeout(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  return message.includes('timeout') || message.includes('超时') || message.includes('aborted') || message.includes('abort');
+}
+
+function abortSignalTimeout(timeoutMs: number): AbortSignal {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+
+  const controller = new AbortController();
+  window.setTimeout(() => controller.abort(), timeoutMs);
+  return controller.signal;
+}
+
+async function callAIProxy(config: AIConfig, body: Record<string, unknown>, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<Record<string, unknown>> {
   console.log('[VibePilot] AI Proxy Request:', { apiUrl: config.apiUrl, model: body.model });
 
   const response = await fetch('/api/ai-proxy', {
@@ -116,6 +152,7 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>): Pro
     headers: {
       'Content-Type': 'application/json',
     },
+    signal: abortSignalTimeout(timeoutMs),
     body: JSON.stringify({
       apiUrl: config.apiUrl,
       apiKey: config.apiKey,
@@ -126,8 +163,23 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>): Pro
   const rawText = await response.text();
   console.log('[VibePilot] AI Proxy Raw Response:', rawText.slice(0, 500));
 
+  let parsedError: unknown = null;
   if (!response.ok) {
-    throw new Error(`AI API 返回错误 (${response.status}): ${rawText.slice(0, 300)}`);
+    try {
+      parsedError = JSON.parse(rawText) as unknown;
+    } catch {
+      parsedError = null;
+    }
+
+    const errorObject = parsedError && typeof parsedError === 'object' ? parsedError as Record<string, unknown> : null;
+    const errorValue = errorObject?.error;
+    const errorMessage = typeof errorValue === 'string'
+      ? errorValue
+      : errorValue && typeof errorValue === 'object' && typeof (errorValue as Record<string, unknown>).message === 'string'
+        ? (errorValue as Record<string, unknown>).message as string
+        : rawText.slice(0, 300);
+
+    throw new Error(`AI API 返回错误 (${response.status}): ${errorMessage}`);
   }
 
   try {
@@ -250,7 +302,7 @@ async function callDirectAI(req: EvaluateRequest, config: AIConfig): Promise<Eva
     max_tokens: req.mode === 'evaluate' ? 500 : 200,
   };
 
-  const data = await callAIProxy(config, requestBody);
+  const data = await callAIProxy(config, requestBody, DEFAULT_AI_TIMEOUT_MS);
   const content = extractAIContent(data);
 
   console.log('[VibePilot] Extracted content:', content.slice(0, 200));
@@ -556,7 +608,7 @@ function extractJson<T>(content: string): T | null {
   }
 }
 
-async function callCopilotJson<T>(systemPrompt: string, userContent: string, maxTokens = 1600): Promise<T | null> {
+async function callCopilotJson<T>(systemPrompt: string, userContent: string, maxTokens = 1600, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<T | null> {
   const config = getAIConfig();
   if (!config) return null;
   try {
@@ -566,14 +618,18 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
       ],
-      temperature: 0.45,
+      temperature: 0.35,
       max_tokens: maxTokens,
-    });
+    }, timeoutMs);
     const content = extractAIContent(data);
     return extractJson<T>(content);
   } catch (err) {
+    const message = getErrorMessage(err);
     console.warn('[VibePilot] Copilot AI failed, using mock fallback:', err);
-    return null;
+    if (isLikelyTimeout(err)) {
+      throw new Error(`大模型响应超时：已等待 ${Math.round(timeoutMs / 1000)} 秒。请检查模型是否响应较慢，或在设置页换用更快模型。`);
+    }
+    throw new Error(`大模型生成失败：${message}`);
   }
 }
 
@@ -768,22 +824,34 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
             ? mockBlindSpotSuggestions()
             : mockMvpSuggestions(brief);
 
-  const ai = await callCopilotJson<Record<string, Partial<AiSuggestion>>>(
-    buildSuggestStagePrompt(stage),
-    buildBriefContext(brief),
-    2200
-  );
+  try {
+    const ai = await callCopilotJson<Record<string, Partial<AiSuggestion>>>(
+      buildSuggestStagePrompt(stage),
+      buildBriefContext(brief),
+      1400,
+      SUGGEST_AI_TIMEOUT_MS
+    );
 
-  return normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, ai) as Partial<CopilotStages[FramingStage]>;
+    return normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, ai) as Partial<CopilotStages[FramingStage]>;
+  } catch (error) {
+    console.warn('[VibePilot] Suggest stage failed, fallback used:', error);
+    return normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, null) as Partial<CopilotStages[FramingStage]>;
+  }
 }
 
 export async function explainSuggestion(section: string, brief: ProductBrief): Promise<string> {
-  const ai = await callCopilotJson<{ explanation: string }>(
-    buildExplainSuggestionPrompt(),
-    `要解释的项：${section}\n\n当前项目上下文：\n${buildBriefContext(brief)}`,
-    600
-  );
-  return ai?.explanation || `推荐“${section}”是为了让 V1 先验证核心闭环，避免一开始引入数据库、认证、复杂后端等会拖慢开发的能力。`;
+  try {
+    const ai = await callCopilotJson<{ explanation: string }>(
+      buildExplainSuggestionPrompt(),
+      `要解释的项：${section}\n\n当前项目上下文：\n${buildBriefContext(brief)}`,
+      500,
+      EXPLAIN_AI_TIMEOUT_MS
+    );
+    return ai?.explanation || `推荐“${section}”是为了让 V1 先验证核心闭环，避免一开始引入数据库、认证、复杂后端等会拖慢开发的能力。`;
+  } catch (error) {
+    console.warn('[VibePilot] Explain suggestion failed, fallback used:', error);
+    return `推荐“${section}”是为了让 V1 先验证核心闭环，避免一开始引入数据库、认证、复杂后端等会拖慢开发的能力。`;
+  }
 }
 
 function buildMockHandoff(brief: ProductBrief): FinalHandoff {
@@ -825,11 +893,18 @@ function buildMockHandoff(brief: ProductBrief): FinalHandoff {
 }
 export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff> {
   const fallback = buildMockHandoff(brief);
-  const ai = await callCopilotJson<FinalHandoff>(
-    buildOptimizeHandoffPrompt(),
-    buildBriefContext(brief),
-    3200
-  );
+  let ai: FinalHandoff | null = null;
+
+  try {
+    ai = await callCopilotJson<FinalHandoff>(
+      buildOptimizeHandoffPrompt(),
+      buildBriefContext(brief),
+      2400,
+      HANDOFF_AI_TIMEOUT_MS
+    );
+  } catch (error) {
+    console.warn('[VibePilot] Optimize handoff failed, fallback used:', error);
+  }
 
   return {
     productBrief: ai?.productBrief || fallback.productBrief,
@@ -880,7 +955,7 @@ export async function getStepHint(step: StepConfig): Promise<string> {
         ],
         max_tokens: 200,
         temperature: 0.7,
-      });
+      }, EXPLAIN_AI_TIMEOUT_MS);
       const content = extractAIContent(data);
       if (content) return content;
     } catch {

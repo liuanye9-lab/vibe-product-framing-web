@@ -7,13 +7,19 @@ export function buildBriefContext(brief: ProductBrief): string {
   return JSON.stringify({
     mode: brief.mode,
     ideaInput: brief.ideaInput,
-    discovery: brief.stages.discovery,
-    product: brief.stages.product,
-    business: brief.stages.business,
-    technical: brief.stages.technical,
-    mvp: brief.stages.mvp,
-    blindSpot: brief.stages.blindSpot,
-  }, null, 2);
+    acceptedDecisions: {
+      discovery: brief.stages.discovery,
+      product: brief.stages.product,
+      business: brief.stages.business,
+      technical: brief.stages.technical,
+      mvp: brief.stages.mvp,
+      blindSpot: brief.stages.blindSpot,
+    },
+  }, (_key, value) => {
+    if (typeof value === 'string' && value.length > 900) return `${value.slice(0, 900)}...`;
+    if (Array.isArray(value) && value.length > 8) return value.slice(0, 8);
+    return value;
+  }, 2);
 }
 
 export function buildSuggestStagePrompt(stage: FramingStage): string {
@@ -33,9 +39,11 @@ ${TECH_COMPLEXITY_RULES.map((rule) => `- ${rule}`).join('\n')}
 
 输出要求：
 1. 只返回 JSON，不要 Markdown。
-2. 每个字段格式必须是 {"value": string 或 string[], "reason": string, "risks": string[], "alternatives": string[]}。
-3. 技术规划必须包含推荐方案、推荐理由、风险、替代方案，避免过度工程化。
-4. MVP 阶段如果发现范围膨胀，必须给出 scopeCreepWarning。
-5. 技术翻译示例：${JSON.stringify(TECH_TRANSLATION_EXAMPLE)}。
-6. Mock 策略示例：${JSON.stringify(MOCK_STRATEGY_EXAMPLE)}。`;
+2. 只生成当前 ${stage} 阶段需要的字段，不要重复输出其他阶段。
+3. 每个字段格式必须是 {"value": string 或 string[], "reason": string, "risks": string[], "alternatives": string[]}。
+4. 单个 value 控制在 120 字以内，reason 控制在 80 字以内；risks 和 alternatives 各不超过 3 条。
+5. 技术规划必须包含推荐方案、推荐理由、风险、替代方案，避免过度工程化。
+6. MVP 阶段如果发现范围膨胀，必须给出 scopeCreepWarning。
+7. 技术翻译示例：${JSON.stringify(TECH_TRANSLATION_EXAMPLE)}。
+8. Mock 策略示例：${JSON.stringify(MOCK_STRATEGY_EXAMPLE)}。`;
 }

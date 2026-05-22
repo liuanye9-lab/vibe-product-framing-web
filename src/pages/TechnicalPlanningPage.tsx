@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
@@ -26,14 +26,18 @@ export default function TechnicalPlanningPage() {
   const { id } = useParams<{ id: string }>();
   const { brief, loading, updateStage, updateSuggestion } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
   const [view, setView] = useState<'focus' | 'detail'>('focus');
 
   const generate = async () => {
     if (!brief || generating) return;
     setGenerating(true);
+    setError('');
     try {
       const suggestions = await suggestStage('technical', brief);
       updateStage<TechnicalPlanningState>('technical', suggestions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
     } finally {
       setGenerating(false);
     }
@@ -57,7 +61,7 @@ export default function TechnicalPlanningPage() {
       previousPath={`/scope/${brief.id}`}
       nextPath={`/handoff/${brief.id}`}
       nextLabel="生成开发交付"
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} />}
     >
       {view === 'focus' ? (
         <DecisionCard
@@ -157,7 +161,7 @@ function Info({ title, value, mono }: { title: string; value?: string | string[]
   );
 }
 
-function Aside({ view, onViewChange, generating, onGenerate }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void }) {
+function Aside({ view, onViewChange, generating, onGenerate, error }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第三关：技术决策</h3>
@@ -168,8 +172,9 @@ function Aside({ view, onViewChange, generating, onGenerate }: { view: 'focus' |
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 12 }}>
         V1 优先验证闭环，不默认引入数据库、认证、文件上传、复杂后端。
       </p>
+      {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
-        {generating ? <Loader2 size={14} className="vp-spin" /> : null}
+        {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在生成...' : '重新生成技术翻译'}
       </button>
     </div>

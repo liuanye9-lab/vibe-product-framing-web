@@ -25,6 +25,16 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
 
   render() {
     if (this.state.error) {
+      const clearAndReload = () => {
+        try {
+          localStorage.removeItem('vibepilot_briefs');
+        } catch {
+          // ignore storage cleanup failures
+        }
+        window.history.replaceState(null, '', '/');
+        window.location.reload();
+      };
+
       return (
         <div
           style={{
@@ -58,15 +68,20 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
             >
               {this.state.error.message}
             </pre>
-            <button
-              className="vp-btn vp-btn-primary"
-              onClick={() => {
-                window.history.replaceState(null, '', '/');
-                window.location.reload();
-              }}
-            >
-              返回首页
-            </button>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="vp-btn vp-btn-primary"
+                onClick={() => {
+                  window.history.replaceState(null, '', '/');
+                  window.location.reload();
+                }}
+              >
+                返回首页
+              </button>
+              <button className="vp-btn vp-btn-ghost" onClick={clearAndReload}>
+                清理本地项目后重试
+              </button>
+            </div>
           </div>
         </div>
       );

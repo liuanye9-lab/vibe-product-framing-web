@@ -12,6 +12,42 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
+function normalizeChatCompletionsEndpoint(rawApiUrl: string): string {
+  const cleanUrl = rawApiUrl.trim().replace(/\/+$/, '');
+
+  if (/\/chat\/completions$/i.test(cleanUrl)) {
+    return cleanUrl;
+  }
+
+  if (/\/v1$/i.test(cleanUrl)) {
+    return `${cleanUrl}/chat/completions`;
+  }
+
+  if (/\/v1\/chat$/i.test(cleanUrl)) {
+    return `${cleanUrl}/completions`;
+  }
+
+  return `${cleanUrl}/v1/chat/completions`;
+}
+
+function getAbortSignal(timeoutMs: number): AbortSignal {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(timeoutMs);
+  }
+
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), timeoutMs);
+  return controller.signal;
+}
+
+function getUpstreamErrorMessage(error: unknown, endpoint: string): string {
+  if (error instanceof Error) {
+    return `代理无法连接到上游 API：${error.message}。已尝试请求：${endpoint}`;
+  }
+
+  return `代理无法连接到上游 API。已尝试请求：${endpoint}`;
+}
+
 export default async function handler(request: Request) {
   if (request.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, { status: 405 });
@@ -40,7 +76,7 @@ export default async function handler(request: Request) {
     return jsonResponse({ error: 'apiUrl must start with http:// or https://' }, { status: 400 });
   }
 
-  const endpoint = `${apiUrl}/v1/chat/completions`;
+  const endpoint = normalizeChatCompletionsEndpoint(apiUrl);
 
   try {
     const upstream = await fetch(endpoint, {
@@ -49,6 +85,7 @@ export default async function handler(request: Request) {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
+      signal: getAbortSignal(90000),
       body: JSON.stringify(payload.body),
     });
 
@@ -63,7 +100,7 @@ export default async function handler(request: Request) {
   } catch (error) {
     return jsonResponse(
       {
-        error: error instanceof Error ? error.message : 'AI proxy request failed',
+        error: getUpstreamErrorMessage(error, endpoint),
       },
       { status: 502 }
     );

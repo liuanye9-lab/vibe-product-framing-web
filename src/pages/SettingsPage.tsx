@@ -13,7 +13,7 @@ import {
   ExternalLink,
   Home,
 } from 'lucide-react';
-import { getAIConfig, saveAIConfig, clearAIConfig } from '../api/evaluate';
+import { getAIConfig, saveAIConfig, clearAIConfig, normalizeApiUrl } from '../api/evaluate';
 
 const PRESETS = [
   {
@@ -94,7 +94,9 @@ export default function SettingsPage() {
 
   const handleSave = () => {
     if (!hasConfig) return;
-    saveAIConfig({ apiUrl: apiUrl.trim(), apiKey: apiKey.trim(), model: model.trim() });
+    const normalizedApiUrl = normalizeApiUrl(apiUrl);
+    setApiUrl(normalizedApiUrl);
+    saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
     setSaved(true);
     setTestResult(null);
     setTimeout(() => setSaved(false), 2000);
@@ -106,18 +108,26 @@ export default function SettingsPage() {
     setTestResult(null);
 
     try {
+      const normalizedApiUrl = normalizeApiUrl(apiUrl);
+      setApiUrl(normalizedApiUrl);
+      const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(45000)
+        : undefined;
+
       const response = await fetch('/api/ai-proxy', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        signal,
         body: JSON.stringify({
-          apiUrl: apiUrl.trim(),
+          apiUrl: normalizedApiUrl,
           apiKey: apiKey.trim(),
           body: {
             model: model.trim(),
             messages: [{ role: 'user', content: '说"连接成功"，只输出这四个字。' }],
-            max_tokens: 20,
+            max_tokens: 50,
+            temperature: 0,
           },
         }),
       });
@@ -130,8 +140,10 @@ export default function SettingsPage() {
         try {
           const errJson = JSON.parse(rawText);
           errMsg = errJson.error?.message || errJson.error || errMsg;
-        } catch { /* use default */ }
-        setTestResult({ ok: false, msg: errMsg });
+        } catch {
+          errMsg = rawText.slice(0, 300) || errMsg;
+        }
+        setTestResult({ ok: false, msg: String(errMsg) });
         return;
       }
 
@@ -154,7 +166,9 @@ export default function SettingsPage() {
     } catch (err) {
       setTestResult({
         ok: false,
-        msg: err instanceof TypeError ? '网络请求失败，请检查 API 地址是否正确。' : `未知错误：${String(err)}`,
+        msg: err instanceof Error && err.name === 'TimeoutError'
+          ? '测试连接超时：模型响应较慢或 API 地址不可达。请确认地址、模型名和服务商状态。'
+          : err instanceof TypeError ? '网络请求失败，请检查 API 地址是否正确。' : `未知错误：${String(err)}`,
       });
     } finally {
       setTesting(false);
@@ -283,7 +297,7 @@ export default function SettingsPage() {
                 placeholder="https://api.openai.com"
               />
               <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
-                不带 /v1/chat/completions，只填基础地址
+                支持基础地址或完整接口地址，例如：https://api.openai.com、https://api.openai.com/v1、https://api.openai.com/v1/chat/completions
               </p>
             </div>
 
@@ -394,7 +408,7 @@ export default function SettingsPage() {
               </p>
               <p style={{ marginBottom: 8 }}>
                 <strong>Q: API Key 安全吗？</strong><br />
-                A: Key 只存在你的浏览器 localStorage 中，由前端直接调用 API，不经过任何中间服务器。
+                A: Key 只存在你的浏览器 localStorage 中，请求会通过当前应用的同源代理转发到你填写的 API 地址，用来避免浏览器 CORS 限制。
               </p>
               <p>
                 <strong>Q: 不配置 AI 能用吗？</strong><br />

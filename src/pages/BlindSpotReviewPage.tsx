@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import { explainSuggestion, suggestStage } from '../api/evaluate';
@@ -20,13 +20,17 @@ export default function BlindSpotReviewPage() {
   const { id } = useParams<{ id: string }>();
   const { brief, loading, updateStage, updateSuggestion } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
 
   const generate = async () => {
     if (!brief || generating) return;
     setGenerating(true);
+    setError('');
     try {
       const suggestions = await suggestStage('blindSpot', brief);
       updateStage<BlindSpotReviewState>('blindSpot', suggestions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
     } finally {
       setGenerating(false);
     }
@@ -48,7 +52,7 @@ export default function BlindSpotReviewPage() {
       previousPath={`/technical/${brief.id}`}
       nextPath={`/handoff/${brief.id}`}
       nextLabel="生成开发交付"
-      aside={<Aside generating={generating} onGenerate={generate} />}
+      aside={<Aside generating={generating} onGenerate={generate} error={error} />}
     >
       {FIELDS.map((field) => (
         <SuggestionCard
@@ -67,15 +71,16 @@ export default function BlindSpotReviewPage() {
   );
 }
 
-function Aside({ generating, onGenerate }: { generating: boolean; onGenerate: () => void }) {
+function Aside({ generating, onGenerate, error }: { generating: boolean; onGenerate: () => void; error: string }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>反向挑战</h3>
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
         好方案不怕被挑战。这里专门找反证、风险和第一版不该做的东西。
       </p>
+      {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
-        {generating ? <Loader2 size={14} className="vp-spin" /> : null}
+        {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在审查...' : '重新生成盲点审查'}
       </button>
     </div>
