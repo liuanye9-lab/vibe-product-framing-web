@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { ArrowRight, ThumbsDown, ThumbsUp, Home } from 'lucide-react';
 
@@ -7,6 +7,14 @@ export default function NewIdeaPage() {
   const [idea, setIdea] = useState('');
   const { initBrief } = useProductBrief();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const state = location.state as { fromHome?: boolean } | null;
+    if (!state?.fromHome) {
+      navigate('/', { replace: true });
+    }
+  }, [location.state, navigate]);
 
   const handleSubmit = () => {
     if (!idea.trim()) return;

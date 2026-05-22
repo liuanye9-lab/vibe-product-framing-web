@@ -101,7 +101,10 @@ export default function LandingPage() {
             。
           </p>
 
-          <button className="vp-btn-cta" onClick={() => navigate('/new')}>
+          <button
+            className="vp-btn-cta"
+            onClick={() => navigate('/new', { state: { fromHome: true } })}
+          >
             开始训练产品思维
             <ArrowRight size={18} />
           </button>
