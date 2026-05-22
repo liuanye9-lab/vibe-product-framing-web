@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Brain,
   Settings,
-  ArrowLeft,
   Check,
   Loader2,
   AlertTriangle,
@@ -12,6 +11,7 @@ import {
   Eye,
   EyeOff,
   ExternalLink,
+  Home,
 } from 'lucide-react';
 import { getAIConfig, saveAIConfig, clearAIConfig } from '../api/evaluate';
 
@@ -93,23 +93,53 @@ export default function SettingsPage() {
         }),
       });
 
+      const rawText = await response.text();
+      console.log('[VibePilot] Test connection raw response:', rawText.slice(0, 500));
+
       if (!response.ok) {
-        const errText = await response.text();
         let errMsg = `请求失败 (${response.status})`;
         try {
-          const errJson = JSON.parse(errText);
+          const errJson = JSON.parse(rawText);
           errMsg = errJson.error?.message || errMsg;
         } catch { /* use default */ }
         setTestResult({ ok: false, msg: errMsg });
         return;
       }
 
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || '';
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        setTestResult({ ok: false, msg: 'API 返回的不是有效 JSON，请检查 API 地址是否正确。' });
+        return;
+      }
+
+      // Robust content extraction - handle various response formats
+      let content = '';
+      const choices = data.choices;
+      if (Array.isArray(choices) && choices.length > 0) {
+        const firstChoice = choices[0] as Record<string, unknown>;
+        if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
+          content = (firstChoice.message as Record<string, unknown>).content as string;
+        } else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
+          content = (firstChoice.delta as Record<string, unknown>).content as string;
+        } else if (typeof firstChoice.content === 'string') {
+          content = firstChoice.content;
+        }
+      } else if (typeof data.content === 'string') {
+        content = data.content;
+      } else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+        const candidate = data.candidates[0] as Record<string, unknown>;
+        if (candidate.content && typeof (candidate.content as Record<string, unknown>).text === 'string') {
+          content = (candidate.content as Record<string, unknown>).text as string;
+        }
+      }
+
       if (content) {
         setTestResult({ ok: true, msg: `连接成功！模型返回：${content.slice(0, 50)}` });
       } else {
-        setTestResult({ ok: false, msg: '连接成功但模型返回为空，请检查模型名称。' });
+        console.log('[VibePilot] Test connection - no content found in:', data);
+        setTestResult({ ok: false, msg: '连接成功但模型返回为空，请检查模型名称是否正确。响应结构：' + Object.keys(data).join(', ') });
       }
     } catch (err) {
       setTestResult({
@@ -138,8 +168,8 @@ export default function SettingsPage() {
     <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <header className="vp-header">
         <div style={{ maxWidth: 640, margin: '0 auto', width: '100%', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="vp-btn-text" onClick={() => navigate(-1)} style={{ padding: '4px 8px' }}>
-            <ArrowLeft size={18} />
+          <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回主页">
+            <Home size={18} />
           </button>
           <Brain size={16} style={{ color: 'var(--color-primary)' }} />
           <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>VibePilot</span>

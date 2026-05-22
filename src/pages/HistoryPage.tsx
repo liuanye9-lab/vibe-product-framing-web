@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   FileText,
   Inbox,
+  Home,
 } from 'lucide-react';
 import type { ProductBrief } from '../types';
 import { STEPS } from '../data/steps';
@@ -93,7 +94,10 @@ export default function HistoryPage() {
       <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <header className="vp-header">
           <div className="vp-header-inner">
-            <Brain size={20} style={{ color: 'var(--color-primary)' }} />
+            <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回主页">
+              <Home size={16} />
+            </button>
+            <Brain size={16} style={{ color: 'var(--color-primary)' }} />
             <span style={{ fontWeight: 500, fontSize: 15 }}>VibePilot</span>
             <span style={{ color: 'var(--color-text-hint)' }}>/</span>
             <span style={{ fontSize: 13, fontWeight: 500 }}>历史记录</span>
@@ -136,6 +140,9 @@ export default function HistoryPage() {
       <header className="vp-header">
         <div style={{ maxWidth: 800, margin: '0 auto', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回主页">
+              <Home size={16} />
+            </button>
             <Brain size={16} style={{ color: 'var(--color-primary)' }} />
             <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>VibePilot</span>
             <span style={{ color: 'var(--color-text-hint)' }}>/</span>

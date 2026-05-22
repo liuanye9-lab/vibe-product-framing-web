@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProductBrief } from '../hooks/useProductBrief';
-import { ArrowRight, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { ArrowRight, ThumbsDown, ThumbsUp, Home } from 'lucide-react';
 
 export default function NewIdeaPage() {
   const [idea, setIdea] = useState('');
@@ -18,6 +18,9 @@ export default function NewIdeaPage() {
     <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <header className="vp-header">
         <div className="vp-header-inner">
+          <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回主页">
+            <Home size={16} />
+          </button>
           <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--color-text-secondary)' }}>VibePilot</span>
           <span style={{ color: 'var(--color-text-hint)' }}>/</span>
           <span style={{ fontWeight: 500, fontSize: 15 }}>描述你的想法</span>

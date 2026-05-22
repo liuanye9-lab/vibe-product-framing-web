@@ -14,6 +14,7 @@ import {
   Edit3,
   Share2,
   Check,
+  Home,
 } from 'lucide-react';
 
 function generateShareData(brief: NonNullable<ReturnType<typeof useProductBrief>['brief']>) {
@@ -117,6 +118,9 @@ export default function PreviewPage() {
       <header className="vp-header">
         <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回主页">
+              <Home size={16} />
+            </button>
             <Brain size={16} style={{ color: 'var(--color-primary)' }} />
             <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>VibePilot</span>
             <span style={{ color: 'var(--color-text-hint)' }}>/</span>

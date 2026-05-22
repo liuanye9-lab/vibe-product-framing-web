@@ -157,30 +157,78 @@ async function callDirectAI(req: EvaluateRequest, config: AIConfig): Promise<Eva
       ? '我不知道怎么回答这个问题，请给我一些提示方向。'
       : '我想继续追问，请帮我深入思考。';
 
+  const requestBody: Record<string, unknown> = {
+    model: config.model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userMessage },
+    ],
+    temperature: 0.7,
+  };
+
+  // Some providers (e.g. Gemini-compatible) use max_output_tokens instead of max_tokens
+  requestBody.max_tokens = req.mode === 'evaluate' ? 500 : 200;
+
+  console.log('[VibePilot] AI Request:', endpoint, { model: config.model, mode: req.mode });
+
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${config.apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
-      max_tokens: req.mode === 'evaluate' ? 500 : 200,
-      temperature: 0.7,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
+  const rawText = await response.text();
+  console.log('[VibePilot] AI Raw Response:', rawText.slice(0, 500));
+
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`AI API 返回错误 (${response.status}): ${errText}`);
+    throw new Error(`AI API 返回错误 (${response.status}): ${rawText.slice(0, 200)}`);
   }
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error('AI API 返回的不是有效 JSON');
+  }
+
+  // Robust content extraction - handle various response formats
+  let content = '';
+  const choices = data.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const firstChoice = choices[0] as Record<string, unknown>;
+    // Standard OpenAI format
+    if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
+      content = (firstChoice.message as Record<string, unknown>).content as string;
+    }
+    // Some providers wrap in delta
+    else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
+      content = (firstChoice.delta as Record<string, unknown>).content as string;
+    }
+    // Direct content field
+    else if (typeof firstChoice.content === 'string') {
+      content = firstChoice.content;
+    }
+  }
+  // Gemini / some providers may return content directly
+  else if (typeof data.content === 'string') {
+    content = data.content;
+  }
+  // Some providers return candidates
+  else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+    const candidate = data.candidates[0] as Record<string, unknown>;
+    if (candidate.content && typeof (candidate.content as Record<string, unknown>).text === 'string') {
+      content = (candidate.content as Record<string, unknown>).text as string;
+    }
+  }
+
+  console.log('[VibePilot] Extracted content:', content.slice(0, 200));
+
+  if (!content) {
+    throw new Error('AI API 返回成功但内容为空，请检查模型名称是否正确。');
+  }
 
   if (req.mode === 'hint') return { evaluation: content, quality: 'ok', followUp: '' };
 
@@ -490,8 +538,33 @@ export async function getStepHint(step: StepConfig): Promise<string> {
         }),
       });
       if (response.ok) {
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '';
+        const rawText = await response.text();
+        let data: Record<string, unknown>;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          return '';
+        }
+        // Robust content extraction
+        let content = '';
+        const choices = data.choices;
+        if (Array.isArray(choices) && choices.length > 0) {
+          const firstChoice = choices[0] as Record<string, unknown>;
+          if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
+            content = (firstChoice.message as Record<string, unknown>).content as string;
+          } else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
+            content = (firstChoice.delta as Record<string, unknown>).content as string;
+          } else if (typeof firstChoice.content === 'string') {
+            content = firstChoice.content;
+          }
+        } else if (typeof data.content === 'string') {
+          content = data.content;
+        } else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+          const candidate = data.candidates[0] as Record<string, unknown>;
+          if (candidate.content && typeof (candidate.content as Record<string, unknown>).text === 'string') {
+            content = (candidate.content as Record<string, unknown>).text as string;
+          }
+        }
         if (content) return content;
       }
     } catch {
