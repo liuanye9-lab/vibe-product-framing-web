@@ -7,6 +7,7 @@ const GuidePage = lazy(() => import('./pages/GuidePage'));
 const PreviewPage = lazy(() => import('./pages/PreviewPage'));
 const OutputPage = lazy(() => import('./pages/OutputPage'));
 const HistoryPage = lazy(() => import('./pages/HistoryPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 
 function PageLoader() {
   return (
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="/preview/:id" element={<PreviewPage />} />
           <Route path="/output/:id" element={<OutputPage />} />
           <Route path="/history" element={<HistoryPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Lightbulb, Brain, Target, Clock } from 'lucide-react';
+import { ArrowRight, Lightbulb, Brain, Target, Clock, Settings } from 'lucide-react';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -19,16 +19,26 @@ export default function LandingPage() {
         <div className="vp-header-inner">
           <Brain size={20} style={{ color: 'var(--color-primary)' }} />
           <span style={{ fontWeight: 500, fontSize: 15 }}>VibePilot</span>
-          {hasHistory && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
             <button
               className="vp-btn-text"
-              onClick={() => navigate('/history')}
-              style={{ marginLeft: 'auto', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+              onClick={() => navigate('/settings')}
+              style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
             >
-              <Clock size={14} />
-              历史记录
+              <Settings size={14} />
+              AI 设置
             </button>
-          )}
+            {hasHistory && (
+              <button
+                className="vp-btn-text"
+                onClick={() => navigate('/history')}
+                style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <Clock size={14} />
+                历史记录
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
