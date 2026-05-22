@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ProductBrief, StepKey, StepData } from '../types';
+import type { ProductBrief, StepData } from '../types';
+import { STEP_KEYS } from '../data/steps';
 
 const STORAGE_KEY = 'vibepilot_briefs';
 const CURRENT_KEY = 'vibepilot_current_id';
@@ -16,12 +17,7 @@ function createEmptyStep(): StepData {
 
 function createEmptyBrief(id: string, rawIdea: string): ProductBrief {
   const steps: Record<string, StepData> = {};
-  const keys: StepKey[] = [
-    'targetUser', 'scenario', 'painPoint', 'alternatives',
-    'aiValue', 'mvpScope', 'outOfScope', 'techStack',
-    'dataStructure', 'acceptanceCriteria',
-  ];
-  keys.forEach((k) => {
+  STEP_KEYS.forEach((k) => {
     steps[k] = createEmptyStep();
   });
   return {
@@ -33,6 +29,22 @@ function createEmptyBrief(id: string, rawIdea: string): ProductBrief {
   };
 }
 
+function normalizeBrief(brief: Partial<ProductBrief> & { id?: string; rawIdea?: string }): ProductBrief {
+  const normalized = createEmptyBrief(brief.id || `pb-${Date.now()}`, brief.rawIdea || '');
+  normalized.createdAt = brief.createdAt || normalized.createdAt;
+  normalized.developmentPrompt = brief.developmentPrompt || '';
+
+  const sourceSteps = brief.steps || {};
+  STEP_KEYS.forEach((key) => {
+    normalized.steps[key] = {
+      ...createEmptyStep(),
+      ...(sourceSteps as Record<string, Partial<StepData> | undefined>)[key],
+    };
+  });
+
+  return normalized;
+}
+
 export function useProductBrief(id?: string) {
   const [brief, setBrief] = useState<ProductBrief | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,7 +54,7 @@ export function useProductBrief(id?: string) {
       const all = loadAll();
       const found = all.find((b) => b.id === id);
       if (found) {
-        setBrief(found);
+        setBrief(normalizeBrief(found));
       } else {
         setBrief(createEmptyBrief(id, ''));
       }
@@ -64,7 +76,7 @@ export function useProductBrief(id?: string) {
 
   const initBrief = useCallback((rawIdea: string): ProductBrief => {
     const newId = `pb-${Date.now()}`;
-    const newBrief = createEmptyBrief(newId, rawIdea);
+    const newBrief = normalizeBrief(createEmptyBrief(newId, rawIdea));
     save(newBrief);
     localStorage.setItem(CURRENT_KEY, newId);
     return newBrief;
@@ -91,7 +103,11 @@ export function useProductBrief(id?: string) {
 function loadAll(): ProductBrief[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => normalizeBrief(item as Partial<ProductBrief>));
   } catch {
     return [];
   }

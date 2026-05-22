@@ -124,8 +124,8 @@ export default function GuidePage() {
     showCompletionWarning: false,
   });
 
-  const step: StepConfig = STEPS[state.currentStep];
-  const stepData = brief?.steps[step.key];
+  const step: StepConfig = STEPS[state.currentStep] || STEPS[0];
+  const stepData = brief?.steps?.[step.key];
 
   // Sync input when step changes
   useEffect(() => {
@@ -157,7 +157,7 @@ export default function GuidePage() {
   useEffect(() => {
     if (!brief || !id) return;
     const timer = setTimeout(() => {
-      if (state.inputValue !== (brief.steps[step.key]?.userAnswer || '')) {
+      if (state.inputValue !== (brief.steps?.[step.key]?.userAnswer || '')) {
         updateStep(step.key, { userAnswer: state.inputValue });
       }
     }, 500);
@@ -313,7 +313,7 @@ export default function GuidePage() {
       <nav style={{ padding: '0.75rem 2rem', borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
         <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', gap: 4, overflowX: 'auto' }}>
           {STEPS.map((s, i) => {
-            const data = brief.steps[s.key];
+            const data = brief.steps?.[s.key];
             const isActive = i === state.currentStep;
             const isDone = data?.isCompleted;
             return (
