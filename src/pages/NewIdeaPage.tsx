@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { ArrowRight, Home, Sparkles } from 'lucide-react';
+import StageLayout from '../components/StageLayout';
+import { evaluateIdea } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
-import { ArrowRight, ThumbsDown, ThumbsUp, Home } from 'lucide-react';
+import type { EvaluateIdeaResult, IdeaInputState, ProjectType } from '../types';
+
+const PROJECT_TYPES: ProjectType[] = ['Web App', 'AI Agent', 'SaaS', 'Portfolio', 'Other'];
 
 export default function NewIdeaPage() {
-  const [idea, setIdea] = useState('');
+  const [input, setInput] = useState<IdeaInputState>({ rawIdea: '', projectType: 'Web App' });
+  const [evaluation, setEvaluation] = useState<EvaluateIdeaResult | null>(null);
   const { initBrief } = useProductBrief();
   const navigate = useNavigate();
   const location = useLocation();
@@ -16,99 +22,118 @@ export default function NewIdeaPage() {
     }
   }, [location.state, navigate]);
 
+  useEffect(() => {
+    let alive = true;
+    if (!input.rawIdea.trim()) {
+      setEvaluation(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const result = await evaluateIdea(input);
+      if (alive) setEvaluation(result);
+    }, 300);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [input]);
+
   const handleSubmit = () => {
-    if (!idea.trim()) return;
-    const brief = initBrief(idea.trim());
-    navigate(`/guide/${brief.id}`);
+    if (!input.rawIdea.trim()) return;
+    const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() });
+    navigate(`/product/${brief.id}`);
+  };
+
+  const setField = <K extends keyof IdeaInputState>(key: K, value: IdeaInputState[K]) => {
+    setInput((prev) => ({ ...prev, [key]: value }));
   };
 
   return (
-    <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <header className="vp-header">
-        <div className="vp-header-inner">
-          <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回主页">
-            <Home size={16} />
+    <StageLayout
+      title="Idea Input / 产品想法输入"
+      subtitle="只需要先写最少信息。目标用户、场景、问题和产品形态都可以不完整，后续由 AI 帮你做默认假设并补全专业部分。"
+      current={0}
+      nextLabel="让 AI 开始构思"
+      onNext={handleSubmit}
+      nextDisabled={!input.rawIdea.trim()}
+      aside={<IdeaScore evaluation={evaluation} />}
+    >
+      <div className="vp-card" style={{ marginBottom: 18 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>我想做什么 *</label>
+        <textarea
+          className="vp-textarea vp-textarea-lg"
+          value={input.rawIdea}
+          onChange={(e) => setField('rawIdea', e.target.value)}
+          placeholder="比如：我想做一个帮助 vibe coding 新手在写代码前想清楚产品方案的 AI Copilot。"
+          rows={4}
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <Field title="给谁用（可选）">
+          <input className="vp-input" value={input.targetUser || ''} onChange={(e) => setField('targetUser', e.target.value)} placeholder="例如：准备做第一个 AI 产品的新手" />
+        </Field>
+        <Field title="在什么场景用（可选）">
+          <input className="vp-input" value={input.scenario || ''} onChange={(e) => setField('scenario', e.target.value)} placeholder="例如：准备交给 Cursor 开发前" />
+        </Field>
+        <Field title="想解决什么问题（可选）">
+          <input className="vp-input" value={input.problem || ''} onChange={(e) => setField('problem', e.target.value)} placeholder="例如：不知道技术方案和数据结构" />
+        </Field>
+        <Field title="产品形态（可选）">
+          <select className="vp-input" value={input.projectType || 'Web App'} onChange={(e) => setField('projectType', e.target.value as ProjectType)}>
+            {PROJECT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div className="vp-card-dashed" style={{ marginTop: 22 }}>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Sparkles size={18} style={{ color: 'var(--color-primary)', marginTop: 2 }} />
+          <div>
+            <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 6 }}>不用一次性想完整</h3>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+              技术架构、数据库、数据流、AI API、验收标准等专业内容，会在后面由 AI 根据你的产品上下文主动推荐。
+            </p>
+          </div>
+        </div>
+      </div>
+    </StageLayout>
+  );
+}
+
+function Field({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <label className="vp-card" style={{ display: 'block' }}>
+      <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{title}</span>
+      {children}
+    </label>
+  );
+}
+
+function IdeaScore({ evaluation }: { evaluation: EvaluateIdeaResult | null }) {
+  return (
+    <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Home size={14} style={{ color: 'var(--color-primary)' }} />
+        <h3 style={{ fontSize: 14, fontWeight: 650 }}>输入诊断</h3>
+      </div>
+      {!evaluation ? (
+        <p style={{ fontSize: 13, color: 'var(--color-text-hint)', lineHeight: 1.7 }}>输入一个产品想法后，这里会显示 AI 的初步诊断。</p>
+      ) : (
+        <>
+          <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-primary)', marginBottom: 4 }}>{evaluation.score}</div>
+          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>{evaluation.mainIssue}</p>
+          {!!evaluation.missingFields.length && (
+            <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 10 }}>可由 AI 假设：{evaluation.missingFields.join('、')}</p>
+          )}
+          {!!evaluation.riskFlags.length && (
+            <p style={{ fontSize: 12, color: 'var(--color-warning)', marginTop: 10 }}>范围风险词：{evaluation.riskFlags.join('、')}</p>
+          )}
+          <button className="vp-btn vp-btn-primary" onClick={() => undefined} style={{ width: '100%', marginTop: 14, pointerEvents: 'none' }}>
+            继续后由 AI 补全 <ArrowRight size={14} />
           </button>
-          <span style={{ fontWeight: 500, fontSize: 15, color: 'var(--color-text-secondary)' }}>VibePilot</span>
-          <span style={{ color: 'var(--color-text-hint)' }}>/</span>
-          <span style={{ fontWeight: 500, fontSize: 15 }}>描述你的想法</span>
-        </div>
-      </header>
-
-      <main style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '3rem 2rem' }}>
-        <div style={{ maxWidth: 640, width: '100%' }}>
-          <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 8 }}>
-            用 1-3 句话描述你的产品想法
-          </h1>
-          <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', marginBottom: 24, lineHeight: 1.7 }}>
-            不用想得太完美，把脑子里最原始的想法写下来就行。后面我们会一步步帮你把它想清楚。
-          </p>
-
-          <textarea
-            className="vp-textarea vp-textarea-lg"
-            value={idea}
-            onChange={(e) => setIdea(e.target.value)}
-            placeholder="比如：我想做一个帮助独立设计师找第一个客户的工具……"
-            rows={4}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && idea.trim()) {
-                handleSubmit();
-              }
-            }}
-          />
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-            <button
-              className="vp-btn-cta"
-              onClick={handleSubmit}
-              disabled={!idea.trim()}
-              style={{ padding: '12px 28px' }}
-            >
-              开始引导
-              <ArrowRight size={18} />
-            </button>
-            {idea.length > 0 && (
-              <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
-                {idea.length} 字 · Ctrl+Enter 开始
-              </span>
-            )}
-          </div>
-
-          <div className="vp-card" style={{ marginTop: 48 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)', marginBottom: 16 }}>
-              什么是好想法 vs 坏想法？
-            </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ flexShrink: 0, marginTop: 2 }}>
-                  <ThumbsDown size={16} style={{ color: 'var(--color-danger)' }} />
-                </div>
-                <div>
-                  <p style={{ fontSize: 13, color: 'var(--color-danger)', fontWeight: 500, marginBottom: 4 }}>
-                    太模糊
-                  </p>
-                  <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-                    "我想做一个 AI 工具" —— 没有说明做什么、给谁用、解决什么问题
-                  </p>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div style={{ flexShrink: 0, marginTop: 2 }}>
-                  <ThumbsUp size={16} style={{ color: 'var(--color-success)' }} />
-                </div>
-                <div>
-                  <p style={{ fontSize: 13, color: 'var(--color-success)', fontWeight: 500, marginBottom: 4 }}>
-                    有方向
-                  </p>
-                  <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-                    "我想做一个帮助独立设计师找到第一个客户的平台，因为新设计师最大的困难是不知道去哪找客户"
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
+        </>
+      )}
     </div>
   );
 }

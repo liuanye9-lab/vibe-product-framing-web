@@ -1,4 +1,18 @@
-import type { StepData } from '../types';
+import type {
+  AiSuggestion,
+  BusinessFramingState,
+  CopilotStages,
+  EvaluateIdeaResult,
+  FinalHandoff,
+  FramingStage,
+  IdeaInputState,
+  MvpScopeState,
+  ProductBrief,
+  ProductFramingState,
+  StepData,
+  SuggestionValue,
+  TechnicalPlanningState,
+} from '../types';
 import type { StepConfig } from '../data/steps';
 
 // --- AI Configuration (from localStorage) ---
@@ -50,7 +64,7 @@ interface EvaluateResponse {
 
 // --- Direct AI Call (OpenAI-compatible via same-origin proxy) ---
 
-function extractAIContent(data: Record<string, unknown>): string {
+export function extractAIContent(data: Record<string, unknown>): string {
   let content = '';
   const choices = data.choices;
   if (Array.isArray(choices) && choices.length > 0) {
@@ -494,6 +508,262 @@ function getDefaultFollowUp(quality: string): string {
   if (quality === 'specific') return '这个答案有没有遗漏什么？有没有边界情况没考虑到？';
   if (quality === 'ok') return '试着在答案里加上至少一个数字或具体场景。';
   return '如果只能用一句话、不带任何形容词来描述，你会怎么说？';
+}
+
+// --- Copilot AI Capabilities: Evaluate / Suggest / Explain / Optimize ---
+
+export const SCOPE_CREEP_TERMS = [
+  '全能', '一站式', '平台', '市场调研', '竞品分析', 'PRD', '原型', '代码生成',
+  '项目管理', '团队协作', '上线部署', '数据分析', '商业化',
+];
+
+function makeSuggestion<T extends SuggestionValue>(
+  value: T,
+  reason: string,
+  risks: string[] = [],
+  alternatives: string[] = []
+): AiSuggestion<T> {
+  return {
+    value,
+    reason,
+    risks,
+    alternatives,
+    accepted: false,
+    editedByUser: false,
+  };
+}
+
+function acceptedText(value: AiSuggestion | undefined): string {
+  if (!value) return '';
+  if (Array.isArray(value.value)) return value.value.join('；');
+  return String(value.value || '');
+}
+
+function buildBriefContext(brief: ProductBrief): string {
+  return JSON.stringify({
+    ideaInput: brief.ideaInput,
+    product: brief.stages.product,
+    business: brief.stages.business,
+    technical: brief.stages.technical,
+    mvp: brief.stages.mvp,
+  }, null, 2);
+}
+
+function extractJson<T>(content: string): T | null {
+  try {
+    return JSON.parse(content) as T;
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try {
+      return JSON.parse(match[0]) as T;
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function callCopilotJson<T>(systemPrompt: string, userContent: string, maxTokens = 1600): Promise<T | null> {
+  const config = getAIConfig();
+  if (!config) return null;
+  try {
+    const data = await callAIProxy(config, {
+      model: config.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent },
+      ],
+      temperature: 0.45,
+      max_tokens: maxTokens,
+    });
+    const content = extractAIContent(data);
+    return extractJson<T>(content);
+  } catch (err) {
+    console.warn('[VibePilot] Copilot AI failed, using mock fallback:', err);
+    return null;
+  }
+}
+
+export function detectScopeCreep(input: string): string[] {
+  return SCOPE_CREEP_TERMS.filter((term) => input.toLowerCase().includes(term.toLowerCase()));
+}
+
+export async function evaluateIdea(input: IdeaInputState): Promise<EvaluateIdeaResult> {
+  const missingFields: string[] = [];
+  if (!input.targetUser) missingFields.push('目标用户');
+  if (!input.scenario) missingFields.push('使用场景');
+  if (!input.problem) missingFields.push('核心问题');
+  if (!input.projectType) missingFields.push('产品形态');
+
+  const riskFlags = detectScopeCreep([input.rawIdea, input.problem, input.scenario].filter(Boolean).join(' '));
+  const score = Math.max(20, 90 - missingFields.length * 12 - riskFlags.length * 6);
+
+  return {
+    score,
+    mainIssue: missingFields.length
+      ? `信息还不完整：${missingFields.join('、')} 可以先由 AI 做默认假设。`
+      : '输入已经具备基本方向，可以进入 AI 辅助构思。',
+    missingFields,
+    riskFlags,
+  };
+}
+
+function mockProductSuggestions(brief: ProductBrief): ProductFramingState {
+  const idea = brief.ideaInput.rawIdea || '这个产品想法';
+  const targetUser = brief.ideaInput.targetUser || '准备使用 AI 编程工具做第一个产品的个人开发者或产品新手';
+  const scenario = brief.ideaInput.scenario || '用户有一个模糊产品想法，准备交给 Codex / Claude Code / Cursor 开发前，需要先想清楚需求和边界';
+  const problem = brief.ideaInput.problem || '用户知道想做什么，但缺少产品、业务和技术拆解能力，容易把第一版做成大而全的问卷或平台';
+  return {
+    productOneLiner: makeSuggestion(
+      `面向${targetUser}的 AI 产品构思 Copilot，帮助他们在 ${scenario} 时，把“${idea}”收敛成可开发的 V1 方案。`,
+      '先用一句话固定用户、场景、任务和结果，避免后续功能发散。',
+      ['如果目标用户过宽，后续 MVP 会失焦。'],
+      ['先做纯前端构思工具', '先做对话式 Agent']
+    ),
+    targetUser: makeSuggestion(targetUser, '目标用户越具体，技术和范围判断越容易落地。'),
+    scenario: makeSuggestion(scenario, '场景决定用户在哪一步最需要帮助，也决定页面流程。'),
+    corePainPoint: makeSuggestion(problem, '痛点绑定到具体任务，而不是泛泛的“效率低”。'),
+    alternatives: makeSuggestion(['直接问 ChatGPT', '自己写 PRD', '照着竞品做页面', '直接让 Cursor 开始写代码'], '替代方案说明用户并非没有选择，本产品必须提供更结构化的前期思考价值。'),
+    aiValue: makeSuggestion('AI 介入在“补全用户不知道的专业判断”环节：根据用户输入推断产品定义、业务假设、技术架构、数据结构和验收标准。', '这比单纯评价答案更接近 Copilot：AI 主动生成草案，用户负责确认和修正。'),
+  };
+}
+
+function mockBusinessSuggestions(brief: ProductBrief): BusinessFramingState {
+  const product = acceptedText(brief.stages.product.productOneLiner) || brief.ideaInput.rawIdea;
+  return {
+    userValue: makeSuggestion(`用户可以把模糊想法快速变成结构化开发前说明，减少反复返工和无效编码。`, `围绕“${product}”的核心价值应是降低前期构思成本，而不是堆功能。`),
+    ownerValue: makeSuggestion('产品所有者可以验证新手是否愿意在写代码前使用结构化构思工具，并沉淀可复用模板。', 'V1 先验证使用意愿和交付质量，不急于商业化。'),
+    valueHypothesis: makeSuggestion('如果 AI 生成的技术规划和 Development Prompt 足够具体，用户会更愿意先完成构思再开始 vibe coding。', '这是本产品最关键的可验证假设。'),
+    metrics: makeSuggestion(['完成一次构思流程的比例', '用户接受 AI 建议的比例', '最终复制 Development Prompt 的次数', '用户返回修改建议的次数'], '指标围绕核心闭环，而不是泛泛统计访问量。'),
+    monetization: makeSuggestion('V1 不优先商业化；后续可基于高级模板、项目历史、多模型优化和团队协作收费。', '商业化需要建立在用户反复使用和产出质量稳定之后。'),
+    risksAndBlindSpots: makeSuggestion(['用户可能仍然想跳过思考直接写代码', 'AI 建议如果太泛会变成另一个问卷', '技术规划需要避免过度工程化'], '业务风险主要来自行为习惯和输出质量。'),
+  };
+}
+
+function mockTechnicalSuggestions(): TechnicalPlanningState {
+  return {
+    frontend: makeSuggestion('V1 推荐单页 Web App，使用 React + Vite + TypeScript + CSS/Tailwind。', '构思流程适合表单、卡片、阶段导航和本地状态，SPA 足够验证闭环。', ['页面状态较多，需要做好数据归一化。'], ['Next.js 多页面应用', '纯对话式 Agent 界面']),
+    backend: makeSuggestion('V1 本身不需要业务后端；只需要一个同源 AI Proxy 用于隐藏 API 调用和规避 CORS。', '用户配置自己的 API，但浏览器不应直接请求第三方接口。', ['代理需要部署平台支持 serverless function。'], ['完全本地 mock', 'Supabase Edge Function']),
+    database: makeSuggestion('V1 暂不需要数据库，使用 localStorage 保存项目历史和用户配置。', '当前主要验证生成流程，不需要跨设备账号和团队协作。', ['浏览器清缓存会丢失数据。'], ['静态 JSON', 'IndexedDB', 'Supabase / PostgreSQL']),
+    aiApi: makeSuggestion('需要 AI API，但应由同源 /api/ai-proxy 转发；前端只保存用户配置并调用本项目代理。', 'API key 直接暴露给第三方跨域请求不稳定，也容易遇到 CORS。', ['用户仍需信任本地/部署环境。'], ['后端环境变量统一配置', '完全离线 mock']),
+    auth: makeSuggestion('V1 不需要认证。', '单用户本地构思工具先降低使用门槛，账号系统会显著增加范围。', ['无法跨设备同步。'], ['后续接 Supabase Auth', '邮箱 magic link']),
+    fileUpload: makeSuggestion('V1 不需要文件上传。', '当前输入主要是文字想法和用户确认，不需要处理文件内容。', ['无法直接读取 PRD 或截图。'], ['V2 支持上传 PRD/截图辅助分析']),
+    dataFlow: makeSuggestion('输入 rawIdea → AI 生成 Product/Business/Technical/MVP 建议 → 用户接受或编辑 → Optimize 生成 Final Handoff → 复制/下载 Development Prompt。', '这个流转让 AI 承担专业补全，用户承担确认。'),
+    mockStrategy: makeSuggestion('无 API 配置或调用失败时，使用本地 mock suggestion 保证流程可跑通。', 'V1 演示不应被模型配置阻塞。'),
+    architectureUpgrade: makeSuggestion('当需要跨设备历史、账号、团队协作、文件上传或付费时，再升级到 Supabase/PostgreSQL + Auth + Storage。', '把升级条件写清楚，可以防止 V1 过度工程化。'),
+  };
+}
+
+function mockMvpSuggestions(brief: ProductBrief): MvpScopeState {
+  const allText = JSON.stringify(brief.ideaInput) + JSON.stringify(brief.stages.product);
+  const creep = detectScopeCreep(allText);
+  return {
+    mustHave: makeSuggestion(['产品想法输入', '产品理解 AI 建议与编辑确认', '技术规划 AI 推荐', 'MVP 范围收敛', '最终 Development Prompt 生成与复制'], 'Must Have 只保留能完成“从想法到开发交付”的闭环。'),
+    shouldHave: makeSuggestion(['历史记录', '重新生成建议', '解释推荐原因', 'Markdown 下载'], '这些提升可用性，但不应阻塞核心闭环。'),
+    outOfScope: makeSuggestion(['团队协作', '支付系统', '复杂项目管理', '自动代码生成', '上线部署流水线'], '这些会把 V1 做成大平台，暂时排除。'),
+    v2Later: makeSuggestion(['账号同步', '多项目空间', '上传 PRD/截图', '竞品对比模板', '多模型评分'], 'V2 再根据用户反馈选择。'),
+    minimumLoop: makeSuggestion('用户输入一个模糊想法，AI 生成并解释关键产品/业务/技术/MVP 决策，用户确认后得到可复制的 Development Prompt。', '最小闭环必须能独立产生开发价值。'),
+    scopeRisks: makeSuggestion(creep.length ? [`检测到范围膨胀词：${creep.join('、')}`, 'V1 建议压缩为一个核心闭环'] : ['当前范围可控，但仍需避免加入账号、团队和自动部署。'], '范围风险来自“想一次性做完整平台”的倾向。'),
+    scopeCreepWarning: creep.length ? '当前想法有范围膨胀风险。V1 建议压缩为一个核心闭环。' : undefined,
+  };
+}
+
+function normalizeSuggestionMap<T extends Record<string, AiSuggestion | undefined>>(
+  fallback: T,
+  aiValue: Partial<Record<keyof T, Partial<AiSuggestion>>> | null
+): T {
+  if (!aiValue) return fallback;
+  const output = { ...fallback } as T;
+  Object.keys(fallback).forEach((key) => {
+    const k = key as keyof T;
+    const base = fallback[k];
+    const incoming = aiValue[k];
+    if (base && incoming?.value !== undefined) {
+      output[k] = {
+        ...base,
+        ...incoming,
+        accepted: Boolean(incoming.accepted),
+        editedByUser: Boolean(incoming.editedByUser),
+      } as T[keyof T];
+    }
+  });
+  return output;
+}
+
+export async function suggestStage(stage: 'product', brief: ProductBrief): Promise<ProductFramingState>;
+export async function suggestStage(stage: 'business', brief: ProductBrief): Promise<BusinessFramingState>;
+export async function suggestStage(stage: 'technical', brief: ProductBrief): Promise<TechnicalPlanningState>;
+export async function suggestStage(stage: 'mvp', brief: ProductBrief): Promise<MvpScopeState>;
+export async function suggestStage(stage: FramingStage, brief: ProductBrief): Promise<Partial<CopilotStages[FramingStage]>> {
+  const fallback = stage === 'product'
+    ? mockProductSuggestions(brief)
+    : stage === 'business'
+      ? mockBusinessSuggestions(brief)
+      : stage === 'technical'
+        ? mockTechnicalSuggestions()
+        : mockMvpSuggestions(brief);
+
+  const ai = await callCopilotJson<Record<string, Partial<AiSuggestion>>>(
+    `你是 AI 辅助的 Vibe Coding 产品前期构思 Copilot。请基于用户输入生成 ${stage} 阶段建议。
+要求：
+1. 只返回 JSON，不要 Markdown。
+2. 每个字段格式必须是 {"value": string 或 string[], "reason": string, "risks": string[], "alternatives": string[]}。
+3. 技术规划必须包含推荐方案、推荐理由、风险、替代方案，避免过度工程化。
+4. MVP 阶段如果发现范围膨胀，必须给出 scopeCreepWarning。`,
+    buildBriefContext(brief),
+    2200
+  );
+
+  return normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, ai) as Partial<CopilotStages[FramingStage]>;
+}
+
+export async function explainSuggestion(section: string, brief: ProductBrief): Promise<string> {
+  const ai = await callCopilotJson<{ explanation: string }>(
+    '你是产品和技术架构导师。请解释为什么推荐这个方案，语言要适合 vibe coding 新手。只返回 JSON：{"explanation":"..."}',
+    `要解释的项：${section}\n\n当前项目上下文：\n${buildBriefContext(brief)}`,
+    600
+  );
+  return ai?.explanation || `推荐“${section}”是为了让 V1 先验证核心闭环，避免一开始引入数据库、认证、复杂后端等会拖慢开发的能力。`;
+}
+
+function buildMockHandoff(brief: ProductBrief): FinalHandoff {
+  const product = brief.stages.product;
+  const business = brief.stages.business;
+  const technical = brief.stages.technical;
+  const mvp = brief.stages.mvp;
+  const productBrief = `产品定义：${acceptedText(product.productOneLiner) || brief.ideaInput.rawIdea}\n目标用户：${acceptedText(product.targetUser)}\n使用场景：${acceptedText(product.scenario)}\n核心痛点：${acceptedText(product.corePainPoint)}\nAI 介入价值：${acceptedText(product.aiValue)}`;
+  const mvpScope = `Must Have：${acceptedText(mvp.mustHave)}\nShould Have：${acceptedText(mvp.shouldHave)}\nOut of Scope：${acceptedText(mvp.outOfScope)}\n最小闭环：${acceptedText(mvp.minimumLoop)}`;
+  const technicalArchitecture = `前端：${acceptedText(technical.frontend)}\n后端：${acceptedText(technical.backend)}\n数据库：${acceptedText(technical.database)}\nAI API：${acceptedText(technical.aiApi)}\n认证：${acceptedText(technical.auth)}\n文件上传：${acceptedText(technical.fileUpload)}\n架构升级条件：${acceptedText(technical.architectureUpgrade)}`;
+  const dataStructure = `Core entities:\n- IdeaInput { rawIdea, targetUser?, scenario?, problem?, projectType? }\n- AiSuggestion<T> { value, reason, risks, alternatives, accepted, editedByUser }\n- FinalHandoff { productBrief, mvpScope, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt }\n\n数据流：${acceptedText(technical.dataFlow)}`;
+  const acceptanceCriteria = [
+    '用户可以只填写 rawIdea 并继续流程。',
+    '每个阶段都有 AI 建议、理由、风险和替代方案。',
+    '用户可以接受、编辑、重新生成或请求解释建议。',
+    '技术规划页不强迫用户手写架构。',
+    '最终 Development Prompt 包含产品目标、页面结构、数据结构、技术方案和验收标准。',
+  ].join('\n');
+  const developmentPrompt = `# Development Prompt\n\n## 产品目标\n${productBrief}\n\n## 业务判断\n用户价值：${acceptedText(business.userValue)}\n产品所有者价值：${acceptedText(business.ownerValue)}\n价值假设：${acceptedText(business.valueHypothesis)}\n指标：${acceptedText(business.metrics)}\n\n## MVP Scope\n${mvpScope}\n\n## Technical Architecture\n${technicalArchitecture}\n\n## Data Structure\n${dataStructure}\n\n## Acceptance Criteria\n${acceptanceCriteria}\n\n## V1 不做\n${acceptedText(mvp.outOfScope)}\n`;
+  return { productBrief, mvpScope, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt };
+}
+
+export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff> {
+  const fallback = buildMockHandoff(brief);
+  const ai = await callCopilotJson<FinalHandoff>(
+    `你是资深产品架构师和 AI 编程交付专家。请把用户输入与 AI 建议整合为高质量 Developer Handoff。
+只返回 JSON，字段必须为：productBrief, mvpScope, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt。
+Development Prompt 必须可直接交给 Codex / Claude Code / Cursor 执行，包含产品目标、技术栈、页面结构、用户流程、功能需求、数据结构、mock data、验收标准、V1 不做事项。`,
+    buildBriefContext(brief),
+    3200
+  );
+
+  return {
+    productBrief: ai?.productBrief || fallback.productBrief,
+    mvpScope: ai?.mvpScope || fallback.mvpScope,
+    technicalArchitecture: ai?.technicalArchitecture || fallback.technicalArchitecture,
+    dataStructure: ai?.dataStructure || fallback.dataStructure,
+    acceptanceCriteria: ai?.acceptanceCriteria || fallback.acceptanceCriteria,
+    developmentPrompt: ai?.developmentPrompt || fallback.developmentPrompt,
+  };
 }
 
 // --- Public API ---

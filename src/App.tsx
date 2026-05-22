@@ -1,10 +1,12 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Component, type ReactNode } from 'react';
 import LandingPage from './pages/LandingPage';
 import NewIdeaPage from './pages/NewIdeaPage';
-import GuidePage from './pages/GuidePage';
-import PreviewPage from './pages/PreviewPage';
-import OutputPage from './pages/OutputPage';
+import ProductFramingPage from './pages/ProductFramingPage';
+import BusinessFramingPage from './pages/BusinessFramingPage';
+import TechnicalPlanningPage from './pages/TechnicalPlanningPage';
+import MvpScopePage from './pages/MvpScopePage';
+import DeveloperHandoffPage from './pages/DeveloperHandoffPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -72,6 +74,12 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
   }
 }
 
+function LegacyRedirect({ to }: { to: 'product' | 'handoff' }) {
+  const path = window.location.pathname.split('/');
+  const id = path[path.length - 1];
+  return <Navigate to={`/${to}/${id}`} replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -79,11 +87,16 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/new" element={<NewIdeaPage />} />
-          <Route path="/guide/:id" element={<GuidePage />} />
-          <Route path="/preview/:id" element={<PreviewPage />} />
-          <Route path="/output/:id" element={<OutputPage />} />
+          <Route path="/product/:id" element={<ProductFramingPage />} />
+          <Route path="/business/:id" element={<BusinessFramingPage />} />
+          <Route path="/technical/:id" element={<TechnicalPlanningPage />} />
+          <Route path="/scope/:id" element={<MvpScopePage />} />
+          <Route path="/handoff/:id" element={<DeveloperHandoffPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/guide/:id" element={<LegacyRedirect to="product" />} />
+          <Route path="/preview/:id" element={<LegacyRedirect to="handoff" />} />
+          <Route path="/output/:id" element={<LegacyRedirect to="handoff" />} />
         </Routes>
       </AppErrorBoundary>
     </BrowserRouter>

@@ -218,6 +218,28 @@ input, textarea, select, button {
   cursor: not-allowed;
 }
 
+.vp-input {
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: var(--color-radius);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--color-transition), box-shadow var(--color-transition);
+}
+
+.vp-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.vp-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .vp-textarea-lg {
   padding: 16px;
   font-size: 15px;

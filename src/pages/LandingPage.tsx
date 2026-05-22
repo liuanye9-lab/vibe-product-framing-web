@@ -1,10 +1,9 @@
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Lightbulb, Brain, Target, Clock, Settings } from 'lucide-react';
+import { ArrowRight, Brain, Clock, Code2, Layers3, Settings, Sparkles, Target } from 'lucide-react';
 
 export default function LandingPage() {
   const navigate = useNavigate();
 
-  // Check if user has any history
   const hasHistory = (() => {
     try {
       const raw = localStorage.getItem('vibepilot_briefs');
@@ -18,7 +17,8 @@ export default function LandingPage() {
       <header className="vp-header">
         <div className="vp-header-inner">
           <Brain size={20} style={{ color: 'var(--color-primary)' }} />
-          <span style={{ fontWeight: 500, fontSize: 15 }}>VibePilot</span>
+          <span style={{ fontWeight: 600, fontSize: 15 }}>VibePilot</span>
+          <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>Copilot</span>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
             <button
               className="vp-btn-text"
@@ -51,61 +51,56 @@ export default function LandingPage() {
           padding: '2rem',
         }}
       >
-        <div style={{ maxWidth: 640, textAlign: 'center' }}>
+        <div style={{ maxWidth: 820, textAlign: 'center' }}>
           <div
             style={{
-              display: 'inline-block',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
               padding: '4px 12px',
               borderRadius: 20,
               background: 'var(--color-primary-light)',
               color: 'var(--color-primary)',
               fontSize: 12,
-              fontWeight: 500,
+              fontWeight: 600,
               marginBottom: 24,
             }}
           >
-            产品思维训练工具
+            <Sparkles size={13} />
+            AI 辅助的 Vibe Coding 产品前期构思 Copilot
           </div>
 
           <h1
             style={{
-              fontSize: 'clamp(28px, 5vw, 42px)',
-              fontWeight: 600,
-              lineHeight: 1.3,
-              marginBottom: 16,
-              letterSpacing: '-0.02em',
+              fontSize: 'clamp(30px, 5vw, 48px)',
+              fontWeight: 700,
+              lineHeight: 1.22,
+              marginBottom: 18,
+              letterSpacing: '-0.04em',
             }}
           >
-            你写完的代码没人用？
+            不要把一句模糊想法
             <br />
-            <span style={{ color: 'var(--color-primary)' }}>
-              可能是你从来没想清楚这 3 个问题
-            </span>
+            直接丢给 AI 写代码
           </h1>
 
           <p
             style={{
               fontSize: 16,
               color: 'var(--color-text-secondary)',
-              lineHeight: 1.8,
-              marginBottom: 40,
+              lineHeight: 1.9,
+              margin: '0 auto 36px',
+              maxWidth: 680,
             }}
           >
-            Vibe coding 让写代码变得极其容易，但写出来的东西往往没有清晰用户、
-            没有真实痛点、功能堆砌。
-            <br />
-            VibePilot 不是让 AI 替你填表——它帮你
-            <strong style={{ color: 'var(--color-text)' }}>
-              真正学会产品思维
-            </strong>
-            。
+            VibePilot 帮你从产品、业务、技术三个角度完成前期构思：AI 主动推断你不知道的技术架构、数据结构、MVP 范围和验收标准，最后生成可直接交给 Codex / Claude Code / Cursor 的 Development Prompt。
           </p>
 
           <button
             className="vp-btn-cta"
             onClick={() => navigate('/new', { state: { fromHome: true } })}
           >
-            开始训练产品思维
+            开始 AI 辅助构思
             <ArrowRight size={18} />
           </button>
 
@@ -120,18 +115,18 @@ export default function LandingPage() {
           >
             <ValueCard
               icon={<Target size={18} />}
-              title="先想清楚"
-              desc="10 步引导问答，从目标用户到验收标准，不跳过任何一个关键问题"
+              title="先做产品理解"
+              desc="从一句话定义、目标用户、场景、痛点和替代方案开始，避免为了功能而功能。"
             />
             <ValueCard
-              icon={<Lightbulb size={18} />}
-              title="AI 当教练"
-              desc="AI 不替你写答案，而是评价你的思考、追问盲点、展示好坏对比"
+              icon={<Layers3 size={18} />}
+              title="AI 补全专业判断"
+              desc="技术架构、数据库、数据流、AI API、认证、文件上传由 AI 推荐，你负责确认。"
             />
             <ValueCard
-              icon={<ArrowRight size={18} />}
-              title="直接可用"
-              desc="思考完成后，自动生成可交给 Cursor / Claude Code 的开发提示词"
+              icon={<Code2 size={18} />}
+              title="交付开发提示词"
+              desc="最终输出 Product Brief、MVP Scope、Technical Architecture、Data Structure 和 Development Prompt。"
             />
           </div>
         </div>
@@ -166,8 +161,8 @@ function ValueCard({
       >
         {icon}
       </div>
-      <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{title}</h3>
-      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+      <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 6 }}>{title}</h3>
+      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
         {desc}
       </p>
     </div>

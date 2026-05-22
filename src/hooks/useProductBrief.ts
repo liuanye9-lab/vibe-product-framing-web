@@ -1,5 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { ProductBrief, StepData } from '../types';
+import type {
+  AiSuggestion,
+  BusinessFramingState,
+  CopilotStages,
+  FinalHandoff,
+  FramingStage,
+  IdeaInputState,
+  MvpScopeState,
+  ProductBrief,
+  ProductFramingState,
+  StepData,
+  SuggestionKey,
+  TechnicalPlanningState,
+} from '../types';
 import { STEP_KEYS } from '../data/steps';
 
 const STORAGE_KEY = 'vibepilot_briefs';
@@ -15,32 +28,109 @@ function createEmptyStep(): StepData {
   };
 }
 
-function createEmptyBrief(id: string, rawIdea: string): ProductBrief {
+function createLegacySteps(): Record<string, StepData> {
   const steps: Record<string, StepData> = {};
   STEP_KEYS.forEach((k) => {
     steps[k] = createEmptyStep();
   });
+  return steps;
+}
+
+function createEmptyStages(): CopilotStages {
   return {
-    id,
-    createdAt: new Date().toISOString(),
-    rawIdea,
-    steps,
-    developmentPrompt: '',
+    product: {},
+    business: {},
+    technical: {},
+    mvp: {},
   };
 }
 
-function normalizeBrief(brief: Partial<ProductBrief> & { id?: string; rawIdea?: string }): ProductBrief {
-  const normalized = createEmptyBrief(brief.id || `pb-${Date.now()}`, brief.rawIdea || '');
+function suggestion<T>(value: T, reason = '由已有输入推断生成，可继续编辑。'): AiSuggestion<T> {
+  return {
+    value,
+    reason,
+    risks: [],
+    alternatives: [],
+    accepted: false,
+    editedByUser: false,
+  };
+}
+
+function createEmptyBrief(id: string, ideaInput: IdeaInputState | string): ProductBrief {
+  const input: IdeaInputState = typeof ideaInput === 'string' ? { rawIdea: ideaInput } : ideaInput;
+  const now = new Date().toISOString();
+  return {
+    id,
+    createdAt: now,
+    updatedAt: now,
+    rawIdea: input.rawIdea,
+    ideaInput: input,
+    stages: createEmptyStages(),
+    developmentPrompt: '',
+    steps: createLegacySteps(),
+  };
+}
+
+function migrateLegacySteps(brief: Partial<ProductBrief>): CopilotStages {
+  const stages = createEmptyStages();
+  const steps = brief.steps || {};
+
+  const getAnswer = (key: string) => steps[key]?.userAnswer || '';
+  const getReason = (key: string) => steps[key]?.aiEvaluation || '从旧版问卷答案迁移。';
+
+  const targetUser = getAnswer('targetUser');
+  if (targetUser) stages.product.targetUser = suggestion(targetUser, getReason('targetUser'));
+  const scenario = getAnswer('scenario');
+  if (scenario) stages.product.scenario = suggestion(scenario, getReason('scenario'));
+  const painPoint = getAnswer('painPoint');
+  if (painPoint) stages.product.corePainPoint = suggestion(painPoint, getReason('painPoint'));
+  const alternatives = getAnswer('alternatives');
+  if (alternatives) stages.product.alternatives = suggestion([alternatives], getReason('alternatives'));
+  const aiValue = getAnswer('aiValue');
+  if (aiValue) stages.product.aiValue = suggestion(aiValue, getReason('aiValue'));
+
+  const techStack = getAnswer('techStack');
+  if (techStack) stages.technical.frontend = suggestion(techStack, getReason('techStack'));
+  const dataStructure = getAnswer('dataStructure');
+  if (dataStructure) stages.technical.dataFlow = suggestion(dataStructure, getReason('dataStructure'));
+
+  const mvpScope = getAnswer('mvpScope');
+  if (mvpScope) stages.mvp.mustHave = suggestion([mvpScope], getReason('mvpScope'));
+  const outOfScope = getAnswer('outOfScope');
+  if (outOfScope) stages.mvp.outOfScope = suggestion([outOfScope], getReason('outOfScope'));
+
+  return stages;
+}
+
+export function normalizeBrief(brief: Partial<ProductBrief> & { id?: string; rawIdea?: string }): ProductBrief {
+  const ideaInput: IdeaInputState = {
+    rawIdea: brief.ideaInput?.rawIdea || brief.rawIdea || '',
+    targetUser: brief.ideaInput?.targetUser,
+    scenario: brief.ideaInput?.scenario,
+    problem: brief.ideaInput?.problem,
+    projectType: brief.ideaInput?.projectType,
+  };
+  const normalized = createEmptyBrief(brief.id || `pb-${Date.now()}`, ideaInput);
   normalized.createdAt = brief.createdAt || normalized.createdAt;
-  normalized.developmentPrompt = brief.developmentPrompt || '';
+  normalized.updatedAt = brief.updatedAt || normalized.createdAt;
+  normalized.developmentPrompt = brief.developmentPrompt || brief.finalHandoff?.developmentPrompt || '';
+  normalized.finalHandoff = brief.finalHandoff;
 
   const sourceSteps = brief.steps || {};
   STEP_KEYS.forEach((key) => {
-    normalized.steps[key] = {
+    normalized.steps![key] = {
       ...createEmptyStep(),
       ...(sourceSteps as Record<string, Partial<StepData> | undefined>)[key],
     };
   });
+
+  const migratedStages = migrateLegacySteps(brief);
+  normalized.stages = {
+    product: { ...migratedStages.product, ...(brief.stages?.product || {}) },
+    business: { ...migratedStages.business, ...(brief.stages?.business || {}) },
+    technical: { ...migratedStages.technical, ...(brief.stages?.technical || {}) },
+    mvp: { ...migratedStages.mvp, ...(brief.stages?.mvp || {}) },
+  };
 
   return normalized;
 }
@@ -56,40 +146,93 @@ export function useProductBrief(id?: string) {
       if (found) {
         setBrief(normalizeBrief(found));
       } else {
-        setBrief(createEmptyBrief(id, ''));
+        setBrief(createEmptyBrief(id, { rawIdea: '' }));
       }
     }
     setLoading(false);
   }, [id]);
 
   const save = useCallback((updated: ProductBrief) => {
-    setBrief(updated);
+    const normalized = normalizeBrief({ ...updated, updatedAt: new Date().toISOString() });
+    setBrief(normalized);
     const all = loadAll();
-    const idx = all.findIndex((b) => b.id === updated.id);
+    const idx = all.findIndex((b) => b.id === normalized.id);
     if (idx >= 0) {
-      all[idx] = updated;
+      all[idx] = normalized;
     } else {
-      all.push(updated);
+      all.push(normalized);
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
   }, []);
 
-  const initBrief = useCallback((rawIdea: string): ProductBrief => {
+  const initBrief = useCallback((ideaInput: IdeaInputState | string): ProductBrief => {
     const newId = `pb-${Date.now()}`;
-    const newBrief = normalizeBrief(createEmptyBrief(newId, rawIdea));
+    const newBrief = createEmptyBrief(newId, ideaInput);
     save(newBrief);
     localStorage.setItem(CURRENT_KEY, newId);
     return newBrief;
   }, [save]);
 
+  const updateIdeaInput = useCallback((input: Partial<IdeaInputState>) => {
+    if (!brief) return;
+    const ideaInput = { ...brief.ideaInput, ...input };
+    save({ ...brief, rawIdea: ideaInput.rawIdea, ideaInput });
+  }, [brief, save]);
+
+  const updateStage = useCallback(<T extends ProductFramingState | BusinessFramingState | TechnicalPlanningState | MvpScopeState>(
+    stage: FramingStage,
+    data: Partial<T>
+  ) => {
+    if (!brief) return;
+    save({
+      ...brief,
+      stages: {
+        ...brief.stages,
+        [stage]: {
+          ...brief.stages[stage],
+          ...data,
+        },
+      },
+    });
+  }, [brief, save]);
+
+  const updateSuggestion = useCallback((stage: FramingStage, key: SuggestionKey, data: Partial<AiSuggestion>) => {
+    if (!brief) return;
+    const currentStage = brief.stages[stage] as Record<string, AiSuggestion | undefined>;
+    const current = currentStage[key] || suggestion('');
+    save({
+      ...brief,
+      stages: {
+        ...brief.stages,
+        [stage]: {
+          ...currentStage,
+          [key]: {
+            ...current,
+            ...data,
+          },
+        },
+      },
+    });
+  }, [brief, save]);
+
+  const saveFinalHandoff = useCallback((finalHandoff: FinalHandoff) => {
+    if (!brief) return;
+    save({
+      ...brief,
+      finalHandoff,
+      developmentPrompt: finalHandoff.developmentPrompt,
+    });
+  }, [brief, save]);
+
   const updateStep = useCallback(
     (stepKey: string, data: Partial<StepData>) => {
       if (!brief) return;
+      const steps = brief.steps || createLegacySteps();
       const updated = {
         ...brief,
         steps: {
-          ...brief.steps,
-          [stepKey]: { ...brief.steps[stepKey], ...data },
+          ...steps,
+          [stepKey]: { ...steps[stepKey], ...data },
         },
       };
       save(updated);
@@ -97,7 +240,7 @@ export function useProductBrief(id?: string) {
     [brief, save]
   );
 
-  return { brief, loading, save, initBrief, updateStep };
+  return { brief, loading, save, initBrief, updateIdeaInput, updateStage, updateSuggestion, saveFinalHandoff, updateStep };
 }
 
 function loadAll(): ProductBrief[] {
