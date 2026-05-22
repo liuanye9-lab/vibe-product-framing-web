@@ -62,10 +62,10 @@ export default function DeveloperHandoffPage() {
   return (
     <StageLayout
       title="Developer Handoff / 开发交付"
-      subtitle="最终内容不再是原始答案整理，而是 AI 二次优化后的 Product Brief、技术方案、数据结构、验收标准和可直接复制的 Development Prompt。"
-      current={5}
+      subtitle="最终内容会整合需求洞察、产品定义、业务 ROI、技术翻译、MVP 范围、盲点审查和验收标准，生成可直接交给 AI 编程工具的开发 Prompt。"
+      current={7}
       briefId={brief.id}
-      previousPath={`/scope/${brief.id}`}
+      previousPath={`/blind-spot/${brief.id}`}
       aside={<Aside generating={generating} onGenerate={generate} onDownload={download} hasHandoff={Boolean(handoff)} />}
     >
       {generating && !handoff && (
@@ -98,7 +98,7 @@ function Aside({ generating, onGenerate, onDownload, hasHandoff }: { generating:
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>交付操作</h3>
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
-        Development Prompt 可以直接交给 Codex / Claude Code / Cursor。
+        Development Prompt 包含 14 个部分，可直接交给 Codex / Claude Code / Cursor。
       </p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button className="vp-btn vp-btn-primary" onClick={onGenerate} disabled={generating}>

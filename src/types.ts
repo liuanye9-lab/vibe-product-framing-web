@@ -1,10 +1,44 @@
-export type SuggestionValue = string | string[];
+export type SuggestionValue = string | string[] | number | boolean;
 
 export type ProjectType = 'Web App' | 'AI Agent' | 'SaaS' | 'Portfolio' | 'Other';
 
-export type FramingStage = 'product' | 'business' | 'technical' | 'mvp';
+export type CopilotMode = 'beginner' | 'builder' | 'review';
+
+export type FramingStage = 'discovery' | 'product' | 'business' | 'technical' | 'mvp' | 'blindSpot';
+
+export type GlossaryKey =
+  | 'mvp'
+  | 'mockStrategy'
+  | 'dataStructure'
+  | 'dataFlow'
+  | 'backend'
+  | 'database'
+  | 'auth'
+  | 'aiApi'
+  | 'acceptanceCriteria'
+  | 'valueHypothesis'
+  | 'roi'
+  | 'outOfScope'
+  | 'scopeCreep';
+
+export interface GlossaryItem {
+  key: GlossaryKey;
+  plainName: string;
+  expertName: string;
+  simpleExplanation: string;
+  whyItMatters: string;
+  example: string;
+  beginnerAction: string;
+}
 
 export type SuggestionKey =
+  | 'targetUserEvidence'
+  | 'painFrequency'
+  | 'currentAlternative'
+  | 'consequenceIfUnsolved'
+  | 'demandEvidence'
+  | 'falsificationEvidence'
+  | 'smallestValidationAction'
   | 'productOneLiner'
   | 'targetUser'
   | 'scenario'
@@ -17,6 +51,14 @@ export type SuggestionKey =
   | 'metrics'
   | 'monetization'
   | 'risksAndBlindSpots'
+  | 'userBenefitScore'
+  | 'ownerBenefitScore'
+  | 'developmentCostScore'
+  | 'maintenanceCostScore'
+  | 'aiCostRisk'
+  | 'userSwitchingCost'
+  | 'roiJudgement'
+  | 'reason'
   | 'frontend'
   | 'backend'
   | 'database'
@@ -25,13 +67,23 @@ export type SuggestionKey =
   | 'fileUpload'
   | 'dataFlow'
   | 'mockStrategy'
+  | 'mockableParts'
+  | 'mockDataExample'
+  | 'realApiTrigger'
+  | 'mockFailureFallback'
   | 'architectureUpgrade'
   | 'mustHave'
   | 'shouldHave'
   | 'outOfScope'
   | 'v2Later'
   | 'minimumLoop'
-  | 'scopeRisks';
+  | 'scopeRisks'
+  | 'demandRisk'
+  | 'businessRisk'
+  | 'technicalRisk'
+  | 'scopeRisk'
+  | 'whatWouldProveWrong'
+  | 'recommendedAdjustment';
 
 export interface AiSuggestion<T = SuggestionValue> {
   value: T;
@@ -50,6 +102,16 @@ export interface IdeaInputState {
   projectType?: ProjectType;
 }
 
+export interface DemandDiscoveryState {
+  targetUserEvidence?: AiSuggestion<string>;
+  painFrequency?: AiSuggestion<string>;
+  currentAlternative?: AiSuggestion<string>;
+  consequenceIfUnsolved?: AiSuggestion<string>;
+  demandEvidence?: AiSuggestion<string[]>;
+  falsificationEvidence?: AiSuggestion<string[]>;
+  smallestValidationAction?: AiSuggestion<string>;
+}
+
 export interface ProductFramingState {
   productOneLiner?: AiSuggestion<string>;
   targetUser?: AiSuggestion<string>;
@@ -59,6 +121,17 @@ export interface ProductFramingState {
   aiValue?: AiSuggestion<string>;
 }
 
+export interface BusinessRoi {
+  userBenefitScore?: AiSuggestion<number>;
+  ownerBenefitScore?: AiSuggestion<number>;
+  developmentCostScore?: AiSuggestion<number>;
+  maintenanceCostScore?: AiSuggestion<number>;
+  aiCostRisk?: AiSuggestion<string>;
+  userSwitchingCost?: AiSuggestion<string>;
+  roiJudgement?: AiSuggestion<'positive' | 'uncertain' | 'negative'>;
+  reason?: AiSuggestion<string>;
+}
+
 export interface BusinessFramingState {
   userValue?: AiSuggestion<string>;
   ownerValue?: AiSuggestion<string>;
@@ -66,6 +139,16 @@ export interface BusinessFramingState {
   metrics?: AiSuggestion<string[]>;
   monetization?: AiSuggestion<string>;
   risksAndBlindSpots?: AiSuggestion<string[]>;
+  roi?: BusinessRoi;
+}
+
+export interface TechnicalTranslation {
+  userNeed: string;
+  requiredCapability: string;
+  v1Implementation: string;
+  whyThisIsEnough: string;
+  upgradeCondition: string;
+  risks?: string[];
 }
 
 export interface TechnicalPlanningState {
@@ -77,7 +160,12 @@ export interface TechnicalPlanningState {
   fileUpload?: AiSuggestion<string>;
   dataFlow?: AiSuggestion<string>;
   mockStrategy?: AiSuggestion<string>;
+  mockableParts?: AiSuggestion<string[]>;
+  mockDataExample?: AiSuggestion<string>;
+  realApiTrigger?: AiSuggestion<string>;
+  mockFailureFallback?: AiSuggestion<string>;
   architectureUpgrade?: AiSuggestion<string>;
+  translations?: TechnicalTranslation[];
 }
 
 export interface MvpScopeState {
@@ -90,6 +178,15 @@ export interface MvpScopeState {
   scopeCreepWarning?: string;
 }
 
+export interface BlindSpotReviewState {
+  demandRisk?: AiSuggestion<string[]>;
+  businessRisk?: AiSuggestion<string[]>;
+  technicalRisk?: AiSuggestion<string[]>;
+  scopeRisk?: AiSuggestion<string[]>;
+  whatWouldProveWrong?: AiSuggestion<string[]>;
+  recommendedAdjustment?: AiSuggestion<string[]>;
+}
+
 export interface FinalHandoff {
   productBrief: string;
   mvpScope: string;
@@ -100,10 +197,12 @@ export interface FinalHandoff {
 }
 
 export interface CopilotStages {
+  discovery: DemandDiscoveryState;
   product: ProductFramingState;
   business: BusinessFramingState;
   technical: TechnicalPlanningState;
   mvp: MvpScopeState;
+  blindSpot: BlindSpotReviewState;
 }
 
 export interface ProductBrief {
@@ -112,6 +211,7 @@ export interface ProductBrief {
   updatedAt: string;
   rawIdea: string;
   ideaInput: IdeaInputState;
+  mode: CopilotMode;
   stages: CopilotStages;
   finalHandoff?: FinalHandoff;
   developmentPrompt: string;

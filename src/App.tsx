@@ -2,10 +2,12 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Component, type ReactNode } from 'react';
 import LandingPage from './pages/LandingPage';
 import NewIdeaPage from './pages/NewIdeaPage';
+import DemandDiscoveryPage from './pages/DemandDiscoveryPage';
 import ProductFramingPage from './pages/ProductFramingPage';
 import BusinessFramingPage from './pages/BusinessFramingPage';
 import TechnicalPlanningPage from './pages/TechnicalPlanningPage';
 import MvpScopePage from './pages/MvpScopePage';
+import BlindSpotReviewPage from './pages/BlindSpotReviewPage';
 import DeveloperHandoffPage from './pages/DeveloperHandoffPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
@@ -87,10 +89,12 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/new" element={<NewIdeaPage />} />
+          <Route path="/discovery/:id" element={<DemandDiscoveryPage />} />
           <Route path="/product/:id" element={<ProductFramingPage />} />
           <Route path="/business/:id" element={<BusinessFramingPage />} />
           <Route path="/technical/:id" element={<TechnicalPlanningPage />} />
           <Route path="/scope/:id" element={<MvpScopePage />} />
+          <Route path="/blind-spot/:id" element={<BlindSpotReviewPage />} />
           <Route path="/handoff/:id" element={<DeveloperHandoffPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />

@@ -6,15 +6,15 @@ import SuggestionCard from '../components/SuggestionCard';
 import ScopeCreepWarning from '../components/ScopeCreepWarning';
 import { detectScopeCreep, explainSuggestion, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
-import type { AiSuggestion, MvpScopeState, SuggestionKey } from '../types';
+import type { AiSuggestion, GlossaryKey, MvpScopeState, SuggestionKey } from '../types';
 
-const FIELDS: Array<{ key: keyof MvpScopeState; title: string; desc: string }> = [
-  { key: 'mustHave', title: 'Must Have', desc: 'V1 没有这些就无法完成核心闭环。' },
+const FIELDS: Array<{ key: keyof MvpScopeState; title: string; desc: string; glossaryKey?: GlossaryKey }> = [
+  { key: 'mustHave', title: 'Must Have', desc: 'V1 没有这些就无法完成核心闭环。', glossaryKey: 'mvp' },
   { key: 'shouldHave', title: 'Should Have', desc: '有了更好，但不阻塞第一版。' },
-  { key: 'outOfScope', title: 'Out of Scope', desc: '第一版明确不做，防止范围失控。' },
+  { key: 'outOfScope', title: 'Out of Scope', desc: '第一版明确不做，防止范围失控。', glossaryKey: 'outOfScope' },
   { key: 'v2Later', title: 'V2 Later', desc: '后续可验证后再做的能力。' },
-  { key: 'minimumLoop', title: '最小闭环', desc: '用户从进入产品到得到结果的最短完整路径。' },
-  { key: 'scopeRisks', title: '范围膨胀风险', desc: '哪些想法会把 V1 做成大平台。' },
+  { key: 'minimumLoop', title: '最小闭环', desc: '用户从进入产品到得到结果的最短完整路径。', glossaryKey: 'mvp' },
+  { key: 'scopeRisks', title: '范围膨胀风险', desc: '哪些想法会把 V1 做成大平台。', glossaryKey: 'scopeCreep' },
 ];
 
 export default function MvpScopePage() {
@@ -44,13 +44,13 @@ export default function MvpScopePage() {
 
   return (
     <StageLayout
-      title="MVP Scope / 范围收敛"
+      title="MVP Compression / MVP 压缩"
       subtitle="AI 会把“大而全”的想法压缩成一个可开发、可验收、可演示的 V1 闭环。"
-      current={4}
+      current={5}
       briefId={brief.id}
       previousPath={`/technical/${brief.id}`}
-      nextPath={`/handoff/${brief.id}`}
-      nextLabel="生成开发交付"
+      nextPath={`/blind-spot/${brief.id}`}
+      nextLabel="进入盲点审查"
       aside={<Aside generating={generating} onGenerate={generate} />}
     >
       <ScopeCreepWarning terms={creepTerms} warning={brief.stages.mvp.scopeCreepWarning} />
@@ -59,6 +59,8 @@ export default function MvpScopePage() {
           key={field.key}
           title={field.title}
           description={field.desc}
+          glossaryKey={field.glossaryKey}
+          showGlossaryByDefault={brief.mode === 'beginner' && Boolean(field.glossaryKey)}
           suggestion={brief.stages.mvp[field.key] as AiSuggestion | undefined}
           regenerating={generating}
           onAccept={() => updateSuggestion('mvp', field.key as SuggestionKey, { accepted: true })}

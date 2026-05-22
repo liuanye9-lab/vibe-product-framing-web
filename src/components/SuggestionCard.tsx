@@ -1,6 +1,7 @@
 import { Check, HelpCircle, Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
-import type { AiSuggestion, SuggestionValue } from '../types';
+import type { AiSuggestion, GlossaryKey, SuggestionValue } from '../types';
+import GlossaryHelp from './GlossaryHelp';
 
 interface SuggestionCardProps<T extends SuggestionValue = SuggestionValue> {
   title: string;
@@ -11,6 +12,8 @@ interface SuggestionCardProps<T extends SuggestionValue = SuggestionValue> {
   onRegenerate?: () => void;
   onExplain?: () => Promise<string>;
   regenerating?: boolean;
+  glossaryKey?: GlossaryKey;
+  showGlossaryByDefault?: boolean;
 }
 
 function valueToText(value: SuggestionValue | undefined): string {
@@ -34,6 +37,8 @@ export default function SuggestionCard<T extends SuggestionValue = SuggestionVal
   onRegenerate,
   onExplain,
   regenerating,
+  glossaryKey,
+  showGlossaryByDefault,
 }: SuggestionCardProps<T>) {
   const [explanation, setExplanation] = useState('');
   const [explaining, setExplaining] = useState(false);
@@ -56,6 +61,7 @@ export default function SuggestionCard<T extends SuggestionValue = SuggestionVal
         <div>
           <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>{title}</h3>
           {description && <p style={{ fontSize: 12, color: 'var(--color-text-hint)', lineHeight: 1.6 }}>{description}</p>}
+          <GlossaryHelp glossaryKey={glossaryKey} defaultOpen={showGlossaryByDefault} />
         </div>
         {suggestion?.accepted && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-success)' }}>

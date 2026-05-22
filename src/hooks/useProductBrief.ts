@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import type {
   AiSuggestion,
   BusinessFramingState,
+  CopilotMode,
   CopilotStages,
+  DemandDiscoveryState,
   FinalHandoff,
   FramingStage,
   IdeaInputState,
@@ -12,6 +14,7 @@ import type {
   StepData,
   SuggestionKey,
   TechnicalPlanningState,
+  BlindSpotReviewState,
 } from '../types';
 import { STEP_KEYS } from '../data/steps';
 
@@ -38,10 +41,12 @@ function createLegacySteps(): Record<string, StepData> {
 
 function createEmptyStages(): CopilotStages {
   return {
+    discovery: {},
     product: {},
     business: {},
     technical: {},
     mvp: {},
+    blindSpot: {},
   };
 }
 
@@ -56,7 +61,7 @@ function suggestion<T>(value: T, reason = '由已有输入推断生成，可继�
   };
 }
 
-function createEmptyBrief(id: string, ideaInput: IdeaInputState | string): ProductBrief {
+function createEmptyBrief(id: string, ideaInput: IdeaInputState | string, mode: CopilotMode = 'beginner'): ProductBrief {
   const input: IdeaInputState = typeof ideaInput === 'string' ? { rawIdea: ideaInput } : ideaInput;
   const now = new Date().toISOString();
   return {
@@ -65,6 +70,7 @@ function createEmptyBrief(id: string, ideaInput: IdeaInputState | string): Produ
     updatedAt: now,
     rawIdea: input.rawIdea,
     ideaInput: input,
+    mode,
     stages: createEmptyStages(),
     developmentPrompt: '',
     steps: createLegacySteps(),
@@ -110,7 +116,7 @@ export function normalizeBrief(brief: Partial<ProductBrief> & { id?: string; raw
     problem: brief.ideaInput?.problem,
     projectType: brief.ideaInput?.projectType,
   };
-  const normalized = createEmptyBrief(brief.id || `pb-${Date.now()}`, ideaInput);
+  const normalized = createEmptyBrief(brief.id || `pb-${Date.now()}`, ideaInput, brief.mode || 'beginner');
   normalized.createdAt = brief.createdAt || normalized.createdAt;
   normalized.updatedAt = brief.updatedAt || normalized.createdAt;
   normalized.developmentPrompt = brief.developmentPrompt || brief.finalHandoff?.developmentPrompt || '';
@@ -126,10 +132,12 @@ export function normalizeBrief(brief: Partial<ProductBrief> & { id?: string; raw
 
   const migratedStages = migrateLegacySteps(brief);
   normalized.stages = {
+    discovery: { ...(brief.stages?.discovery || {}) },
     product: { ...migratedStages.product, ...(brief.stages?.product || {}) },
     business: { ...migratedStages.business, ...(brief.stages?.business || {}) },
     technical: { ...migratedStages.technical, ...(brief.stages?.technical || {}) },
     mvp: { ...migratedStages.mvp, ...(brief.stages?.mvp || {}) },
+    blindSpot: { ...(brief.stages?.blindSpot || {}) },
   };
 
   return normalized;
@@ -165,9 +173,9 @@ export function useProductBrief(id?: string) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
   }, []);
 
-  const initBrief = useCallback((ideaInput: IdeaInputState | string): ProductBrief => {
+  const initBrief = useCallback((ideaInput: IdeaInputState | string, mode: CopilotMode = 'beginner'): ProductBrief => {
     const newId = `pb-${Date.now()}`;
-    const newBrief = createEmptyBrief(newId, ideaInput);
+    const newBrief = createEmptyBrief(newId, ideaInput, mode);
     save(newBrief);
     localStorage.setItem(CURRENT_KEY, newId);
     return newBrief;
@@ -179,7 +187,7 @@ export function useProductBrief(id?: string) {
     save({ ...brief, rawIdea: ideaInput.rawIdea, ideaInput });
   }, [brief, save]);
 
-  const updateStage = useCallback(<T extends ProductFramingState | BusinessFramingState | TechnicalPlanningState | MvpScopeState>(
+  const updateStage = useCallback(<T extends DemandDiscoveryState | ProductFramingState | BusinessFramingState | TechnicalPlanningState | MvpScopeState | BlindSpotReviewState>(
     stage: FramingStage,
     data: Partial<T>
   ) => {

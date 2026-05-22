@@ -4,12 +4,13 @@ import { ArrowRight, Home, Sparkles } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import { evaluateIdea } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
-import type { EvaluateIdeaResult, IdeaInputState, ProjectType } from '../types';
+import type { CopilotMode, EvaluateIdeaResult, IdeaInputState, ProjectType } from '../types';
 
 const PROJECT_TYPES: ProjectType[] = ['Web App', 'AI Agent', 'SaaS', 'Portfolio', 'Other'];
 
 export default function NewIdeaPage() {
   const [input, setInput] = useState<IdeaInputState>({ rawIdea: '', projectType: 'Web App' });
+  const [mode, setMode] = useState<CopilotMode>('beginner');
   const [evaluation, setEvaluation] = useState<EvaluateIdeaResult | null>(null);
   const { initBrief } = useProductBrief();
   const navigate = useNavigate();
@@ -40,8 +41,8 @@ export default function NewIdeaPage() {
 
   const handleSubmit = () => {
     if (!input.rawIdea.trim()) return;
-    const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() });
-    navigate(`/product/${brief.id}`);
+    const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() }, mode);
+    navigate(`/discovery/${brief.id}`);
   };
 
   const setField = <K extends keyof IdeaInputState>(key: K, value: IdeaInputState[K]) => {
@@ -58,6 +59,15 @@ export default function NewIdeaPage() {
       nextDisabled={!input.rawIdea.trim()}
       aside={<IdeaScore evaluation={evaluation} />}
     >
+      <div className="vp-card" style={{ marginBottom: 18 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>选择模式</label>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          <ModeButton active={mode === 'beginner'} title="Beginner" desc="解释更多术语" onClick={() => setMode('beginner')} />
+          <ModeButton active={mode === 'builder'} title="Builder" desc="更快生成交付" onClick={() => setMode('builder')} />
+          <ModeButton active={mode === 'review'} title="Review" desc="直接审查风险" onClick={() => setMode('review')} />
+        </div>
+      </div>
+
       <div className="vp-card" style={{ marginBottom: 18 }}>
         <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>我想做什么 *</label>
         <textarea
@@ -98,6 +108,20 @@ export default function NewIdeaPage() {
         </div>
       </div>
     </StageLayout>
+  );
+}
+
+function ModeButton({ active, title, desc, onClick }: { active: boolean; title: string; desc: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="vp-card"
+      onClick={onClick}
+      style={{ textAlign: 'left', borderColor: active ? 'var(--color-primary)' : 'var(--color-border)', background: active ? 'var(--color-primary-light)' : undefined }}
+    >
+      <span style={{ display: 'block', fontSize: 13, fontWeight: 650, marginBottom: 4 }}>{title} Mode</span>
+      <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>{desc}</span>
+    </button>
   );
 }
 

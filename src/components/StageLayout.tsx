@@ -4,10 +4,12 @@ import type { ReactNode } from 'react';
 
 const STAGES = [
   { label: 'Idea', path: 'new' },
+  { label: 'Demand', path: 'discovery' },
   { label: 'Product', path: 'product' },
   { label: 'Business', path: 'business' },
   { label: 'Technical', path: 'technical' },
   { label: 'MVP', path: 'scope' },
+  { label: 'Review', path: 'blind-spot' },
   { label: 'Handoff', path: 'handoff' },
 ];
 

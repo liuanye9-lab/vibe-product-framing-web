@@ -2,6 +2,7 @@ import type {
   AiSuggestion,
   BusinessFramingState,
   CopilotStages,
+  DemandDiscoveryState,
   EvaluateIdeaResult,
   FinalHandoff,
   FramingStage,
@@ -9,6 +10,7 @@ import type {
   MvpScopeState,
   ProductBrief,
   ProductFramingState,
+  BlindSpotReviewState,
   StepData,
   SuggestionValue,
   TechnicalPlanningState,
@@ -541,11 +543,14 @@ function acceptedText(value: AiSuggestion | undefined): string {
 
 function buildBriefContext(brief: ProductBrief): string {
   return JSON.stringify({
+    mode: brief.mode,
     ideaInput: brief.ideaInput,
+    discovery: brief.stages.discovery,
     product: brief.stages.product,
     business: brief.stages.business,
     technical: brief.stages.technical,
     mvp: brief.stages.mvp,
+    blindSpot: brief.stages.blindSpot,
   }, null, 2);
 }
 
@@ -608,6 +613,21 @@ export async function evaluateIdea(input: IdeaInputState): Promise<EvaluateIdeaR
   };
 }
 
+function mockDemandDiscoverySuggestions(brief: ProductBrief): DemandDiscoveryState {
+  const targetUser = brief.ideaInput.targetUser || '准备使用 AI 编程工具做第一个产品的新手';
+  const scenario = brief.ideaInput.scenario || '准备把一个模糊想法交给 Cursor / Claude Code / Codex 开发前';
+  const problem = brief.ideaInput.problem || '不知道这个需求是否真实，也不知道如何验证';
+  return {
+    targetUserEvidence: makeSuggestion(`${targetUser} 可能真的有这个问题，因为他们在 ${scenario} 时，通常缺少产品、业务、技术三方面的判断框架。`, '需求洞察先判断“谁真的痛”，避免只因为自己觉得酷就开工。'),
+    painFrequency: makeSuggestion('中频偏高：每当用户准备启动一个新 vibe coding 项目时都会遇到，尤其是第一个项目和复杂 AI 工具项目。', '频率越高，用户越可能愿意使用专门工具。'),
+    currentAlternative: makeSuggestion('当前替代方案通常是直接问 ChatGPT、自己写 PRD、参考竞品页面，或者直接让 AI 编程工具开写。', '替代方案说明用户并非没有办法，本产品必须比替代方案更结构化。'),
+    consequenceIfUnsolved: makeSuggestion(`如果不解决，用户容易在“${problem}”上反复返工，最终写出页面但产品逻辑不成立。`, '后果越明确，需求越值得验证。'),
+    demandEvidence: makeSuggestion(['用户会主动搜索 prompt 模板、PRD 模板、vibe coding 教程', '新手常在开发后才发现目标用户和 MVP 不清楚', 'AI 编程工具输出质量高度依赖前置需求质量'], '这些是需求可能成立的弱证据，后续需要访谈或行为数据验证。'),
+    falsificationEvidence: makeSuggestion(['用户宁愿直接和通用大模型对话，不愿进入结构化流程', '用户觉得前期构思太慢，完成率很低', '生成的 Development Prompt 没有明显提升开发结果'], '提前写反证，能防止自嗨。'),
+    smallestValidationAction: makeSuggestion('找 5 个准备做 AI 产品的新手，让他们分别用“直接问 ChatGPT”和“使用 VibePilot 流程”生成开发 Prompt，对比完成率、清晰度和复制意愿。', '最小验证动作应该低成本、可观察，而不是先开发完整系统。'),
+  };
+}
+
 function mockProductSuggestions(brief: ProductBrief): ProductFramingState {
   const idea = brief.ideaInput.rawIdea || '这个产品想法';
   const targetUser = brief.ideaInput.targetUser || '准备使用 AI 编程工具做第一个产品的个人开发者或产品新手';
@@ -637,10 +657,21 @@ function mockBusinessSuggestions(brief: ProductBrief): BusinessFramingState {
     metrics: makeSuggestion(['完成一次构思流程的比例', '用户接受 AI 建议的比例', '最终复制 Development Prompt 的次数', '用户返回修改建议的次数'], '指标围绕核心闭环，而不是泛泛统计访问量。'),
     monetization: makeSuggestion('V1 不优先商业化；后续可基于高级模板、项目历史、多模型优化和团队协作收费。', '商业化需要建立在用户反复使用和产出质量稳定之后。'),
     risksAndBlindSpots: makeSuggestion(['用户可能仍然想跳过思考直接写代码', 'AI 建议如果太泛会变成另一个问卷', '技术规划需要避免过度工程化'], '业务风险主要来自行为习惯和输出质量。'),
+    roi: {
+      userBenefitScore: makeSuggestion(4, '用户能减少前期返工，收益比较明确。'),
+      ownerBenefitScore: makeSuggestion(4, '产品能沉淀一套可复用的新手构思流程。'),
+      developmentCostScore: makeSuggestion(2, 'V1 可以纯前端 + localStorage + AI proxy，不需要复杂后端。'),
+      maintenanceCostScore: makeSuggestion(2, '主要维护 prompt、mock fallback 和页面流程，成本可控。'),
+      aiCostRisk: makeSuggestion('中等：如果每页都调用大模型，成本会随使用次数增长；V1 应保留 mock fallback 和用户自定义 API。', 'AI 成本是这个产品的主要可变成本。'),
+      userSwitchingCost: makeSuggestion('低到中：用户不用迁移数据，只需要愿意在开发前多走一遍结构化流程。', '切换成本越低，越适合做 MVP 验证。'),
+      roiJudgement: makeSuggestion('positive', '收益清晰、开发成本较低，适合先做 MVP 验证。'),
+      reason: makeSuggestion('用户收益主要来自少返工和更清晰的 Development Prompt；技术实现可控，所以 ROI 初步偏正向。', '这里是新手版 ROI，不做复杂财务模型。'),
+    },
   };
 }
 
-function mockTechnicalSuggestions(): TechnicalPlanningState {
+function mockTechnicalSuggestions(brief?: ProductBrief): TechnicalPlanningState {
+  const targetUser = brief?.ideaInput.targetUser || '用户';
   return {
     frontend: makeSuggestion('V1 推荐单页 Web App，使用 React + Vite + TypeScript + CSS/Tailwind。', '构思流程适合表单、卡片、阶段导航和本地状态，SPA 足够验证闭环。', ['页面状态较多，需要做好数据归一化。'], ['Next.js 多页面应用', '纯对话式 Agent 界面']),
     backend: makeSuggestion('V1 本身不需要业务后端；只需要一个同源 AI Proxy 用于隐藏 API 调用和规避 CORS。', '用户配置自己的 API，但浏览器不应直接请求第三方接口。', ['代理需要部署平台支持 serverless function。'], ['完全本地 mock', 'Supabase Edge Function']),
@@ -649,8 +680,37 @@ function mockTechnicalSuggestions(): TechnicalPlanningState {
     auth: makeSuggestion('V1 不需要认证。', '单用户本地构思工具先降低使用门槛，账号系统会显著增加范围。', ['无法跨设备同步。'], ['后续接 Supabase Auth', '邮箱 magic link']),
     fileUpload: makeSuggestion('V1 不需要文件上传。', '当前输入主要是文字想法和用户确认，不需要处理文件内容。', ['无法直接读取 PRD 或截图。'], ['V2 支持上传 PRD/截图辅助分析']),
     dataFlow: makeSuggestion('输入 rawIdea → AI 生成 Product/Business/Technical/MVP 建议 → 用户接受或编辑 → Optimize 生成 Final Handoff → 复制/下载 Development Prompt。', '这个流转让 AI 承担专业补全，用户承担确认。'),
-    mockStrategy: makeSuggestion('无 API 配置或调用失败时，使用本地 mock suggestion 保证流程可跑通。', 'V1 演示不应被模型配置阻塞。'),
+    mockStrategy: makeSuggestion('Mock 策略 = 先用假数据或假 AI 返回结果，模拟真实功能。它的作用是先验证产品流程，不要一开始就接复杂 API 或数据库。', 'V1 演示不应被模型配置阻塞。'),
+    mockableParts: makeSuggestion(['AI 阶段建议', '输入诊断评分', '最终 Developer Handoff', '历史项目示例'], '这些部分都可以先用固定 JSON 模拟，保证流程可演示。'),
+    mockDataExample: makeSuggestion('{ "value": "V1 使用 localStorage 保存历史项目", "reason": "先验证个人本地使用", "risks": ["清缓存会丢失"] }', 'mock 数据要接近真实 API 返回结构，后续替换更容易。'),
+    realApiTrigger: makeSuggestion('当用户需要真实、多样、上下文相关的建议，并且 mock 输出无法覆盖不同项目时，再换真实 AI API。', '先验证流程，再增加模型成本。'),
+    mockFailureFallback: makeSuggestion('如果 mock 或 AI 失败，用户应看到可编辑的默认建议和“重新生成”按钮，而不是白屏。', '失败状态也是新手友好体验的一部分。'),
     architectureUpgrade: makeSuggestion('当需要跨设备历史、账号、团队协作、文件上传或付费时，再升级到 Supabase/PostgreSQL + Auth + Storage。', '把升级条件写清楚，可以防止 V1 过度工程化。'),
+    translations: [
+      {
+        userNeed: `${targetUser} 需要保存历史项目`,
+        requiredCapability: '数据持久化',
+        v1Implementation: 'localStorage',
+        whyThisIsEnough: 'V1 只验证个人本地使用，不需要跨设备同步。',
+        upgradeCondition: '当用户需要账号、跨设备同步、多项目管理时，再接 Supabase。',
+        risks: ['清理浏览器缓存会丢失历史项目'],
+      },
+      {
+        userNeed: '用户需要 AI 生成产品和技术建议',
+        requiredCapability: '大模型调用',
+        v1Implementation: '用户自定义 API + /api/ai-proxy + mock fallback',
+        whyThisIsEnough: '既能支持真实模型，也能在未配置模型时完整演示。',
+        upgradeCondition: '当需要统一计费、限流和审计时，再改成后端托管 API key。',
+        risks: ['不同模型响应格式可能不一致'],
+      },
+      {
+        userNeed: '用户需要理解技术词是什么意思',
+        requiredCapability: '新手解释层',
+        v1Implementation: '本地 glossary.ts + 这是什么入口',
+        whyThisIsEnough: '术语解释是稳定内容，不需要每次调用 AI。',
+        upgradeCondition: '当解释需要结合用户项目个性化展开时，再接 AI explain。',
+      },
+    ],
   };
 }
 
@@ -665,6 +725,17 @@ function mockMvpSuggestions(brief: ProductBrief): MvpScopeState {
     minimumLoop: makeSuggestion('用户输入一个模糊想法，AI 生成并解释关键产品/业务/技术/MVP 决策，用户确认后得到可复制的 Development Prompt。', '最小闭环必须能独立产生开发价值。'),
     scopeRisks: makeSuggestion(creep.length ? [`检测到范围膨胀词：${creep.join('、')}`, 'V1 建议压缩为一个核心闭环'] : ['当前范围可控，但仍需避免加入账号、团队和自动部署。'], '范围风险来自“想一次性做完整平台”的倾向。'),
     scopeCreepWarning: creep.length ? '当前想法有范围膨胀风险。V1 建议压缩为一个核心闭环。' : undefined,
+  };
+}
+
+function mockBlindSpotSuggestions(): BlindSpotReviewState {
+  return {
+    demandRisk: makeSuggestion(['目标用户可能没有强烈到愿意完成完整流程的痛点', '用户可能只想直接和通用大模型聊天，不想使用结构化工具'], '需求风险要从反证角度看。'),
+    businessRisk: makeSuggestion(['如果最终 Prompt 对开发结果提升不明显，用户不会复用', '如果流程太长，完成率可能偏低'], '业务风险来自收益感知和完成率。'),
+    technicalRisk: makeSuggestion(['不同 AI API 返回格式不统一', 'localStorage 数据可能因浏览器清理而丢失', '技术翻译如果太抽象，新手仍然看不懂'], '技术风险要关注 V1 是否稳定可演示。'),
+    scopeRisk: makeSuggestion(['模式、术语、需求洞察、ROI、盲点审查同时加入，页面可能过重', '如果继续加入团队协作或数据库，会偏离 V1'], '第一版仍要压缩信息密度。'),
+    whatWouldProveWrong: makeSuggestion(['5 个目标用户中少于 2 个愿意走完整流程', '用户复制最终 Prompt 后仍无法让 AI 编程工具正确开发', '用户认为术语解释没有帮助，仍需要人工讲解'], '这些信号能证明当前方案需要调整。'),
+    recommendedAdjustment: makeSuggestion(['Beginner Mode 默认展开关键术语，但不要强制读完', 'Review Mode 优先展示风险和反证', '最终 Prompt 保持结构化，避免营销化表达'], '调整建议要能直接影响下一轮产品设计。'),
   };
 }
 
@@ -690,18 +761,24 @@ function normalizeSuggestionMap<T extends Record<string, AiSuggestion | undefine
   return output;
 }
 
+export async function suggestStage(stage: 'discovery', brief: ProductBrief): Promise<DemandDiscoveryState>;
 export async function suggestStage(stage: 'product', brief: ProductBrief): Promise<ProductFramingState>;
 export async function suggestStage(stage: 'business', brief: ProductBrief): Promise<BusinessFramingState>;
 export async function suggestStage(stage: 'technical', brief: ProductBrief): Promise<TechnicalPlanningState>;
 export async function suggestStage(stage: 'mvp', brief: ProductBrief): Promise<MvpScopeState>;
+export async function suggestStage(stage: 'blindSpot', brief: ProductBrief): Promise<BlindSpotReviewState>;
 export async function suggestStage(stage: FramingStage, brief: ProductBrief): Promise<Partial<CopilotStages[FramingStage]>> {
-  const fallback = stage === 'product'
-    ? mockProductSuggestions(brief)
-    : stage === 'business'
-      ? mockBusinessSuggestions(brief)
-      : stage === 'technical'
-        ? mockTechnicalSuggestions()
-        : mockMvpSuggestions(brief);
+  const fallback = stage === 'discovery'
+    ? mockDemandDiscoverySuggestions(brief)
+    : stage === 'product'
+      ? mockProductSuggestions(brief)
+      : stage === 'business'
+        ? mockBusinessSuggestions(brief)
+        : stage === 'technical'
+          ? mockTechnicalSuggestions(brief)
+          : stage === 'blindSpot'
+            ? mockBlindSpotSuggestions()
+            : mockMvpSuggestions(brief);
 
   const ai = await callCopilotJson<Record<string, Partial<AiSuggestion>>>(
     `你是 AI 辅助的 Vibe Coding 产品前期构思 Copilot。请基于用户输入生成 ${stage} 阶段建议。
@@ -727,31 +804,48 @@ export async function explainSuggestion(section: string, brief: ProductBrief): P
 }
 
 function buildMockHandoff(brief: ProductBrief): FinalHandoff {
+  const discovery = brief.stages.discovery;
   const product = brief.stages.product;
   const business = brief.stages.business;
   const technical = brief.stages.technical;
   const mvp = brief.stages.mvp;
-  const productBrief = `产品定义：${acceptedText(product.productOneLiner) || brief.ideaInput.rawIdea}\n目标用户：${acceptedText(product.targetUser)}\n使用场景：${acceptedText(product.scenario)}\n核心痛点：${acceptedText(product.corePainPoint)}\nAI 介入价值：${acceptedText(product.aiValue)}`;
-  const mvpScope = `Must Have：${acceptedText(mvp.mustHave)}\nShould Have：${acceptedText(mvp.shouldHave)}\nOut of Scope：${acceptedText(mvp.outOfScope)}\n最小闭环：${acceptedText(mvp.minimumLoop)}`;
-  const technicalArchitecture = `前端：${acceptedText(technical.frontend)}\n后端：${acceptedText(technical.backend)}\n数据库：${acceptedText(technical.database)}\nAI API：${acceptedText(technical.aiApi)}\n认证：${acceptedText(technical.auth)}\n文件上传：${acceptedText(technical.fileUpload)}\n架构升级条件：${acceptedText(technical.architectureUpgrade)}`;
-  const dataStructure = `Core entities:\n- IdeaInput { rawIdea, targetUser?, scenario?, problem?, projectType? }\n- AiSuggestion<T> { value, reason, risks, alternatives, accepted, editedByUser }\n- FinalHandoff { productBrief, mvpScope, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt }\n\n数据流：${acceptedText(technical.dataFlow)}`;
-  const acceptanceCriteria = [
-    '用户可以只填写 rawIdea 并继续流程。',
-    '每个阶段都有 AI 建议、理由、风险和替代方案。',
-    '用户可以接受、编辑、重新生成或请求解释建议。',
-    '技术规划页不强迫用户手写架构。',
-    '最终 Development Prompt 包含产品目标、页面结构、数据结构、技术方案和验收标准。',
-  ].join('\n');
-  const developmentPrompt = `# Development Prompt\n\n## 产品目标\n${productBrief}\n\n## 业务判断\n用户价值：${acceptedText(business.userValue)}\n产品所有者价值：${acceptedText(business.ownerValue)}\n价值假设：${acceptedText(business.valueHypothesis)}\n指标：${acceptedText(business.metrics)}\n\n## MVP Scope\n${mvpScope}\n\n## Technical Architecture\n${technicalArchitecture}\n\n## Data Structure\n${dataStructure}\n\n## Acceptance Criteria\n${acceptanceCriteria}\n\n## V1 不做\n${acceptedText(mvp.outOfScope)}\n`;
-  return { productBrief, mvpScope, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt };
-}
+  const blindSpot = brief.stages.blindSpot;
+  const roi = business.roi;
+  const translations = (technical.translations || [])
+    .map((row) => `- ${row.userNeed} -> ${row.requiredCapability} -> ${row.v1Implementation} (${row.whyThisIsEnough}; 升级条件：${row.upgradeCondition})`)
+    .join('\n');
 
+  const productBrief = `产品定义：${acceptedText(product.productOneLiner) || brief.ideaInput.rawIdea}\n目标用户：${acceptedText(product.targetUser)}\n使用场景：${acceptedText(product.scenario)}\n核心痛点：${acceptedText(product.corePainPoint)}\n需求洞察：${acceptedText(discovery.targetUserEvidence)}\nAI 介入价值：${acceptedText(product.aiValue)}`;
+  const mvpScope = `Must Have：${acceptedText(mvp.mustHave)}\nShould Have：${acceptedText(mvp.shouldHave)}\nOut of Scope：${acceptedText(mvp.outOfScope)}\n最小闭环：${acceptedText(mvp.minimumLoop)}\n范围风险：${acceptedText(mvp.scopeRisks)}`;
+  const technicalArchitecture = `前端：${acceptedText(technical.frontend)}\n后端：${acceptedText(technical.backend)}\n数据库：${acceptedText(technical.database)}\nAI API：${acceptedText(technical.aiApi)}\n认证：${acceptedText(technical.auth)}\n文件上传：${acceptedText(technical.fileUpload)}\nMock 策略：${acceptedText(technical.mockStrategy)}\n技术翻译：\n${translations}\n架构升级条件：${acceptedText(technical.architectureUpgrade)}`;
+  const dataStructure = `Core entities:\n- IdeaInput { rawIdea, targetUser?, scenario?, problem?, projectType? }\n- DemandDiscovery { targetUserEvidence, painFrequency, currentAlternative, demandEvidence, falsificationEvidence, smallestValidationAction }\n- AiSuggestion<T> { value, reason, risks, alternatives, accepted, editedByUser }\n- BusinessRoi { userBenefitScore, ownerBenefitScore, developmentCostScore, maintenanceCostScore, roiJudgement }\n- TechnicalTranslation { userNeed, requiredCapability, v1Implementation, whyThisIsEnough, upgradeCondition, risks }\n- BlindSpotReview { demandRisk, businessRisk, technicalRisk, scopeRisk, whatWouldProveWrong, recommendedAdjustment }\n- FinalHandoff { productBrief, mvpScope, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt }\n\n数据流：${acceptedText(technical.dataFlow)}`;
+  const acceptanceCriteria = [
+    '用户可以只填写 rawIdea，并选择 Beginner / Builder / Review 模式后进入流程。',
+    'Demand Discovery 能输出需求成立证据、反证和最小验证动作。',
+    'Business 页面能显示简化 ROI 判断，包括用户收益、开发成本、维护成本和结论。',
+    'Technical 页面能展示“需求 -> 技术能力 -> V1 实现 -> 升级条件”的翻译表。',
+    'Mock 策略有白话解释、mock 范围、mock 数据示例、换真实 API 条件和失败兜底。',
+    'Scope 页面能识别范围膨胀，并明确 Must Have / Out of Scope。',
+    'Blind Spot Review 能指出需求、业务、技术、范围风险和反证。',
+    '最终 Development Prompt 包含 14 个指定部分。',
+  ].join('\n');
+  const developmentPrompt = `# Development Prompt\n\n## 1. 产品目标\n${acceptedText(product.productOneLiner) || brief.ideaInput.rawIdea}\n\n## 2. 目标用户\n${acceptedText(product.targetUser)}\n\n## 3. 需求洞察\n谁真的有问题：${acceptedText(discovery.targetUserEvidence)}\n问题频率：${acceptedText(discovery.painFrequency)}\n当前替代方案：${acceptedText(discovery.currentAlternative)}\n不解决后果：${acceptedText(discovery.consequenceIfUnsolved)}\n需求成立证据：${acceptedText(discovery.demandEvidence)}\n需求不成立证据：${acceptedText(discovery.falsificationEvidence)}\n最小验证动作：${acceptedText(discovery.smallestValidationAction)}\n\n## 4. 用户主流程\n1. 用户输入一个模糊产品想法。\n2. 系统生成需求洞察、产品定义、业务 ROI、技术翻译和 MVP 压缩建议。\n3. 用户接受或编辑建议。\n4. 系统进行盲点审查。\n5. 用户复制或下载最终开发交付文档。\n\n## 5. MVP 范围\n${mvpScope}\n\n## 6. 页面结构\n- Landing Page：首页与模式说明\n- Idea Input：输入原始想法和模式选择\n- Demand Discovery：需求洞察\n- Product Framing：产品定义\n- Business Reasoning：业务推理与 ROI\n- Technical Translation：技术翻译与 Mock 策略\n- MVP Compression：范围压缩\n- Blind Spot Review：盲点审查\n- Developer Handoff：最终交付\n\n## 7. 技术架构\n${technicalArchitecture}\n\n## 8. 数据结构\n${dataStructure}\n\n## 9. Mock 策略\n${acceptedText(technical.mockStrategy)}\n可 mock 部分：${acceptedText(technical.mockableParts)}\nmock 数据示例：${acceptedText(technical.mockDataExample)}\n换真实 API 条件：${acceptedText(technical.realApiTrigger)}\n失败兜底：${acceptedText(technical.mockFailureFallback)}\n\n## 10. AI API 规则\n- 用户自行配置 API URL / API Key / Model。\n- 前端调用同源 /api/ai-proxy，不直接跨域请求第三方模型。\n- AI 不可用时必须 fallback 到本地 mock。\n- 不要在代码中硬编码用户私有 API key。\n\n## 11. 验收标准\n${acceptanceCriteria}\n\n## 12. Out of Scope\n${acceptedText(mvp.outOfScope)}\n\n## 13. 风险与盲点\n需求风险：${acceptedText(blindSpot.demandRisk)}\n业务风险：${acceptedText(blindSpot.businessRisk)}\n技术风险：${acceptedText(blindSpot.technicalRisk)}\n范围风险：${acceptedText(blindSpot.scopeRisk)}\n反证：${acceptedText(blindSpot.whatWouldProveWrong)}\n推荐调整：${acceptedText(blindSpot.recommendedAdjustment)}\n\n## 14. 禁止事项\n- V1 不做登录、支付、数据库、团队协作、完整 SaaS 后台。\n- 不把第一版扩展成大平台。\n- 不把 AI 输出失败变成白屏。\n- 不生成只有营销语言、缺少页面结构和验收标准的开发说明。\n`;
+  const roiSummary = `用户收益：${roi?.userBenefitScore?.value || '-'} / 5\n所有者收益：${roi?.ownerBenefitScore?.value || '-'} / 5\n开发成本：${roi?.developmentCostScore?.value || '-'} / 5\n维护成本：${roi?.maintenanceCostScore?.value || '-'} / 5\nROI 判断：${roi?.roiJudgement?.value || 'uncertain'}\n理由：${roi?.reason?.value || ''}`;
+  return {
+    productBrief,
+    mvpScope,
+    technicalArchitecture: `${technicalArchitecture}\n\n业务 ROI：\n${roiSummary}`,
+    dataStructure,
+    acceptanceCriteria,
+    developmentPrompt,
+  };
+}
 export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff> {
   const fallback = buildMockHandoff(brief);
   const ai = await callCopilotJson<FinalHandoff>(
     `你是资深产品架构师和 AI 编程交付专家。请把用户输入与 AI 建议整合为高质量 Developer Handoff。
 只返回 JSON，字段必须为：productBrief, mvpScope, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt。
-Development Prompt 必须可直接交给 Codex / Claude Code / Cursor 执行，包含产品目标、技术栈、页面结构、用户流程、功能需求、数据结构、mock data、验收标准、V1 不做事项。`,
+Development Prompt 必须可直接交给 Codex / Claude Code / Cursor 执行，必须包含：产品目标、目标用户、需求洞察、用户主流程、MVP 范围、页面结构、技术架构、数据结构、Mock 策略、AI API 规则、验收标准、Out of Scope、风险与盲点、禁止事项。`,
     buildBriefContext(brief),
     3200
   );
