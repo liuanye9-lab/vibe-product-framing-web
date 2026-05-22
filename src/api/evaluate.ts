@@ -48,7 +48,74 @@ interface EvaluateResponse {
   followUp: string;
 }
 
-// --- Direct AI Call (OpenAI-compatible) ---
+// --- Direct AI Call (OpenAI-compatible via same-origin proxy) ---
+
+function extractAIContent(data: Record<string, unknown>): string {
+  let content = '';
+  const choices = data.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const firstChoice = choices[0] as Record<string, unknown>;
+    // Standard OpenAI format
+    if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
+      content = (firstChoice.message as Record<string, unknown>).content as string;
+    }
+    // Some providers wrap in delta
+    else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
+      content = (firstChoice.delta as Record<string, unknown>).content as string;
+    }
+    // Direct content field
+    else if (typeof firstChoice.content === 'string') {
+      content = firstChoice.content;
+    }
+  }
+  // Gemini / some providers may return content directly
+  else if (typeof data.content === 'string') {
+    content = data.content;
+  }
+  // Some providers return candidates
+  else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+    const candidate = data.candidates[0] as Record<string, unknown>;
+    const candidateContent = candidate.content;
+    if (candidateContent && typeof (candidateContent as Record<string, unknown>).text === 'string') {
+      content = (candidateContent as Record<string, unknown>).text as string;
+    } else if (candidateContent && Array.isArray((candidateContent as Record<string, unknown>).parts)) {
+      content = ((candidateContent as Record<string, unknown>).parts as Array<Record<string, unknown>>)
+        .map((part) => (typeof part.text === 'string' ? part.text : ''))
+        .join('');
+    }
+  }
+
+  return content.trim();
+}
+
+async function callAIProxy(config: AIConfig, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  console.log('[VibePilot] AI Proxy Request:', { apiUrl: config.apiUrl, model: body.model });
+
+  const response = await fetch('/api/ai-proxy', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      apiUrl: config.apiUrl,
+      apiKey: config.apiKey,
+      body,
+    }),
+  });
+
+  const rawText = await response.text();
+  console.log('[VibePilot] AI Proxy Raw Response:', rawText.slice(0, 500));
+
+  if (!response.ok) {
+    throw new Error(`AI API 返回错误 (${response.status}): ${rawText.slice(0, 300)}`);
+  }
+
+  try {
+    return JSON.parse(rawText) as Record<string, unknown>;
+  } catch {
+    throw new Error('AI API 返回的不是有效 JSON');
+  }
+}
 
 function buildSystemPrompt(req: EvaluateRequest): string {
   const { step, userAnswer, rawIdea, allSteps, mode, previousEvaluation } = req;
@@ -145,10 +212,6 @@ async function callDirectAI(req: EvaluateRequest, config: AIConfig): Promise<Eva
     };
   }
 
-  // Normalize API URL: remove trailing slash
-  const baseUrl = config.apiUrl.replace(/\/+$/, '');
-  const endpoint = `${baseUrl}/v1/chat/completions`;
-
   const systemPrompt = buildSystemPrompt(req);
 
   const userMessage = req.mode === 'evaluate'
@@ -164,70 +227,16 @@ async function callDirectAI(req: EvaluateRequest, config: AIConfig): Promise<Eva
       { role: 'user', content: userMessage },
     ],
     temperature: 0.7,
+    max_tokens: req.mode === 'evaluate' ? 500 : 200,
   };
 
-  // Some providers (e.g. Gemini-compatible) use max_output_tokens instead of max_tokens
-  requestBody.max_tokens = req.mode === 'evaluate' ? 500 : 200;
-
-  console.log('[VibePilot] AI Request:', endpoint, { model: config.model, mode: req.mode });
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${config.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-  });
-
-  const rawText = await response.text();
-  console.log('[VibePilot] AI Raw Response:', rawText.slice(0, 500));
-
-  if (!response.ok) {
-    throw new Error(`AI API 返回错误 (${response.status}): ${rawText.slice(0, 200)}`);
-  }
-
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(rawText);
-  } catch {
-    throw new Error('AI API 返回的不是有效 JSON');
-  }
-
-  // Robust content extraction - handle various response formats
-  let content = '';
-  const choices = data.choices;
-  if (Array.isArray(choices) && choices.length > 0) {
-    const firstChoice = choices[0] as Record<string, unknown>;
-    // Standard OpenAI format
-    if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
-      content = (firstChoice.message as Record<string, unknown>).content as string;
-    }
-    // Some providers wrap in delta
-    else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
-      content = (firstChoice.delta as Record<string, unknown>).content as string;
-    }
-    // Direct content field
-    else if (typeof firstChoice.content === 'string') {
-      content = firstChoice.content;
-    }
-  }
-  // Gemini / some providers may return content directly
-  else if (typeof data.content === 'string') {
-    content = data.content;
-  }
-  // Some providers return candidates
-  else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
-    const candidate = data.candidates[0] as Record<string, unknown>;
-    if (candidate.content && typeof (candidate.content as Record<string, unknown>).text === 'string') {
-      content = (candidate.content as Record<string, unknown>).text as string;
-    }
-  }
+  const data = await callAIProxy(config, requestBody);
+  const content = extractAIContent(data);
 
   console.log('[VibePilot] Extracted content:', content.slice(0, 200));
 
   if (!content) {
-    throw new Error('AI API 返回成功但内容为空，请检查模型名称是否正确。');
+    throw new Error('AI API 返回成功但内容为空，请检查模型名称是否正确。响应结构：' + Object.keys(data).join(', '));
   }
 
   if (req.mode === 'hint') return { evaluation: content, quality: 'ok', followUp: '' };
@@ -510,9 +519,6 @@ export async function getStepHint(step: StepConfig): Promise<string> {
   const config = getAIConfig();
   if (config) {
     try {
-      const baseUrl = config.apiUrl.replace(/\/+$/, '');
-      const endpoint = `${baseUrl}/v1/chat/completions`;
-
       const hintSystemPrompt = buildSystemPrompt({
         step,
         userAnswer: '',
@@ -521,52 +527,17 @@ export async function getStepHint(step: StepConfig): Promise<string> {
         mode: 'hint',
       });
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: config.model,
-          messages: [
-            { role: 'system', content: hintSystemPrompt },
-            { role: 'user', content: '我不知道怎么回答这个问题，请给我一些提示方向。' },
-          ],
-          max_tokens: 200,
-          temperature: 0.7,
-        }),
+      const data = await callAIProxy(config, {
+        model: config.model,
+        messages: [
+          { role: 'system', content: hintSystemPrompt },
+          { role: 'user', content: '我不知道怎么回答这个问题，请给我一些提示方向。' },
+        ],
+        max_tokens: 200,
+        temperature: 0.7,
       });
-      if (response.ok) {
-        const rawText = await response.text();
-        let data: Record<string, unknown>;
-        try {
-          data = JSON.parse(rawText);
-        } catch {
-          return '';
-        }
-        // Robust content extraction
-        let content = '';
-        const choices = data.choices;
-        if (Array.isArray(choices) && choices.length > 0) {
-          const firstChoice = choices[0] as Record<string, unknown>;
-          if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
-            content = (firstChoice.message as Record<string, unknown>).content as string;
-          } else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
-            content = (firstChoice.delta as Record<string, unknown>).content as string;
-          } else if (typeof firstChoice.content === 'string') {
-            content = firstChoice.content;
-          }
-        } else if (typeof data.content === 'string') {
-          content = data.content;
-        } else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
-          const candidate = data.candidates[0] as Record<string, unknown>;
-          if (candidate.content && typeof (candidate.content as Record<string, unknown>).text === 'string') {
-            content = (candidate.content as Record<string, unknown>).text as string;
-          }
-        }
-        if (content) return content;
-      }
+      const content = extractAIContent(data);
+      if (content) return content;
     } catch {
       // Fall through to mock
     }

@@ -42,6 +42,35 @@ const PRESETS = [
   },
 ];
 
+function extractAIContent(data: Record<string, unknown>): string {
+  let content = '';
+  const choices = data.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const firstChoice = choices[0] as Record<string, unknown>;
+    if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
+      content = (firstChoice.message as Record<string, unknown>).content as string;
+    } else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
+      content = (firstChoice.delta as Record<string, unknown>).content as string;
+    } else if (typeof firstChoice.content === 'string') {
+      content = firstChoice.content;
+    }
+  } else if (typeof data.content === 'string') {
+    content = data.content;
+  } else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+    const candidate = data.candidates[0] as Record<string, unknown>;
+    const candidateContent = candidate.content;
+    if (candidateContent && typeof (candidateContent as Record<string, unknown>).text === 'string') {
+      content = (candidateContent as Record<string, unknown>).text as string;
+    } else if (candidateContent && Array.isArray((candidateContent as Record<string, unknown>).parts)) {
+      content = ((candidateContent as Record<string, unknown>).parts as Array<Record<string, unknown>>)
+        .map((part) => (typeof part.text === 'string' ? part.text : ''))
+        .join('');
+    }
+  }
+
+  return content.trim();
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [apiUrl, setApiUrl] = useState('');
@@ -76,20 +105,20 @@ export default function SettingsPage() {
     setTesting(true);
     setTestResult(null);
 
-    const baseUrl = apiUrl.trim().replace(/\/+$/, '');
-    const endpoint = `${baseUrl}/v1/chat/completions`;
-
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch('/api/ai-proxy', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey.trim()}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: model.trim(),
-          messages: [{ role: 'user', content: '说"连接成功"，只输出这四个字。' }],
-          max_tokens: 20,
+          apiUrl: apiUrl.trim(),
+          apiKey: apiKey.trim(),
+          body: {
+            model: model.trim(),
+            messages: [{ role: 'user', content: '说"连接成功"，只输出这四个字。' }],
+            max_tokens: 20,
+          },
         }),
       });
 
@@ -100,7 +129,7 @@ export default function SettingsPage() {
         let errMsg = `请求失败 (${response.status})`;
         try {
           const errJson = JSON.parse(rawText);
-          errMsg = errJson.error?.message || errMsg;
+          errMsg = errJson.error?.message || errJson.error || errMsg;
         } catch { /* use default */ }
         setTestResult({ ok: false, msg: errMsg });
         return;
@@ -114,26 +143,7 @@ export default function SettingsPage() {
         return;
       }
 
-      // Robust content extraction - handle various response formats
-      let content = '';
-      const choices = data.choices;
-      if (Array.isArray(choices) && choices.length > 0) {
-        const firstChoice = choices[0] as Record<string, unknown>;
-        if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
-          content = (firstChoice.message as Record<string, unknown>).content as string;
-        } else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
-          content = (firstChoice.delta as Record<string, unknown>).content as string;
-        } else if (typeof firstChoice.content === 'string') {
-          content = firstChoice.content;
-        }
-      } else if (typeof data.content === 'string') {
-        content = data.content;
-      } else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
-        const candidate = data.candidates[0] as Record<string, unknown>;
-        if (candidate.content && typeof (candidate.content as Record<string, unknown>).text === 'string') {
-          content = (candidate.content as Record<string, unknown>).text as string;
-        }
-      }
+      const content = extractAIContent(data);
 
       if (content) {
         setTestResult({ ok: true, msg: `连接成功！模型返回：${content.slice(0, 50)}` });
