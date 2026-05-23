@@ -14,7 +14,7 @@ export default function ScopeCreepWarning({ terms, warning }: ScopeCreepWarningP
         padding: 16,
         borderRadius: 12,
         background: 'var(--color-warning-light)',
-        border: '1px solid rgba(186, 117, 23, 0.35)',
+        border: '1px solid rgba(18, 18, 18, 0.14)',
         marginBottom: 18,
       }}
     >

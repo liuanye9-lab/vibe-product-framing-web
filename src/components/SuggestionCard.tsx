@@ -122,7 +122,7 @@ export default function SuggestionCard<T extends SuggestionValue = SuggestionVal
       )}
 
       {actionError && (
-        <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: 'var(--color-danger-light)', border: '1px solid rgba(226,75,74,0.25)' }}>
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: 'var(--color-danger-light)', border: '1px solid rgba(18, 18, 18, 0.14)' }}>
           <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6 }}>{actionError}</p>
         </div>
       )}

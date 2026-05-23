@@ -60,7 +60,7 @@ export default function DecisionCard({
   };
 
   return (
-    <div className="vp-card" style={{ marginBottom: 18, borderColor: 'var(--color-primary)', boxShadow: '0 18px 50px rgba(79, 70, 229, 0.12)' }}>
+    <div className="vp-card" style={{ marginBottom: 18, borderColor: 'rgba(18, 18, 18, 0.24)', boxShadow: '0 24px 70px rgba(0, 0, 0, 0.12)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <span style={{ fontSize: 12, color: 'var(--color-primary)', fontWeight: 700, letterSpacing: '0.04em' }}>CORE DECISION</span>
         {accepted && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-success)' }}><Check size={13} /> 已接受</span>}
@@ -68,7 +68,7 @@ export default function DecisionCard({
 
       <h2 style={{ fontSize: 22, lineHeight: 1.35, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 14 }}>{decision.mainDecision}</h2>
 
-      <div style={{ padding: 14, borderRadius: 12, background: 'var(--color-primary-light)', border: '1px solid rgba(79, 70, 229, 0.18)', marginBottom: 12 }}>
+      <div style={{ padding: 14, borderRadius: 12, background: 'var(--color-primary-light)', border: '1px solid rgba(18, 18, 18, 0.12)', marginBottom: 12 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <Wand2 size={16} style={{ color: 'var(--color-primary)', marginTop: 2, flexShrink: 0 }} />
           <div>
@@ -95,7 +95,7 @@ export default function DecisionCard({
       </div>
 
       {actionError && (
-        <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: 'var(--color-danger-light)', border: '1px solid rgba(226,75,74,0.25)' }}>
+        <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: 'var(--color-danger-light)', border: '1px solid rgba(18, 18, 18, 0.14)' }}>
           <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6 }}>{actionError}</p>
         </div>
       )}

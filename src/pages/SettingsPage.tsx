@@ -225,7 +225,7 @@ export default function SettingsPage() {
               className="vp-card"
               style={{
                 marginBottom: 24,
-                borderColor: 'rgba(29,158,117,0.3)',
+                borderColor: 'rgba(18,18,18,0.14)',
                 background: 'var(--color-success-light)',
               }}
             >
@@ -246,7 +246,7 @@ export default function SettingsPage() {
               className="vp-card"
               style={{
                 marginBottom: 24,
-                borderColor: 'rgba(186,117,23,0.3)',
+                borderColor: 'rgba(18,18,18,0.14)',
                 background: 'var(--color-warning-light)',
               }}
             >
@@ -388,7 +388,7 @@ export default function SettingsPage() {
               className="vp-card"
               style={{
                 marginBottom: 16,
-                borderColor: testResult.ok ? 'rgba(29,158,117,0.3)' : 'rgba(226,75,74,0.3)',
+                borderColor: testResult.ok ? 'rgba(18,18,18,0.14)' : 'rgba(18,18,18,0.18)',
                 background: testResult.ok ? 'var(--color-success-light)' : 'var(--color-danger-light)',
               }}
             >

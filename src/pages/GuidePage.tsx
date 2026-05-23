@@ -429,11 +429,11 @@ export default function GuidePage() {
                 <div style={{
                   borderRadius: 10, border: '1px solid',
                   borderColor: entry.quality === 'specific'
-                    ? 'rgba(29,158,117,0.25)' : entry.quality === 'ok'
-                      ? 'rgba(186,117,23,0.25)' : 'rgba(226,75,74,0.25)',
+                    ? 'rgba(18,18,18,0.18)' : entry.quality === 'ok'
+                      ? 'rgba(18,18,18,0.12)' : 'rgba(18,18,18,0.16)',
                   background: entry.quality === 'specific'
-                    ? 'rgba(29,158,117,0.05)' : entry.quality === 'ok'
-                      ? 'rgba(186,117,23,0.05)' : 'rgba(226,75,74,0.05)',
+                    ? 'rgba(255,255,255,0.54)' : entry.quality === 'ok'
+                      ? 'rgba(18,18,18,0.045)' : 'rgba(18,18,18,0.065)',
                   padding: 16,
                 }}>
                   <div className={`vp-quality-badge ${qualityClass[entry.quality!]}`} style={{ marginBottom: 12 }}>
@@ -475,7 +475,7 @@ export default function GuidePage() {
               )}
 
               {entry.role === 'user-edit' && (
-                <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(88,166,255,0.06)', border: '1px solid rgba(88,166,255,0.2)', fontSize: 13, color: 'var(--color-text-secondary)' }}>
+                <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(255,255,255,0.5)', border: '1px solid rgba(18,18,18,0.12)', fontSize: 13, color: 'var(--color-text-secondary)' }}>
                   <span style={{ fontWeight: 500, color: 'var(--color-info)' }}>📝 你修改了答案并重新提交</span>
                 </div>
               )}
