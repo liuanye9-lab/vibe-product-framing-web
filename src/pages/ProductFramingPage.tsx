@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
-import { explainSuggestion, suggestStage } from '../api/evaluate';
+import { explainSuggestion, isAIReady, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import type { AiSuggestion, GlossaryKey, ProductFramingState, SuggestionKey } from '../types';
 
@@ -16,14 +16,22 @@ const FIELDS: Array<{ key: keyof ProductFramingState; title: string; desc: strin
   { key: 'aiValue', title: 'AI 介入价值', desc: 'AI 到底在哪个环节降低成本或提升质量。', glossaryKey: 'aiApi' },
 ];
 
+const AI_NOT_READY_MESSAGE = 'AI 模型未连接成功。请先进入设置页完成配置并测试连接，否则无法生成有效分析。';
+
 export default function ProductFramingPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { brief, loading, updateStage, updateSuggestion } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
+  const autoRequestedRef = useRef<string | null>(null);
 
   const generate = async () => {
     if (!brief || generating) return;
+    if (!isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
     setGenerating(true);
     setError('');
     try {
@@ -38,7 +46,15 @@ export default function ProductFramingPage() {
 
   useEffect(() => {
     if (!brief || loading) return;
-    if (!brief.stages.product.productOneLiner) generate();
+    if (!isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
+    const requestKey = `${brief.id}:product`;
+    if (!brief.stages.product.productOneLiner && autoRequestedRef.current !== requestKey) {
+      autoRequestedRef.current = requestKey;
+      generate();
+    }
   }, [brief?.id, loading]);
 
   if (loading || !brief) return <Loader />;
@@ -52,7 +68,7 @@ export default function ProductFramingPage() {
       previousPath={`/discovery/${brief.id}`}
       nextPath={`/business/${brief.id}`}
       nextLabel="进入业务判断"
-      aside={<Summary rawIdea={brief.ideaInput.rawIdea} generating={generating} onGenerate={generate} error={error} />}
+      aside={<Summary rawIdea={brief.ideaInput.rawIdea} generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} />}
     >
       {FIELDS.map((field) => {
         const suggestion = brief.stages.product[field.key];
@@ -76,12 +92,17 @@ export default function ProductFramingPage() {
   );
 }
 
-function Summary({ rawIdea, generating, onGenerate, error }: { rawIdea: string; generating: boolean; onGenerate: () => void; error: string }) {
+function Summary({ rawIdea, generating, onGenerate, error, onSettings }: { rawIdea: string; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>原始想法</h3>
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>{rawIdea}</p>
       {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
+      {error === AI_NOT_READY_MESSAGE && (
+        <button className="vp-btn vp-btn-primary" onClick={onSettings} style={{ width: '100%', marginBottom: 8 }}>
+          <Settings size={14} /> 去设置
+        </button>
+      )}
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在生成...' : '重新生成本页建议'}

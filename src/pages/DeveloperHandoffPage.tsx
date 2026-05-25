@@ -1,14 +1,17 @@
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Check, Copy, Download, Loader2, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Check, Copy, Download, Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import DecisionCard from '../components/DecisionCard';
-import { optimizeHandoff } from '../api/evaluate';
+import { buildLocalHandoff, isAIReady, optimizeHandoff } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
+import { toDisplayText } from '../lib/utils';
 import { extractCoreDecision } from '../rules/coreDecisionExtractor';
 import type { FinalHandoff } from '../types';
 
-const SECTIONS: Array<{ key: keyof FinalHandoff; title: string }> = [
+type HandoffSectionKey = Exclude<keyof FinalHandoff, 'source'>;
+
+const SECTIONS: Array<{ key: HandoffSectionKey; title: string }> = [
   { key: 'productBrief', title: '1. Product Brief' },
   { key: 'mvpScope', title: '2. MVP Scope' },
   { key: 'technicalArchitecture', title: '3. Technical Architecture' },
@@ -17,20 +20,28 @@ const SECTIONS: Array<{ key: keyof FinalHandoff; title: string }> = [
   { key: 'developmentPrompt', title: '6. Development Prompt' },
 ];
 
+const AI_NOT_READY_MESSAGE = 'AI 模型未连接成功。请先进入设置页完成配置并测试连接，否则无法生成有效分析。';
+
 export default function DeveloperHandoffPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { brief, loading, saveFinalHandoff } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
   const [view, setView] = useState<'focus' | 'detail'>('focus');
+  const autoRequestedRef = useRef<string | null>(null);
 
-  const generate = async () => {
+  const generate = async (useAI = false) => {
     if (!brief || generating) return;
+    if (useAI && !isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
     setGenerating(true);
     setError('');
     try {
-      const handoff = await optimizeHandoff(brief);
+      const handoff = useAI ? await optimizeHandoff(brief) : buildLocalHandoff(brief);
       saveFinalHandoff(handoff);
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成交付内容失败，请稍后重试。');
@@ -41,7 +52,11 @@ export default function DeveloperHandoffPage() {
 
   useEffect(() => {
     if (!brief || loading) return;
-    if (!brief.finalHandoff?.developmentPrompt) generate();
+    const requestKey = `${brief.id}:handoff-local`;
+    if (!brief.finalHandoff?.developmentPrompt && autoRequestedRef.current !== requestKey) {
+      autoRequestedRef.current = requestKey;
+      generate(false);
+    }
   }, [brief?.id, loading]);
 
   if (loading || !brief) return <Loader />;
@@ -49,7 +64,7 @@ export default function DeveloperHandoffPage() {
   const handoff = brief.finalHandoff;
   const decision = extractCoreDecision(brief, 'handoff');
 
-  const copyText = async (key: keyof FinalHandoff, text: string) => {
+  const copyText = async (key: HandoffSectionKey, text: string) => {
     await navigator.clipboard.writeText(text);
     setCopied(key);
     setTimeout(() => setCopied(''), 1800);
@@ -57,7 +72,7 @@ export default function DeveloperHandoffPage() {
 
   const download = () => {
     if (!handoff) return;
-    const content = `# VibePilot Developer Handoff\n\n${SECTIONS.map((section) => `## ${section.title}\n\n${handoff[section.key]}`).join('\n\n---\n\n')}`;
+    const content = `# VibePilot Developer Handoff\n\n${SECTIONS.map((section) => `## ${section.title}\n\n${toDisplayText(handoff[section.key])}`).join('\n\n---\n\n')}`;
     const blob = new Blob([content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -74,7 +89,7 @@ export default function DeveloperHandoffPage() {
       current={3}
       briefId={brief.id}
       previousPath={`/technical/${brief.id}`}
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} onDownload={download} hasHandoff={Boolean(handoff)} error={error} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={() => generate(true)} onDownload={download} hasHandoff={Boolean(handoff)} error={error} onSettings={() => navigate('/settings')} />}
     >
       {view === 'focus' && (
         <DecisionCard
@@ -82,9 +97,9 @@ export default function DeveloperHandoffPage() {
           glossaryKey="acceptanceCriteria"
           accepted={Boolean(handoff?.developmentPrompt)}
           loading={generating}
-          onAccept={generate}
-          onSimplify={generate}
-          editableValue={handoff?.developmentPrompt || ''}
+          onAccept={() => generate(true)}
+          onSimplify={() => generate(false)}
+          editableValue={toDisplayText(handoff?.developmentPrompt)}
           onEdit={() => undefined}
         />
       )}
@@ -99,14 +114,21 @@ export default function DeveloperHandoffPage() {
       {view === 'detail' && handoff && SECTIONS.map((section) => (
         <div className="vp-card" key={section.key} style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-            <h2 style={{ fontSize: 16, fontWeight: 650 }}>{section.title}</h2>
-            <button className="vp-btn vp-btn-ghost" onClick={() => copyText(section.key, handoff[section.key])}>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 650 }}>{section.title}</h2>
+              {handoff.source && handoff.source !== 'ai' && (
+                <p style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 4 }}>
+                  {handoff.source === 'mock' ? 'Mock 输出' : '本地规则'}，不是 AI 真实分析
+                </p>
+              )}
+            </div>
+            <button className="vp-btn vp-btn-ghost" onClick={() => copyText(section.key, toDisplayText(handoff[section.key]))}>
               {copied === section.key ? <Check size={14} /> : <Copy size={14} />}
               {copied === section.key ? '已复制' : '复制'}
             </button>
           </div>
           <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 13, lineHeight: 1.75, color: 'var(--color-text)', fontFamily: 'inherit' }}>
-            {handoff[section.key]}
+            {toDisplayText(handoff[section.key])}
           </pre>
         </div>
       ))}
@@ -114,7 +136,7 @@ export default function DeveloperHandoffPage() {
   );
 }
 
-function Aside({ view, onViewChange, generating, onGenerate, onDownload, hasHandoff, error }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; hasHandoff: boolean; error: string }) {
+function Aside({ view, onViewChange, generating, onGenerate, onDownload, hasHandoff, error, onSettings }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; hasHandoff: boolean; error: string; onSettings: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第四关：开发交付</h3>
@@ -126,10 +148,15 @@ function Aside({ view, onViewChange, generating, onGenerate, onDownload, hasHand
         Development Prompt 包含 14 个部分，可直接交给 Codex / Claude Code / Cursor。
       </p>
       {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
+      {error === AI_NOT_READY_MESSAGE && (
+        <button className="vp-btn vp-btn-primary" onClick={onSettings} style={{ width: '100%', marginBottom: 8 }}>
+          <Settings size={14} /> 去设置
+        </button>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <button className="vp-btn vp-btn-primary" onClick={onGenerate} disabled={generating}>
           {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
-          {generating ? '正在优化...' : '重新优化交付内容'}
+          {generating ? '正在优化...' : 'AI 优化交付内容'}
         </button>
         <button className="vp-btn vp-btn-ghost" onClick={onDownload} disabled={!hasHandoff}>
           <Download size={14} /> 下载 Markdown

@@ -3,6 +3,11 @@ import type { CoreDecision, DecisionStage, ProductBrief, SuggestionValue } from 
 function suggestionText(value: { value?: SuggestionValue; reason?: string; risks?: string[]; alternatives?: string[] } | undefined): string {
   if (!value) return '';
   if (Array.isArray(value.value)) return value.value.join('；');
+  if (value.value && typeof value.value === 'object' && 'value' in value.value) {
+    const nested = value.value as { value?: SuggestionValue };
+    if (Array.isArray(nested.value)) return nested.value.join('；');
+    return String(nested.value || '');
+  }
   return String(value.value || '');
 }
 

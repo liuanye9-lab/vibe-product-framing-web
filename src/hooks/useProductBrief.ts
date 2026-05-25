@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type {
   AiSuggestion,
   BusinessFramingState,
+  BusinessRoi,
   CopilotMode,
   CopilotStages,
   DemandDiscoveryState,
@@ -17,6 +18,7 @@ import type {
   BlindSpotReviewState,
 } from '../types';
 import { STEP_KEYS } from '../data/steps';
+import { toDisplayList, toDisplayText } from '../lib/utils';
 
 const STORAGE_KEY = 'vibepilot_briefs';
 const CURRENT_KEY = 'vibepilot_current_id';
@@ -50,6 +52,88 @@ function createEmptyStages(): CopilotStages {
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function normalizeSource(value: unknown): AiSuggestion['source'] {
+  return value === 'ai' || value === 'mock' || value === 'local-rule' ? value : 'local-rule';
+}
+
+function normalizeSuggestion(raw: unknown): AiSuggestion | undefined {
+  if (!isRecord(raw)) return undefined;
+  const rawValue = 'value' in raw ? raw.value : '';
+  const value = Array.isArray(rawValue)
+    ? toDisplayList(rawValue)
+    : typeof rawValue === 'number' || typeof rawValue === 'boolean'
+      ? rawValue
+      : toDisplayText(rawValue);
+
+  return {
+    value,
+    reason: toDisplayText(raw.reason),
+    risks: toDisplayList(raw.risks),
+    alternatives: toDisplayList(raw.alternatives),
+    accepted: Boolean(raw.accepted),
+    editedByUser: Boolean(raw.editedByUser),
+    source: normalizeSource(raw.source),
+  };
+}
+
+function normalizeSuggestionRecord<T extends object>(raw: unknown): T {
+  if (!isRecord(raw)) return {} as T;
+  const output: Record<string, unknown> = {};
+  Object.entries(raw).forEach(([key, value]) => {
+    const normalized = normalizeSuggestion(value);
+    if (normalized) output[key] = normalized;
+  });
+  return output as T;
+}
+
+function normalizeTranslations(raw: unknown): TechnicalPlanningState['translations'] {
+  if (!Array.isArray(raw)) return undefined;
+  return raw
+    .filter(isRecord)
+    .map((row) => ({
+      userNeed: toDisplayText(row.userNeed),
+      requiredCapability: toDisplayText(row.requiredCapability),
+      v1Implementation: toDisplayText(row.v1Implementation),
+      whyThisIsEnough: toDisplayText(row.whyThisIsEnough),
+      upgradeCondition: toDisplayText(row.upgradeCondition),
+      risks: toDisplayList(row.risks),
+    }));
+}
+
+function normalizeTechnicalStage(raw: unknown): TechnicalPlanningState {
+  const stage = normalizeSuggestionRecord<TechnicalPlanningState>(raw);
+  if (isRecord(raw)) {
+    const translations = normalizeTranslations(raw.translations);
+    if (translations) stage.translations = translations;
+  }
+  return stage;
+}
+
+function normalizeBusinessStage(raw: unknown): BusinessFramingState {
+  const stage = normalizeSuggestionRecord<BusinessFramingState>(raw);
+  if (isRecord(raw) && isRecord(raw.roi)) {
+    stage.roi = normalizeSuggestionRecord<BusinessRoi>(raw.roi);
+  }
+  return stage;
+}
+
+function normalizeFinalHandoff(raw: unknown): FinalHandoff | undefined {
+  if (!isRecord(raw)) return undefined;
+  return {
+    productBrief: toDisplayText(raw.productBrief),
+    mvpScope: toDisplayText(raw.mvpScope),
+    technicalArchitecture: toDisplayText(raw.technicalArchitecture),
+    dataStructure: toDisplayText(raw.dataStructure),
+    acceptanceCriteria: toDisplayText(raw.acceptanceCriteria),
+    developmentPrompt: toDisplayText(raw.developmentPrompt),
+    source: normalizeSource(raw.source),
+  };
+}
+
 function suggestion<T>(value: T, reason = '由已有输入推断生成，可继续编辑。'): AiSuggestion<T> {
   return {
     value,
@@ -58,6 +142,7 @@ function suggestion<T>(value: T, reason = '由已有输入推断生成，可继�
     alternatives: [],
     accepted: false,
     editedByUser: false,
+    source: 'local-rule',
   };
 }
 
@@ -119,8 +204,9 @@ export function normalizeBrief(brief: Partial<ProductBrief> & { id?: string; raw
   const normalized = createEmptyBrief(brief.id || `pb-${Date.now()}`, ideaInput, brief.mode || 'beginner');
   normalized.createdAt = brief.createdAt || normalized.createdAt;
   normalized.updatedAt = brief.updatedAt || normalized.createdAt;
-  normalized.developmentPrompt = brief.developmentPrompt || brief.finalHandoff?.developmentPrompt || '';
-  normalized.finalHandoff = brief.finalHandoff;
+  const normalizedHandoff = normalizeFinalHandoff(brief.finalHandoff);
+  normalized.developmentPrompt = toDisplayText(brief.developmentPrompt || normalizedHandoff?.developmentPrompt || '');
+  normalized.finalHandoff = normalizedHandoff;
 
   const sourceSteps = brief.steps || {};
   STEP_KEYS.forEach((key) => {
@@ -132,12 +218,24 @@ export function normalizeBrief(brief: Partial<ProductBrief> & { id?: string; raw
 
   const migratedStages = migrateLegacySteps(brief);
   normalized.stages = {
-    discovery: { ...(brief.stages?.discovery || {}) },
-    product: { ...migratedStages.product, ...(brief.stages?.product || {}) },
-    business: { ...migratedStages.business, ...(brief.stages?.business || {}) },
-    technical: { ...migratedStages.technical, ...(brief.stages?.technical || {}) },
-    mvp: { ...migratedStages.mvp, ...(brief.stages?.mvp || {}) },
-    blindSpot: { ...(brief.stages?.blindSpot || {}) },
+    discovery: normalizeSuggestionRecord<DemandDiscoveryState>(brief.stages?.discovery),
+    product: {
+      ...migratedStages.product,
+      ...normalizeSuggestionRecord<ProductFramingState>(brief.stages?.product),
+    },
+    business: {
+      ...migratedStages.business,
+      ...normalizeBusinessStage(brief.stages?.business),
+    },
+    technical: {
+      ...migratedStages.technical,
+      ...normalizeTechnicalStage(brief.stages?.technical),
+    },
+    mvp: {
+      ...migratedStages.mvp,
+      ...normalizeSuggestionRecord<MvpScopeState>(brief.stages?.mvp),
+    },
+    blindSpot: normalizeSuggestionRecord<BlindSpotReviewState>(brief.stages?.blindSpot),
   };
 
   return normalized;

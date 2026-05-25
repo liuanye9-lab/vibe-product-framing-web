@@ -93,7 +93,7 @@ Quick Mode 和 Standard Mode 默认更偏 Focus；Review Mode 更适合查看风
 → 用户配置的 OpenAI-compatible API
 ```
 
-没有配置模型或模型调用失败时，会自动使用 mock fallback，保证产品流程可体验。
+生产环境必须成功连接 AI 模型后才能生成分析。Mock fallback 仅用于开发调试，不作为正式输出；如需本地调试 mock，必须在开发环境显式设置 `VITE_ENABLE_MOCK=true`。
 
 ### 6. 最终 Development Prompt
 
@@ -113,6 +113,8 @@ Quick Mode 和 Standard Mode 默认更偏 Focus；Review Mode 更适合查看风
 12. Out of Scope
 13. 风险与盲点
 14. 禁止事项
+
+AI API 规则必须写明：AI 不可用时必须停止生成并提示用户检查 API 配置，不允许输出 mock 结果冒充 AI 分析。
 
 ## 技术栈
 
@@ -165,7 +167,7 @@ vibepilot/
 │   └── ai-proxy.ts                 # Vercel AI 代理
 ├── src/
 │   ├── api/
-│   │   └── evaluate.ts             # API 调用、fallback 调度、导出函数
+│   │   └── evaluate.ts             # API 调用、AI 状态检查、导出函数
 │   ├── components/
 │   │   ├── DecisionCard.tsx        # 核心决策卡片
 │   │   ├── SuggestionCard.tsx      # 详情建议卡片

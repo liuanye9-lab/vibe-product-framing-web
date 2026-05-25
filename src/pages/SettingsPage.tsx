@@ -13,7 +13,15 @@ import {
   ExternalLink,
   Home,
 } from 'lucide-react';
-import { getAIConfig, saveAIConfig, clearAIConfig, normalizeApiUrl } from '../api/evaluate';
+import {
+  clearAIConfig,
+  getAIConfig,
+  getAIConnectionStatus,
+  normalizeApiUrl,
+  saveAIConfig,
+  saveAIConnectionStatus,
+  type AIConnectionStatus,
+} from '../api/evaluate';
 
 const PRESETS = [
   {
@@ -27,12 +35,6 @@ const PRESETS = [
     apiUrl: 'https://api.deepseek.com',
     model: 'deepseek-chat',
     docUrl: 'https://platform.deepseek.com/api_keys',
-  },
-  {
-    name: 'Anthropic (兼容)',
-    apiUrl: 'https://api.anthropic.com',
-    model: 'claude-sonnet-4-20250514',
-    docUrl: 'https://console.anthropic.com/settings/keys',
   },
   {
     name: 'GLM (智谱)',
@@ -80,6 +82,7 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [saved, setSaved] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<AIConnectionStatus>(getAIConnectionStatus());
 
   useEffect(() => {
     const config = getAIConfig();
@@ -91,12 +94,24 @@ export default function SettingsPage() {
   }, []);
 
   const hasConfig = apiUrl.trim() && apiKey.trim() && model.trim();
+  const storedConfig = getAIConfig();
+
+  const setStatus = (status: AIConnectionStatus) => {
+    saveAIConnectionStatus(status);
+    setConnectionStatus(status);
+  };
+
+  const markConfigChanged = (nextApiUrl: string, nextApiKey: string, nextModel: string) => {
+    setStatus(nextApiUrl.trim() && nextApiKey.trim() && nextModel.trim() ? 'failed' : 'unconfigured');
+    setTestResult(null);
+  };
 
   const handleSave = () => {
     if (!hasConfig) return;
     const normalizedApiUrl = normalizeApiUrl(apiUrl);
     setApiUrl(normalizedApiUrl);
     saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
+    setStatus('failed');
     setSaved(true);
     setTestResult(null);
     setTimeout(() => setSaved(false), 2000);
@@ -111,7 +126,7 @@ export default function SettingsPage() {
       const normalizedApiUrl = normalizeApiUrl(apiUrl);
       setApiUrl(normalizedApiUrl);
       const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-        ? AbortSignal.timeout(45000)
+        ? AbortSignal.timeout(105000)
         : undefined;
 
       const response = await fetch('/api/ai-proxy', {
@@ -123,10 +138,20 @@ export default function SettingsPage() {
         body: JSON.stringify({
           apiUrl: normalizedApiUrl,
           apiKey: apiKey.trim(),
+          timeoutMs: 90000,
           body: {
             model: model.trim(),
-            messages: [{ role: 'user', content: '说"连接成功"，只输出这四个字。' }],
-            max_tokens: 50,
+            messages: [
+              {
+                role: 'system',
+                content: '你是 API 连通性测试器。只返回 JSON，不要 Markdown。',
+              },
+              {
+                role: 'user',
+                content: '请返回 {"ok":true,"message":"连接成功"}，不要输出其他内容。',
+              },
+            ],
+            max_tokens: 120,
             temperature: 0,
           },
         }),
@@ -144,6 +169,8 @@ export default function SettingsPage() {
           errMsg = rawText.slice(0, 300) || errMsg;
         }
         setTestResult({ ok: false, msg: String(errMsg) });
+        saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
+        setStatus('failed');
         return;
       }
 
@@ -152,21 +179,41 @@ export default function SettingsPage() {
         data = JSON.parse(rawText);
       } catch {
         setTestResult({ ok: false, msg: 'API 返回的不是有效 JSON，请检查 API 地址是否正确。' });
+        saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
+        setStatus('failed');
         return;
       }
 
       const content = extractAIContent(data);
 
       if (content) {
-        setTestResult({ ok: true, msg: `连接成功！模型返回：${content.slice(0, 50)}` });
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
+          setStatus('failed');
+          setTestResult({ ok: false, msg: `模型已响应，但没有按 JSON 格式返回。实际返回：${content.slice(0, 120)}` });
+          return;
+        }
+        saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
+        setStatus('connected');
+        setTestResult({ ok: true, msg: `连接成功！模型可正常返回生成内容：${content.slice(0, 80)}` });
       } else {
         console.log('[VibePilot] Test connection - no content found in:', data);
-        setTestResult({ ok: false, msg: '连接成功但模型返回为空，请检查模型名称是否正确。响应结构：' + Object.keys(data).join(', ') });
+        saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
+        setStatus('failed');
+        setTestResult({ ok: false, msg: '模型返回为空，请检查模型名称是否正确。响应结构：' + Object.keys(data).join(', ') });
       }
     } catch (err) {
+      if (hasConfig) {
+        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
+      }
+      setStatus('failed');
+      const errorName = err && typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name) : '';
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      const isTimeout = errorName === 'TimeoutError' || /timeout|timed out|超时|aborted|abort/i.test(errorMessage);
       setTestResult({
         ok: false,
-        msg: err instanceof Error && err.name === 'TimeoutError'
+        msg: isTimeout
           ? '测试连接超时：模型响应较慢或 API 地址不可达。请确认地址、模型名和服务商状态。'
           : err instanceof TypeError ? '网络请求失败，请检查 API 地址是否正确。' : `未知错误：${String(err)}`,
       });
@@ -177,6 +224,7 @@ export default function SettingsPage() {
 
   const handleClear = () => {
     clearAIConfig();
+    setStatus('unconfigured');
     setApiUrl('');
     setApiKey('');
     setModel('');
@@ -186,6 +234,7 @@ export default function SettingsPage() {
   const applyPreset = (preset: typeof PRESETS[0]) => {
     setApiUrl(preset.apiUrl);
     setModel(preset.model);
+    markConfigChanged(preset.apiUrl, apiKey, preset.model);
   };
 
   return (
@@ -212,7 +261,7 @@ export default function SettingsPage() {
             </h1>
             <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
               接入你自己的大模型 API，获得更智能的产品思维训练体验。
-              支持 OpenAI 兼容格式的 API（DeepSeek、GLM、Anthropic 等）。
+              支持 OpenAI 兼容格式的 API（OpenAI、DeepSeek、GLM 等）。
             </p>
             <p style={{ fontSize: 13, color: 'var(--color-text-hint)', lineHeight: 1.6, marginTop: 8 }}>
               你的 API Key 仅存储在浏览器本地，不会发送到任何第三方服务器。
@@ -220,7 +269,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Current status */}
-          {getAIConfig() ? (
+          {storedConfig ? (
             <div
               className="vp-card"
               style={{
@@ -232,14 +281,19 @@ export default function SettingsPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                 <Zap size={16} style={{ color: 'var(--color-success)' }} />
                 <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-success)' }}>
-                  AI 模型已配置
+                  {connectionStatus === 'connected' ? 'AI 模型已连接成功' : 'AI 模型已配置，尚未测试成功'}
                 </span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                当前模型：<strong>{getAIConfig()?.model}</strong>
+                当前模型：<strong>{storedConfig.model}</strong>
                 &nbsp;·&nbsp;
-                {getAIConfig()?.apiUrl}
+                {storedConfig.apiUrl}
               </p>
+              {connectionStatus !== 'connected' && (
+                <p style={{ fontSize: 12, color: 'var(--color-warning)', lineHeight: 1.6, marginTop: 6 }}>
+                  保存配置不等于连接成功。请点击“测试连接”，成功后才能生成 AI 分析。
+                </p>
+              )}
             </div>
           ) : (
             <div
@@ -257,7 +311,7 @@ export default function SettingsPage() {
                 </span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                当前使用本地规则引擎进行评价。配置 AI 模型后，评价将更加精准和个性化。
+                生产环境必须连接并测试 AI 模型成功后，才能生成有效分析。
               </p>
             </div>
           )}
@@ -293,7 +347,10 @@ export default function SettingsPage() {
                 className="vp-textarea"
                 style={{ fontFamily: 'monospace', fontSize: 13, padding: '10px 14px' }}
                 value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
+                onChange={(e) => {
+                  setApiUrl(e.target.value);
+                  markConfigChanged(e.target.value, apiKey, model);
+                }}
                 placeholder="https://api.openai.com"
               />
               <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
@@ -311,7 +368,10 @@ export default function SettingsPage() {
                   type={showKey ? 'text' : 'password'}
                   style={{ fontFamily: 'monospace', fontSize: 13, padding: '10px 14px', paddingRight: 40 }}
                   value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    markConfigChanged(apiUrl, e.target.value, model);
+                  }}
                   placeholder="sk-..."
                 />
                 <button
@@ -345,7 +405,10 @@ export default function SettingsPage() {
                 className="vp-textarea"
                 style={{ fontFamily: 'monospace', fontSize: 13, padding: '10px 14px' }}
                 value={model}
-                onChange={(e) => setModel(e.target.value)}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  markConfigChanged(apiUrl, apiKey, e.target.value);
+                }}
                 placeholder="gpt-4o"
               />
               <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
@@ -369,7 +432,7 @@ export default function SettingsPage() {
               >
                 {testing ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '测试连接'}
               </button>
-              {getAIConfig() && (
+              {storedConfig && (
                 <button
                   className="vp-btn vp-btn-danger-text"
                   onClick={handleClear}
@@ -412,7 +475,7 @@ export default function SettingsPage() {
               </p>
               <p>
                 <strong>Q: 不配置 AI 能用吗？</strong><br />
-                A: 可以。VibePilot 内置本地规则引擎，会基于正则匹配和模板进行评价。配置 AI 后评价会更加精准和个性化。
+                A: 正式生成不能用。生产环境必须先连接并测试 AI 模型成功；mock fallback 只用于开发调试。
               </p>
             </div>
           </div>

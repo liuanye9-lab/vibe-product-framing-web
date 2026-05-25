@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
-import { explainSuggestion, suggestStage } from '../api/evaluate';
+import { explainSuggestion, isAIReady, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import type { AiSuggestion, BlindSpotReviewState, SuggestionKey } from '../types';
 
@@ -16,14 +16,22 @@ const FIELDS: Array<{ key: keyof BlindSpotReviewState; title: string; desc: stri
   { key: 'recommendedAdjustment', title: '推荐调整', desc: '基于盲点，第一版应该如何收缩或修改。' },
 ];
 
+const AI_NOT_READY_MESSAGE = 'AI 模型未连接成功。请先进入设置页完成配置并测试连接，否则无法生成有效分析。';
+
 export default function BlindSpotReviewPage() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { brief, loading, updateStage, updateSuggestion } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
+  const autoRequestedRef = useRef<string | null>(null);
 
   const generate = async () => {
     if (!brief || generating) return;
+    if (!isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
     setGenerating(true);
     setError('');
     try {
@@ -38,7 +46,15 @@ export default function BlindSpotReviewPage() {
 
   useEffect(() => {
     if (!brief || loading) return;
-    if (!brief.stages.blindSpot.demandRisk) generate();
+    if (!isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
+    const requestKey = `${brief.id}:blindSpot`;
+    if (!brief.stages.blindSpot.demandRisk && autoRequestedRef.current !== requestKey) {
+      autoRequestedRef.current = requestKey;
+      generate();
+    }
   }, [brief?.id, loading]);
 
   if (loading || !brief) return <Loader />;
@@ -52,7 +68,7 @@ export default function BlindSpotReviewPage() {
       previousPath={`/technical/${brief.id}`}
       nextPath={`/handoff/${brief.id}`}
       nextLabel="生成开发交付"
-      aside={<Aside generating={generating} onGenerate={generate} error={error} />}
+      aside={<Aside generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} />}
     >
       {FIELDS.map((field) => (
         <SuggestionCard
@@ -71,7 +87,7 @@ export default function BlindSpotReviewPage() {
   );
 }
 
-function Aside({ generating, onGenerate, error }: { generating: boolean; onGenerate: () => void; error: string }) {
+function Aside({ generating, onGenerate, error, onSettings }: { generating: boolean; onGenerate: () => void; error: string; onSettings: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>反向挑战</h3>
@@ -79,6 +95,11 @@ function Aside({ generating, onGenerate, error }: { generating: boolean; onGener
         好方案不怕被挑战。这里专门找反证、风险和第一版不该做的东西。
       </p>
       {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
+      {error === AI_NOT_READY_MESSAGE && (
+        <button className="vp-btn vp-btn-primary" onClick={onSettings} style={{ width: '100%', marginBottom: 8 }}>
+          <Settings size={14} /> 去设置
+        </button>
+      )}
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在审查...' : '重新生成盲点审查'}

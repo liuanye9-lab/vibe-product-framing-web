@@ -1,6 +1,7 @@
 import { Check, HelpCircle, Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import type { AiSuggestion, GlossaryKey, SuggestionValue } from '../types';
+import { toDisplayList, toDisplayText } from '../lib/utils';
 import GlossaryHelp from './GlossaryHelp';
 
 interface SuggestionCardProps<T extends SuggestionValue = SuggestionValue> {
@@ -16,9 +17,8 @@ interface SuggestionCardProps<T extends SuggestionValue = SuggestionValue> {
   showGlossaryByDefault?: boolean;
 }
 
-function valueToText(value: SuggestionValue | undefined): string {
-  if (!value) return '';
-  return Array.isArray(value) ? value.join('\n') : String(value);
+function valueToText(value: unknown): string {
+  return Array.isArray(value) ? toDisplayList(value).join('\n') : toDisplayText(value);
 }
 
 function textToValue<T extends SuggestionValue>(text: string, original: T | undefined): T {
@@ -77,11 +77,18 @@ export default function SuggestionCard<T extends SuggestionValue = SuggestionVal
           {description && <p style={{ fontSize: 12, color: 'var(--color-text-hint)', lineHeight: 1.6 }}>{description}</p>}
           <GlossaryHelp glossaryKey={glossaryKey} defaultOpen={showGlossaryByDefault} />
         </div>
-        {suggestion?.accepted && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-success)' }}>
-            <Check size={12} /> 已接受
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {suggestion?.source && suggestion.source !== 'ai' && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-warning)' }}>
+              {suggestion.source === 'mock' ? 'Mock 输出' : '本地规则'}
+            </span>
+          )}
+          {suggestion?.accepted && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--color-success)' }}>
+              <Check size={12} /> 已接受
+            </span>
+          )}
+        </div>
       </div>
 
       <textarea
@@ -94,7 +101,7 @@ export default function SuggestionCard<T extends SuggestionValue = SuggestionVal
 
       {suggestion?.reason && (
         <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginTop: 10 }}>
-          <strong style={{ color: 'var(--color-text)' }}>推荐理由：</strong>{suggestion.reason}
+          <strong style={{ color: 'var(--color-text)' }}>推荐理由：</strong>{toDisplayText(suggestion.reason)}
         </p>
       )}
 
@@ -104,14 +111,14 @@ export default function SuggestionCard<T extends SuggestionValue = SuggestionVal
             <ShieldAlert size={13} /> 风险
           </p>
           <ul style={{ paddingLeft: 18, fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
-            {suggestion.risks.map((risk) => <li key={risk}>{risk}</li>)}
+            {toDisplayList(suggestion.risks).map((risk) => <li key={risk}>{risk}</li>)}
           </ul>
         </div>
       )}
 
       {!!suggestion?.alternatives?.length && (
         <p style={{ fontSize: 12, color: 'var(--color-text-hint)', lineHeight: 1.7, marginTop: 10 }}>
-          替代方案：{suggestion.alternatives.join(' / ')}
+          替代方案：{toDisplayList(suggestion.alternatives).join(' / ')}
         </p>
       )}
 

@@ -1,5 +1,7 @@
 export type SuggestionValue = string | string[] | number | boolean;
 
+export type OutputSource = 'ai' | 'mock' | 'local-rule';
+
 export type ProjectType = 'Web App' | 'AI Agent' | 'SaaS' | 'Portfolio' | 'Other';
 
 export type CopilotMode = 'beginner' | 'builder' | 'review';
@@ -104,6 +106,7 @@ export interface AiSuggestion<T = SuggestionValue> {
   alternatives?: string[];
   accepted: boolean;
   editedByUser: boolean;
+  source?: OutputSource;
 }
 
 export interface IdeaInputState {
@@ -206,6 +209,7 @@ export interface FinalHandoff {
   dataStructure: string;
   acceptanceCriteria: string;
   developmentPrompt: string;
+  source?: OutputSource;
 }
 
 export interface CopilotStages {
@@ -256,4 +260,5 @@ export interface EvaluateIdeaResult {
   mainIssue: string;
   missingFields: string[];
   riskFlags: string[];
+  source?: OutputSource;
 }

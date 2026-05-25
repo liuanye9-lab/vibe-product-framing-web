@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
-import { explainSuggestion, suggestStage } from '../api/evaluate';
+import { explainSuggestion, isAIReady, suggestIdeaDiagnosis, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
+import { toDisplayText } from '../lib/utils';
 import { extractCoreDecision } from '../rules/coreDecisionExtractor';
 import type { AiSuggestion, DemandDiscoveryState, SuggestionKey } from '../types';
+
+const AI_NOT_READY_MESSAGE = 'AI 模型未连接成功。请先进入设置页完成配置并测试连接，否则无法生成有效分析。';
 
 const FIELDS: Array<{ key: keyof DemandDiscoveryState; title: string; desc: string }> = [
   { key: 'targetUserEvidence', title: '谁真的有这个问题', desc: '用证据描述哪类用户最可能真的痛。' },
@@ -21,18 +24,57 @@ const FIELDS: Array<{ key: keyof DemandDiscoveryState; title: string; desc: stri
 
 export default function DemandDiscoveryPage() {
   const { id } = useParams<{ id: string }>();
-  const { brief, loading, updateStage, updateSuggestion } = useProductBrief(id);
+  const navigate = useNavigate();
+  const { brief, loading, save, updateSuggestion } = useProductBrief(id);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [view, setView] = useState<'focus' | 'detail'>('focus');
+  const autoRequestedRef = useRef<string | null>(null);
+  const detailRequestedRef = useRef<string | null>(null);
 
-  const generate = async () => {
+  const generateSummary = async () => {
     if (!brief || generating) return;
+    if (!isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
+    setGenerating(true);
+    setError('');
+    try {
+      const suggestions = await suggestIdeaDiagnosis(brief);
+      save({
+        ...brief,
+        stages: {
+          ...brief.stages,
+          discovery: { ...brief.stages.discovery, ...suggestions.discovery },
+          product: { ...brief.stages.product, ...suggestions.product },
+          business: { ...brief.stages.business, ...suggestions.business },
+        },
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const generateDetail = async () => {
+    if (!brief || generating) return;
+    if (!isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
     setGenerating(true);
     setError('');
     try {
       const suggestions = await suggestStage('discovery', brief);
-      updateStage<DemandDiscoveryState>('discovery', suggestions);
+      save({
+        ...brief,
+        stages: {
+          ...brief.stages,
+          discovery: { ...brief.stages.discovery, ...suggestions },
+        },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
     } finally {
@@ -42,8 +84,30 @@ export default function DemandDiscoveryPage() {
 
   useEffect(() => {
     if (!brief || loading) return;
-    if (!brief.stages.discovery.targetUserEvidence) generate();
+    if (!isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
+    const requestKey = `${brief.id}:idea-summary`;
+    if (!brief.stages.discovery.targetUserEvidence && autoRequestedRef.current !== requestKey) {
+      autoRequestedRef.current = requestKey;
+      generateSummary();
+    }
   }, [brief?.id, loading]);
+
+  useEffect(() => {
+    if (!brief || loading || view !== 'detail') return;
+    if (!isAIReady()) {
+      setError(AI_NOT_READY_MESSAGE);
+      return;
+    }
+    const requestKey = `${brief.id}:discovery-detail`;
+    const needsDetail = !brief.stages.discovery.painFrequency || !brief.stages.discovery.demandEvidence;
+    if (needsDetail && detailRequestedRef.current !== requestKey) {
+      detailRequestedRef.current = requestKey;
+      generateDetail();
+    }
+  }, [brief?.id, loading, view]);
 
   if (loading || !brief) return <Loader />;
   const decision = extractCoreDecision(brief, 'idea');
@@ -57,7 +121,7 @@ export default function DemandDiscoveryPage() {
       previousPath="/new"
       nextPath={`/scope/${brief.id}`}
       nextLabel="进入第一版决策"
-      aside={<Aside mode={brief.mode} view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} />}
+      aside={<Aside mode={brief.mode} view={view} onViewChange={setView} generating={generating} onGenerate={view === 'detail' ? generateDetail : generateSummary} error={error} onSettings={() => navigate('/settings')} />}
     >
       {view === 'focus' ? (
         <DecisionCard
@@ -66,9 +130,9 @@ export default function DemandDiscoveryPage() {
           accepted={Boolean(brief.stages.discovery.targetUserEvidence?.accepted)}
           loading={generating}
           onAccept={() => updateSuggestion('discovery', 'targetUserEvidence', { accepted: true })}
-          onSimplify={generate}
+          onSimplify={generateSummary}
           onExplain={() => explainSuggestion('想法诊断核心决策', brief)}
-          editableValue={brief.stages.discovery.targetUserEvidence?.value || ''}
+          editableValue={toDisplayText(brief.stages.discovery.targetUserEvidence?.value)}
           onEdit={(value) => updateSuggestion('discovery', 'targetUserEvidence', { value, editedByUser: true, accepted: false })}
         />
       ) : FIELDS.map((field) => (
@@ -80,7 +144,7 @@ export default function DemandDiscoveryPage() {
           regenerating={generating}
           onAccept={() => updateSuggestion('discovery', field.key as SuggestionKey, { accepted: true })}
           onChange={(value) => updateSuggestion('discovery', field.key as SuggestionKey, { value, editedByUser: true, accepted: false })}
-          onRegenerate={generate}
+          onRegenerate={generateDetail}
           onExplain={() => explainSuggestion(field.title, brief)}
         />
       ))}
@@ -88,7 +152,7 @@ export default function DemandDiscoveryPage() {
   );
 }
 
-function Aside({ mode, view, onViewChange, generating, onGenerate, error }: { mode: string; view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string }) {
+function Aside({ mode, view, onViewChange, generating, onGenerate, error, onSettings }: { mode: string; view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void }) {
   const modeLabel = mode === 'review' ? 'Review Mode · 审查已有方案' : mode === 'builder' ? 'Standard Mode · 30 分钟认真构思' : 'Quick Mode · 10 分钟出方案';
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
@@ -104,6 +168,11 @@ function Aside({ mode, view, onViewChange, generating, onGenerate, error }: { mo
         默认只看一个核心判断；需要完整产品/业务地图时再切到 Detail。
       </p>
       {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
+      {error === AI_NOT_READY_MESSAGE && (
+        <button className="vp-btn vp-btn-primary" onClick={onSettings} style={{ width: '100%', marginBottom: 8 }}>
+          <Settings size={14} /> 去设置
+        </button>
+      )}
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在生成...' : '重新生成诊断'}

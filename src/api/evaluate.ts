@@ -1,5 +1,6 @@
 import type {
   AiSuggestion,
+  BusinessRoi,
   BusinessFramingState,
   CopilotStages,
   DemandDiscoveryState,
@@ -29,7 +30,14 @@ export interface AIConfig {
   model: string;      // e.g. gpt-4o
 }
 
+export type AIConnectionStatus = 'unconfigured' | 'connected' | 'failed';
+
 const AI_CONFIG_KEY = 'vibepilot_ai_config';
+const AI_CONNECTION_STATUS_KEY = 'vibepilot_ai_connection_status';
+const AI_CACHE_KEY = 'vibepilot_ai_response_cache_v1';
+const AI_NOT_READY_MESSAGE = 'AI 模型未连接成功。请先进入设置页完成配置并测试连接，否则无法生成有效分析。';
+const ENABLE_MOCK_FALLBACK =
+  import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK === 'true';
 
 export function normalizeApiUrl(apiUrl: string): string {
   return apiUrl.trim().replace(/\/+$/, '');
@@ -61,6 +69,36 @@ export function saveAIConfig(config: AIConfig): void {
 
 export function clearAIConfig(): void {
   localStorage.removeItem(AI_CONFIG_KEY);
+  saveAIConnectionStatus('unconfigured');
+}
+
+export function getAIConnectionStatus(): AIConnectionStatus {
+  const status = localStorage.getItem(AI_CONNECTION_STATUS_KEY);
+  if (status === 'connected' || status === 'failed' || status === 'unconfigured') return status;
+  return getAIConfig() ? 'failed' : 'unconfigured';
+}
+
+export function saveAIConnectionStatus(status: AIConnectionStatus): void {
+  localStorage.setItem(AI_CONNECTION_STATUS_KEY, status);
+}
+
+export function isAIReady(): boolean {
+  return Boolean(getAIConfig()) && getAIConnectionStatus() === 'connected';
+}
+
+export function requireAIConfig(): AIConfig {
+  const config = getAIConfig();
+  if (!config) {
+    throw new Error('未配置 AI 模型。请先到设置页配置 API URL、API Key 和模型名称，并测试连接成功后再使用。');
+  }
+  return config;
+}
+
+export function requireAIReady(): AIConfig {
+  if (!isAIReady()) {
+    throw new Error(AI_NOT_READY_MESSAGE);
+  }
+  return requireAIConfig();
 }
 
 // --- Request Types ---
@@ -78,6 +116,7 @@ interface EvaluateResponse {
   evaluation: string;
   quality: 'specific' | 'ok' | 'vague';
   followUp: string;
+  source?: 'ai' | 'mock' | 'local-rule';
 }
 
 // --- Direct AI Call (OpenAI-compatible via same-origin proxy) ---
@@ -120,18 +159,26 @@ export function extractAIContent(data: Record<string, unknown>): string {
   return content.trim();
 }
 
-const DEFAULT_AI_TIMEOUT_MS = 45000;
-const SUGGEST_AI_TIMEOUT_MS = 60000;
-const EXPLAIN_AI_TIMEOUT_MS = 30000;
-const HANDOFF_AI_TIMEOUT_MS = 75000;
+const DEFAULT_AI_TIMEOUT_MS = 90000;
+const SUGGEST_AI_TIMEOUT_MS = 120000;
+const EXPLAIN_AI_TIMEOUT_MS = 60000;
+const HANDOFF_AI_TIMEOUT_MS = 180000;
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 function isLikelyTimeout(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === 'TimeoutError') return true;
+  if (error instanceof Error && error.name === 'TimeoutError') return true;
   const message = getErrorMessage(error).toLowerCase();
-  return message.includes('timeout') || message.includes('超时') || message.includes('aborted') || message.includes('abort');
+  return (
+    message.includes('timeout') ||
+    message.includes('timed out') ||
+    message.includes('超时') ||
+    message.includes('aborted') ||
+    message.includes('abort')
+  );
 }
 
 function abortSignalTimeout(timeoutMs: number): AbortSignal {
@@ -145,22 +192,33 @@ function abortSignalTimeout(timeoutMs: number): AbortSignal {
 }
 
 async function callAIProxy(config: AIConfig, body: Record<string, unknown>, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<Record<string, unknown>> {
-  console.log('[VibePilot] AI Proxy Request:', { apiUrl: config.apiUrl, model: body.model });
+  const startedAt = performance.now();
+  console.log('[VibePilot] AI Proxy Request:', { apiUrl: config.apiUrl, model: body.model, timeoutMs });
+  const clientTimeoutMs = timeoutMs + 15000;
 
   const response = await fetch('/api/ai-proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    signal: abortSignalTimeout(timeoutMs),
+    signal: abortSignalTimeout(clientTimeoutMs),
     body: JSON.stringify({
       apiUrl: config.apiUrl,
       apiKey: config.apiKey,
       body,
+      timeoutMs,
     }),
   });
 
   const rawText = await response.text();
+  const durationMs = Math.round(performance.now() - startedAt);
+  console.log('[VibePilot] AI Proxy Response:', {
+    model: body.model,
+    timeoutMs,
+    durationMs,
+    status: response.status,
+    responseChars: rawText.length,
+  });
   console.log('[VibePilot] AI Proxy Raw Response:', rawText.slice(0, 500));
 
   let parsedError: unknown = null;
@@ -308,12 +366,12 @@ async function callDirectAI(req: EvaluateRequest, config: AIConfig): Promise<Eva
   console.log('[VibePilot] Extracted content:', content.slice(0, 200));
 
   if (!content) {
-    throw new Error('AI API 返回成功但内容为空，请检查模型名称是否正确。响应结构：' + Object.keys(data).join(', '));
+    throw new Error('模型返回为空，请检查模型名称是否正确。响应结构：' + Object.keys(data).join(', '));
   }
 
-  if (req.mode === 'hint') return { evaluation: content, quality: 'ok', followUp: '' };
+  if (req.mode === 'hint') return { evaluation: content, quality: 'ok', followUp: '', source: 'ai' };
 
-  if (req.mode === 'followup') return { evaluation: '', quality: 'ok', followUp: content };
+  if (req.mode === 'followup') return { evaluation: '', quality: 'ok', followUp: content, source: 'ai' };
 
   // Parse JSON from AI response (evaluate mode)
   let result: EvaluateResponse;
@@ -342,7 +400,7 @@ async function callDirectAI(req: EvaluateRequest, config: AIConfig): Promise<Eva
     };
   }
 
-  return result;
+  return { ...result, source: 'ai' };
 }
 
 // --- Local Mock (Fallback when no AI config) ---
@@ -553,6 +611,7 @@ function buildMockResponse(step: StepConfig, answer: string): EvaluateResponse {
     evaluation: template?.evaluation || getDefaultEvaluation(quality),
     quality,
     followUp: template?.followUp || getDefaultFollowUp(quality),
+    source: 'mock',
   };
 }
 
@@ -585,13 +644,13 @@ function makeSuggestion<T extends SuggestionValue>(
     alternatives,
     accepted: false,
     editedByUser: false,
+    source: 'mock',
   };
 }
 
 function acceptedText(value: AiSuggestion | undefined): string {
   if (!value) return '';
-  if (Array.isArray(value.value)) return value.value.join('；');
-  return String(value.value || '');
+  return normalizeSuggestionText(value.value);
 }
 
 function extractJson<T>(content: string): T | null {
@@ -608,9 +667,67 @@ function extractJson<T>(content: string): T | null {
   }
 }
 
-async function callCopilotJson<T>(systemPrompt: string, userContent: string, maxTokens = 1600, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<T | null> {
-  const config = getAIConfig();
-  if (!config) return null;
+function hashString(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash * 33) ^ input.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function readAICache(): Record<string, unknown> {
+  try {
+    const raw = localStorage.getItem(AI_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAICache(cache: Record<string, unknown>): void {
+  const entries = Object.entries(cache).slice(-50);
+  localStorage.setItem(AI_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+}
+
+function getAICacheKey(stage: string, brief: ProductBrief, model: string, userContent: string): string {
+  return `${stage}:${brief.id}:${model}:${hashString(userContent)}`;
+}
+
+function normalizeForReference(value: string): string {
+  return value.toLowerCase().replace(/[\s"'“”‘’`.,，。;；:：!?！？()[\]{}【】<>《》/\\|-]/g, '');
+}
+
+function splitReferenceFragments(value: string): string[] {
+  return value
+    .split(/[\s"'“”‘’`.,，。;；:：!?！？()[\]{}【】<>《》/\\|-]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 4);
+}
+
+function assertAIOutputReferencesInput(brief: ProductBrief, output: unknown): void {
+  const outputText = normalizeForReference(JSON.stringify(output));
+  const fields = [
+    brief.ideaInput.rawIdea,
+    brief.ideaInput.targetUser,
+    brief.ideaInput.scenario,
+    brief.ideaInput.problem,
+    brief.ideaInput.projectType,
+  ].filter((value): value is string => Boolean(value && value.trim()));
+
+  const referencedCount = fields.filter((field) => {
+    const normalized = normalizeForReference(field);
+    if (normalized && outputText.includes(normalized)) return true;
+    return splitReferenceFragments(field).some((fragment) => outputText.includes(normalizeForReference(fragment)));
+  }).length;
+
+  if (referencedCount < 2) {
+    throw new Error('AI 输出没有基于当前产品想法，请重新生成。');
+  }
+}
+
+async function callCopilotJson<T>(systemPrompt: string, userContent: string, maxTokens = 1600, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<T> {
+  const config = requireAIConfig();
   try {
     const data = await callAIProxy(config, {
       model: config.model,
@@ -618,19 +735,48 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
       ],
-      temperature: 0.35,
+      temperature: 0.2,
       max_tokens: maxTokens,
     }, timeoutMs);
     const content = extractAIContent(data);
-    return extractJson<T>(content);
+    if (!content) {
+      throw new Error('模型返回为空');
+    }
+    const json = extractJson<T>(content);
+    if (!json) {
+      throw new Error('模型返回格式错误，未找到有效 JSON');
+    }
+    return json;
   } catch (err) {
     const message = getErrorMessage(err);
-    console.warn('[VibePilot] Copilot AI failed, using mock fallback:', err);
+    console.warn('[VibePilot] Copilot AI failed:', err);
     if (isLikelyTimeout(err)) {
       throw new Error(`大模型响应超时：已等待 ${Math.round(timeoutMs / 1000)} 秒。请检查模型是否响应较慢，或在设置页换用更快模型。`);
     }
     throw new Error(`大模型生成失败：${message}`);
   }
+}
+
+async function cachedCopilotJson<T>(
+  stage: string,
+  brief: ProductBrief,
+  systemPrompt: string,
+  userContent: string,
+  maxTokens = 900,
+  timeoutMs = DEFAULT_AI_TIMEOUT_MS
+): Promise<T> {
+  const config = requireAIConfig();
+  const cacheKey = getAICacheKey(stage, brief, config.model, userContent);
+  const cache = readAICache();
+  if (cache[cacheKey]) {
+    console.log('[VibePilot] AI Cache Hit:', { stage, briefId: brief.id, model: config.model });
+    return cache[cacheKey] as T;
+  }
+
+  const result = await callCopilotJson<T>(systemPrompt, userContent, maxTokens, timeoutMs);
+  cache[cacheKey] = result;
+  writeAICache(cache);
+  return result;
 }
 
 export function detectScopeCreep(input: string): string[] {
@@ -654,6 +800,7 @@ export async function evaluateIdea(input: IdeaInputState): Promise<EvaluateIdeaR
       : '输入已经具备基本方向，可以进入 AI 辅助构思。',
     missingFields,
     riskFlags,
+    source: 'local-rule',
   };
 }
 
@@ -705,8 +852,8 @@ function mockBusinessSuggestions(brief: ProductBrief): BusinessFramingState {
       userBenefitScore: makeSuggestion(4, '用户能减少前期返工，收益比较明确。'),
       ownerBenefitScore: makeSuggestion(4, '产品能沉淀一套可复用的新手构思流程。'),
       developmentCostScore: makeSuggestion(2, 'V1 可以纯前端 + localStorage + AI proxy，不需要复杂后端。'),
-      maintenanceCostScore: makeSuggestion(2, '主要维护 prompt、mock fallback 和页面流程，成本可控。'),
-      aiCostRisk: makeSuggestion('中等：如果每页都调用大模型，成本会随使用次数增长；V1 应保留 mock fallback 和用户自定义 API。', 'AI 成本是这个产品的主要可变成本。'),
+      maintenanceCostScore: makeSuggestion(2, '主要维护 prompt、AI 调用状态和页面流程，成本可控。'),
+      aiCostRisk: makeSuggestion('中等：如果每页都调用大模型，成本会随使用次数增长；V1 必须显式提示 API 失败，不能用 mock 冒充 AI 输出。', 'AI 成本是这个产品的主要可变成本。'),
       userSwitchingCost: makeSuggestion('低到中：用户不用迁移数据，只需要愿意在开发前多走一遍结构化流程。', '切换成本越低，越适合做 MVP 验证。'),
       roiJudgement: makeSuggestion('positive', '收益清晰、开发成本较低，适合先做 MVP 验证。'),
       reason: makeSuggestion('用户收益主要来自少返工和更清晰的 Development Prompt；技术实现可控，所以 ROI 初步偏正向。', '这里是新手版 ROI，不做复杂财务模型。'),
@@ -742,8 +889,8 @@ function mockTechnicalSuggestions(brief?: ProductBrief): TechnicalPlanningState 
       {
         userNeed: '用户需要 AI 生成产品和技术建议',
         requiredCapability: '大模型调用',
-        v1Implementation: '用户自定义 API + /api/ai-proxy + mock fallback',
-        whyThisIsEnough: '既能支持真实模型，也能在未配置模型时完整演示。',
+        v1Implementation: '用户自定义 API + /api/ai-proxy + 显式连接状态',
+        whyThisIsEnough: '支持真实模型调用，并在未连接成功时停止生成、提示修复配置。',
         upgradeCondition: '当需要统一计费、限流和审计时，再改成后端托管 API key。',
         risks: ['不同模型响应格式可能不一致'],
       },
@@ -787,22 +934,82 @@ function normalizeSuggestionMap<T extends Record<string, AiSuggestion | undefine
   fallback: T,
   aiValue: Partial<Record<keyof T, Partial<AiSuggestion>>> | null
 ): T {
-  if (!aiValue) return fallback;
-  const output = { ...fallback } as T;
+  if (!aiValue) return ENABLE_MOCK_FALLBACK ? fallback : ({} as T);
+  const output = {} as T;
   Object.keys(fallback).forEach((key) => {
     const k = key as keyof T;
-    const base = fallback[k];
     const incoming = aiValue[k];
-    if (base && incoming?.value !== undefined) {
+    if (incoming?.value !== undefined) {
       output[k] = {
-        ...base,
-        ...incoming,
+        value: normalizeSuggestionValue(incoming.value),
+        reason: normalizeSuggestionText(incoming.reason) || '由 AI 基于当前输入生成。',
+        risks: normalizeSuggestionList(incoming.risks),
+        alternatives: normalizeSuggestionList(incoming.alternatives),
         accepted: Boolean(incoming.accepted),
         editedByUser: Boolean(incoming.editedByUser),
+        source: 'ai',
       } as T[keyof T];
     }
   });
   return output;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function normalizeSuggestionValue(value: unknown): SuggestionValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeSuggestionText(item)).filter(Boolean);
+  }
+
+  if (isPlainRecord(value) && 'value' in value) {
+    return normalizeSuggestionValue(value.value);
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') {
+    return value;
+  }
+
+  return normalizeSuggestionText(value);
+}
+
+function normalizeSuggestionText(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map((item) => normalizeSuggestionText(item)).filter(Boolean).join('；');
+  if (isPlainRecord(value) && 'value' in value) return normalizeSuggestionText(value.value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeSuggestionList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => normalizeSuggestionText(item)).filter(Boolean).slice(0, 3);
+}
+
+function normalizeBusinessSuggestions(
+  fallback: BusinessFramingState,
+  aiValue: Partial<Record<string, Partial<AiSuggestion> | Partial<BusinessRoi>>> | null
+): BusinessFramingState {
+  const base = normalizeSuggestionMap(
+    fallback as Record<string, AiSuggestion | undefined>,
+    aiValue as Partial<Record<string, Partial<AiSuggestion>>> | null
+  ) as BusinessFramingState;
+  const incomingRoi = aiValue?.roi as Partial<BusinessRoi> | undefined;
+  if (!incomingRoi) return base;
+
+  return {
+    ...base,
+    roi: normalizeSuggestionMap(
+      (fallback.roi || {}) as Record<string, AiSuggestion | undefined>,
+      incomingRoi as Partial<Record<string, Partial<AiSuggestion>>>
+    ) as BusinessRoi,
+  };
 }
 
 export async function suggestStage(stage: 'discovery', brief: ProductBrief): Promise<DemandDiscoveryState>;
@@ -812,6 +1019,7 @@ export async function suggestStage(stage: 'technical', brief: ProductBrief): Pro
 export async function suggestStage(stage: 'mvp', brief: ProductBrief): Promise<MvpScopeState>;
 export async function suggestStage(stage: 'blindSpot', brief: ProductBrief): Promise<BlindSpotReviewState>;
 export async function suggestStage(stage: FramingStage, brief: ProductBrief): Promise<Partial<CopilotStages[FramingStage]>> {
+  if (!ENABLE_MOCK_FALLBACK) requireAIReady();
   const fallback = stage === 'discovery'
     ? mockDemandDiscoverySuggestions(brief)
     : stage === 'product'
@@ -825,36 +1033,115 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
             : mockMvpSuggestions(brief);
 
   try {
-    const ai = await callCopilotJson<Record<string, Partial<AiSuggestion>>>(
+    const context = buildBriefContext(brief);
+    const ai = await cachedCopilotJson<Record<string, Partial<AiSuggestion>>>(
+      `stage:${stage}`,
+      brief,
       buildSuggestStagePrompt(stage),
-      buildBriefContext(brief),
-      1400,
+      context,
+      850,
       SUGGEST_AI_TIMEOUT_MS
     );
-
+    assertAIOutputReferencesInput(brief, ai);
+    if (stage === 'business') {
+      return normalizeBusinessSuggestions(fallback as BusinessFramingState, ai) as Partial<CopilotStages[FramingStage]>;
+    }
     return normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, ai) as Partial<CopilotStages[FramingStage]>;
   } catch (error) {
-    console.warn('[VibePilot] Suggest stage failed, fallback used:', error);
+    if (!ENABLE_MOCK_FALLBACK) throw error;
+    console.warn('[VibePilot] Suggest stage failed, explicit dev mock used:', error);
+    if (stage === 'business') {
+      return fallback as Partial<CopilotStages[FramingStage]>;
+    }
     return normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, null) as Partial<CopilotStages[FramingStage]>;
   }
 }
 
-export async function explainSuggestion(section: string, brief: ProductBrief): Promise<string> {
+export async function suggestIdeaDiagnosis(brief: ProductBrief): Promise<{
+  discovery: DemandDiscoveryState;
+  product: ProductFramingState;
+  business: BusinessFramingState;
+}> {
+  if (!ENABLE_MOCK_FALLBACK) requireAIReady();
+  const fallback = {
+    discovery: mockDemandDiscoverySuggestions(brief),
+    product: mockProductSuggestions(brief),
+    business: mockBusinessSuggestions(brief),
+  };
+
   try {
-    const ai = await callCopilotJson<{ explanation: string }>(
+    const context = buildBriefContext(brief);
+    const ai = await cachedCopilotJson<{
+      discovery: Partial<Record<keyof DemandDiscoveryState, Partial<AiSuggestion>>>;
+      product: Partial<Record<keyof ProductFramingState, Partial<AiSuggestion>>>;
+      business: Partial<Record<string, Partial<AiSuggestion> | Partial<BusinessRoi>>>;
+    }>(
+      'ideaDiagnosis',
+      brief,
+      `你是产品前期构思 Copilot。基于用户输入一次性生成 Idea Diagnosis。
+只返回 JSON，不要 Markdown。必须引用 rawIdea、targetUser、scenario、problem、projectType 中至少两个字段。
+不要输出与用户想法无关的通用模板。
+默认只生成核心决策摘要，不生成完整长文。
+
+字段格式：每个建议字段都是 {"value": string|string[]|number, "reason": string, "risks": string[], "alternatives": string[]}。
+返回结构：
+{
+  "discovery": {
+    "targetUserEvidence": {}, "currentAlternative": {}, "smallestValidationAction": {}
+  },
+  "product": {
+    "productOneLiner": {}, "targetUser": {}, "scenario": {}, "corePainPoint": {}, "aiValue": {}
+  },
+  "business": {
+    "valueHypothesis": {}, "risksAndBlindSpots": {},
+    "roi": {
+      "roiJudgement": {}, "reason": {}
+    }
+  }
+}
+限制：value 不超过 70 字；reason 不超过 35 字；数组最多 2 条；roiJudgement.value 只能是 positive/uncertain/negative。`,
+      context,
+      850,
+      SUGGEST_AI_TIMEOUT_MS
+    );
+    assertAIOutputReferencesInput(brief, ai);
+    return {
+      discovery: normalizeSuggestionMap(fallback.discovery as Record<string, AiSuggestion>, ai.discovery || null) as DemandDiscoveryState,
+      product: normalizeSuggestionMap(fallback.product as Record<string, AiSuggestion>, ai.product || null) as ProductFramingState,
+      business: normalizeBusinessSuggestions(fallback.business, ai.business || null),
+    };
+  } catch (error) {
+    if (!ENABLE_MOCK_FALLBACK) throw error;
+    console.warn('[VibePilot] Idea diagnosis failed, explicit dev mock used:', error);
+    return fallback;
+  }
+}
+
+export async function explainSuggestion(section: string, brief: ProductBrief): Promise<string> {
+  if (!ENABLE_MOCK_FALLBACK) requireAIReady();
+  try {
+    const context = `要解释的项：${section}\n\n当前项目上下文：\n${buildBriefContext(brief)}`;
+    const ai = await cachedCopilotJson<{ explanation: string }>(
+      `explain:${section}`,
+      brief,
       buildExplainSuggestionPrompt(),
-      `要解释的项：${section}\n\n当前项目上下文：\n${buildBriefContext(brief)}`,
-      500,
+      context,
+      300,
       EXPLAIN_AI_TIMEOUT_MS
     );
-    return ai?.explanation || `推荐“${section}”是为了让 V1 先验证核心闭环，避免一开始引入数据库、认证、复杂后端等会拖慢开发的能力。`;
+    if (!ai.explanation) {
+      throw new Error('模型返回为空');
+    }
+    assertAIOutputReferencesInput(brief, ai);
+    return normalizeSuggestionText(ai.explanation);
   } catch (error) {
-    console.warn('[VibePilot] Explain suggestion failed, fallback used:', error);
+    if (!ENABLE_MOCK_FALLBACK) throw error;
+    console.warn('[VibePilot] Explain suggestion failed, explicit dev mock used:', error);
     return `推荐“${section}”是为了让 V1 先验证核心闭环，避免一开始引入数据库、认证、复杂后端等会拖慢开发的能力。`;
   }
 }
 
-function buildMockHandoff(brief: ProductBrief): FinalHandoff {
+export function buildLocalHandoff(brief: ProductBrief): FinalHandoff {
   const discovery = brief.stages.discovery;
   const product = brief.stages.product;
   const business = brief.stages.business;
@@ -880,7 +1167,7 @@ function buildMockHandoff(brief: ProductBrief): FinalHandoff {
     'Blind Spot Review 能指出需求、业务、技术、范围风险和反证。',
     '最终 Development Prompt 包含 14 个指定部分。',
   ].join('\n');
-  const developmentPrompt = `# Development Prompt\n\n## 1. 产品目标\n${acceptedText(product.productOneLiner) || brief.ideaInput.rawIdea}\n\n## 2. 目标用户\n${acceptedText(product.targetUser)}\n\n## 3. 需求洞察\n谁真的有问题：${acceptedText(discovery.targetUserEvidence)}\n问题频率：${acceptedText(discovery.painFrequency)}\n当前替代方案：${acceptedText(discovery.currentAlternative)}\n不解决后果：${acceptedText(discovery.consequenceIfUnsolved)}\n需求成立证据：${acceptedText(discovery.demandEvidence)}\n需求不成立证据：${acceptedText(discovery.falsificationEvidence)}\n最小验证动作：${acceptedText(discovery.smallestValidationAction)}\n\n## 4. 用户主流程\n1. 用户输入一个模糊产品想法。\n2. 系统生成需求洞察、产品定义、业务 ROI、技术翻译和 MVP 压缩建议。\n3. 用户接受或编辑建议。\n4. 系统进行盲点审查。\n5. 用户复制或下载最终开发交付文档。\n\n## 5. MVP 范围\n${mvpScope}\n\n## 6. 页面结构\n- Landing Page：首页与模式说明\n- Idea Input：输入原始想法和模式选择\n- Demand Discovery：需求洞察\n- Product Framing：产品定义\n- Business Reasoning：业务推理与 ROI\n- Technical Translation：技术翻译与 Mock 策略\n- MVP Compression：范围压缩\n- Blind Spot Review：盲点审查\n- Developer Handoff：最终交付\n\n## 7. 技术架构\n${technicalArchitecture}\n\n## 8. 数据结构\n${dataStructure}\n\n## 9. Mock 策略\n${acceptedText(technical.mockStrategy)}\n可 mock 部分：${acceptedText(technical.mockableParts)}\nmock 数据示例：${acceptedText(technical.mockDataExample)}\n换真实 API 条件：${acceptedText(technical.realApiTrigger)}\n失败兜底：${acceptedText(technical.mockFailureFallback)}\n\n## 10. AI API 规则\n- 用户自行配置 API URL / API Key / Model。\n- 前端调用同源 /api/ai-proxy，不直接跨域请求第三方模型。\n- AI 不可用时必须 fallback 到本地 mock。\n- 不要在代码中硬编码用户私有 API key。\n\n## 11. 验收标准\n${acceptanceCriteria}\n\n## 12. Out of Scope\n${acceptedText(mvp.outOfScope)}\n\n## 13. 风险与盲点\n需求风险：${acceptedText(blindSpot.demandRisk)}\n业务风险：${acceptedText(blindSpot.businessRisk)}\n技术风险：${acceptedText(blindSpot.technicalRisk)}\n范围风险：${acceptedText(blindSpot.scopeRisk)}\n反证：${acceptedText(blindSpot.whatWouldProveWrong)}\n推荐调整：${acceptedText(blindSpot.recommendedAdjustment)}\n\n## 14. 禁止事项\n- V1 不做登录、支付、数据库、团队协作、完整 SaaS 后台。\n- 不把第一版扩展成大平台。\n- 不把 AI 输出失败变成白屏。\n- 不生成只有营销语言、缺少页面结构和验收标准的开发说明。\n`;
+  const developmentPrompt = `# Development Prompt\n\n## 1. 产品目标\n${acceptedText(product.productOneLiner) || brief.ideaInput.rawIdea}\n\n## 2. 目标用户\n${acceptedText(product.targetUser)}\n\n## 3. 需求洞察\n谁真的有问题：${acceptedText(discovery.targetUserEvidence)}\n问题频率：${acceptedText(discovery.painFrequency)}\n当前替代方案：${acceptedText(discovery.currentAlternative)}\n不解决后果：${acceptedText(discovery.consequenceIfUnsolved)}\n需求成立证据：${acceptedText(discovery.demandEvidence)}\n需求不成立证据：${acceptedText(discovery.falsificationEvidence)}\n最小验证动作：${acceptedText(discovery.smallestValidationAction)}\n\n## 4. 用户主流程\n1. 用户输入一个模糊产品想法。\n2. 系统生成需求洞察、产品定义、业务 ROI、技术翻译和 MVP 压缩建议。\n3. 用户接受或编辑建议。\n4. 系统进行盲点审查。\n5. 用户复制或下载最终开发交付文档。\n\n## 5. MVP 范围\n${mvpScope}\n\n## 6. 页面结构\n- Landing Page：首页与模式说明\n- Idea Input：输入原始想法和模式选择\n- Demand Discovery：需求洞察\n- Product Framing：产品定义\n- Business Reasoning：业务推理与 ROI\n- Technical Translation：技术翻译与 Mock 策略\n- MVP Compression：范围压缩\n- Blind Spot Review：盲点审查\n- Developer Handoff：最终交付\n\n## 7. 技术架构\n${technicalArchitecture}\n\n## 8. 数据结构\n${dataStructure}\n\n## 9. Mock 策略\n${acceptedText(technical.mockStrategy)}\n可 mock 部分：${acceptedText(technical.mockableParts)}\nmock 数据示例：${acceptedText(technical.mockDataExample)}\n换真实 API 条件：${acceptedText(technical.realApiTrigger)}\n失败兜底：${acceptedText(technical.mockFailureFallback)}\n\n## 10. AI API 规则\n- 用户自行配置 API URL / API Key / Model。\n- 前端调用同源 /api/ai-proxy，不直接跨域请求第三方模型。\n- AI 不可用时必须停止生成并提示用户检查 API 配置，不允许输出 mock 结果冒充 AI 分析。\n- 不要在代码中硬编码用户私有 API key。\n\n## 11. 验收标准\n${acceptanceCriteria}\n\n## 12. Out of Scope\n${acceptedText(mvp.outOfScope)}\n\n## 13. 风险与盲点\n需求风险：${acceptedText(blindSpot.demandRisk)}\n业务风险：${acceptedText(blindSpot.businessRisk)}\n技术风险：${acceptedText(blindSpot.technicalRisk)}\n范围风险：${acceptedText(blindSpot.scopeRisk)}\n反证：${acceptedText(blindSpot.whatWouldProveWrong)}\n推荐调整：${acceptedText(blindSpot.recommendedAdjustment)}\n\n## 14. 禁止事项\n- V1 不做登录、支付、数据库、团队协作、完整 SaaS 后台。\n- 不把第一版扩展成大平台。\n- 不把 AI 输出失败变成白屏。\n- 不生成只有营销语言、缺少页面结构和验收标准的开发说明。\n`;
   const roiSummary = `用户收益：${roi?.userBenefitScore?.value || '-'} / 5\n所有者收益：${roi?.ownerBenefitScore?.value || '-'} / 5\n开发成本：${roi?.developmentCostScore?.value || '-'} / 5\n维护成本：${roi?.maintenanceCostScore?.value || '-'} / 5\nROI 判断：${roi?.roiJudgement?.value || 'uncertain'}\n理由：${roi?.reason?.value || ''}`;
   return {
     productBrief,
@@ -889,78 +1176,85 @@ function buildMockHandoff(brief: ProductBrief): FinalHandoff {
     dataStructure,
     acceptanceCriteria,
     developmentPrompt,
+    source: 'local-rule',
   };
 }
 export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff> {
-  const fallback = buildMockHandoff(brief);
-  let ai: FinalHandoff | null = null;
+  if (!ENABLE_MOCK_FALLBACK) requireAIReady();
+  const fallback = buildLocalHandoff(brief);
 
   try {
-    ai = await callCopilotJson<FinalHandoff>(
+    const context = buildBriefContext(brief);
+    const ai = await cachedCopilotJson<FinalHandoff>(
+      'handoff:optimize',
+      brief,
       buildOptimizeHandoffPrompt(),
-      buildBriefContext(brief),
-      2400,
+      context,
+      1600,
       HANDOFF_AI_TIMEOUT_MS
     );
+    assertAIOutputReferencesInput(brief, ai);
+    return {
+      productBrief: normalizeSuggestionText(ai.productBrief),
+      mvpScope: normalizeSuggestionText(ai.mvpScope),
+      technicalArchitecture: normalizeSuggestionText(ai.technicalArchitecture),
+      dataStructure: normalizeSuggestionText(ai.dataStructure),
+      acceptanceCriteria: normalizeSuggestionText(ai.acceptanceCriteria),
+      developmentPrompt: normalizeSuggestionText(ai.developmentPrompt),
+      source: 'ai',
+    };
   } catch (error) {
-    console.warn('[VibePilot] Optimize handoff failed, fallback used:', error);
+    if (!ENABLE_MOCK_FALLBACK) throw error;
+    console.warn('[VibePilot] Optimize handoff failed, explicit dev mock used:', error);
+    return fallback;
   }
-
-  return {
-    productBrief: ai?.productBrief || fallback.productBrief,
-    mvpScope: ai?.mvpScope || fallback.mvpScope,
-    technicalArchitecture: ai?.technicalArchitecture || fallback.technicalArchitecture,
-    dataStructure: ai?.dataStructure || fallback.dataStructure,
-    acceptanceCriteria: ai?.acceptanceCriteria || fallback.acceptanceCriteria,
-    developmentPrompt: ai?.developmentPrompt || fallback.developmentPrompt,
-  };
 }
 
 // --- Public API ---
 
 export async function evaluateStep(req: EvaluateRequest): Promise<EvaluateResponse> {
-  const config = getAIConfig();
-  if (config) {
-    try {
-      const result = await callDirectAI(req, config);
-      await new Promise((r) => setTimeout(r, 200));
-      return result;
-    } catch (err) {
-      console.warn('AI API failed, falling back to mock:', err);
-    }
+  try {
+    const config = requireAIReady();
+    const result = await callDirectAI(req, config);
+    await new Promise((r) => setTimeout(r, 200));
+    return result;
+  } catch (err) {
+    if (!ENABLE_MOCK_FALLBACK) throw err;
+    console.warn('AI API failed, explicit dev mock used:', err);
   }
 
-  // Local mock fallback
   await new Promise((r) => setTimeout(r, 600 + Math.random() * 600));
   return buildMockResponse(req.step, req.userAnswer);
 }
 
 export async function getStepHint(step: StepConfig): Promise<string> {
-  const config = getAIConfig();
-  if (config) {
-    try {
-      const hintSystemPrompt = buildSystemPrompt({
-        step,
-        userAnswer: '',
-        rawIdea: '',
-        allSteps: {},
-        mode: 'hint',
-      });
+  try {
+    const config = requireAIReady();
+    const hintSystemPrompt = buildSystemPrompt({
+      step,
+      userAnswer: '',
+      rawIdea: '',
+      allSteps: {},
+      mode: 'hint',
+    });
 
-      const data = await callAIProxy(config, {
-        model: config.model,
-        messages: [
-          { role: 'system', content: hintSystemPrompt },
-          { role: 'user', content: '我不知道怎么回答这个问题，请给我一些提示方向。' },
-        ],
-        max_tokens: 200,
-        temperature: 0.7,
-      }, EXPLAIN_AI_TIMEOUT_MS);
-      const content = extractAIContent(data);
-      if (content) return content;
-    } catch {
-      // Fall through to mock
+    const data = await callAIProxy(config, {
+      model: config.model,
+      messages: [
+        { role: 'system', content: hintSystemPrompt },
+        { role: 'user', content: '我不知道怎么回答这个问题，请给我一些提示方向。' },
+      ],
+      max_tokens: 200,
+      temperature: 0.7,
+    }, EXPLAIN_AI_TIMEOUT_MS);
+    const content = extractAIContent(data);
+    if (!content) {
+      throw new Error('模型返回为空');
     }
+    return content;
+  } catch (err) {
+    if (!ENABLE_MOCK_FALLBACK) throw err;
+    console.warn('AI hint failed, explicit dev mock used:', err);
   }
 
   await new Promise((r) => setTimeout(r, 400 + Math.random() * 300));
@@ -969,14 +1263,14 @@ export async function getStepHint(step: StepConfig): Promise<string> {
 }
 
 export async function askFollowUp(req: EvaluateRequest): Promise<string> {
-  const config = getAIConfig();
-  if (config) {
-    try {
-      const result = await callDirectAI({ ...req, mode: 'followup' }, config);
-      return result.followUp || '';
-    } catch {
-      // Fall through to mock
-    }
+  try {
+    const config = requireAIReady();
+    const result = await callDirectAI({ ...req, mode: 'followup' }, config);
+    if (!result.followUp) throw new Error('模型返回为空');
+    return result.followUp;
+  } catch (err) {
+    if (!ENABLE_MOCK_FALLBACK) throw err;
+    console.warn('AI follow-up failed, explicit dev mock used:', err);
   }
 
   await new Promise((r) => setTimeout(r, 500 + Math.random() * 400));
