@@ -16,11 +16,13 @@ import {
 import {
   clearAIConfig,
   clearAICache,
+  extractJson,
   getAIConfig,
   getAIConnectionStatus,
   normalizeApiUrl,
   saveAIConfig,
   saveAIConnectionStatus,
+  validateAIOutputReferencesInput,
   type AIConnectionStatus,
 } from '../api/evaluate';
 
@@ -44,6 +46,40 @@ const PRESETS = [
     docUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
   },
 ];
+
+/** Minimal brief used for Settings long JSON test validation */
+const LONG_TEST_BRIEF = {
+  id: 'settings-test',
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  rawIdea: '雅思生词和错题管理工具',
+  mode: 'beginner' as const,
+  ideaInput: {
+    rawIdea: '雅思生词和错题管理工具',
+    targetUser: '正在备考雅思、需要复盘阅读和听力错题的学生',
+    scenario: '做完剑桥雅思真题后整理生词、同义替换和错题原因',
+    problem: '生词、同义替换和错题原因分散记录，无法形成可复盘的词库和错题模式',
+    projectType: 'Web App',
+  },
+  stages: {
+    discovery: {} as Record<string, unknown>,
+    product: {} as Record<string, unknown>,
+    business: {} as Record<string, unknown>,
+    technical: {} as Record<string, unknown>,
+    mvp: {} as Record<string, unknown>,
+    blindSpot: {} as Record<string, unknown>,
+  },
+  steps: {} as Record<string, unknown>,
+  developmentPrompt: '',
+} as unknown as import('../types').ProductBrief;
+
+function isUsefulString(value: unknown, minLength = 10): value is string {
+  return typeof value === 'string'
+    && value.trim().length >= minLength
+    && value.trim() !== '...'
+    && value.trim() !== '待补充'
+    && value.trim() !== 'N/A';
+}
 
 function extractAIContent(data: Record<string, unknown>): string {
   let content = '';
@@ -85,7 +121,15 @@ export default function SettingsPage() {
   const [longTestResult, setLongTestResult] = useState<{
     apiConnection?: boolean;
     jsonGeneration?: boolean;
-    refValidation?: { passed: boolean; msg: string };
+    requiredFields?: {
+      passed: boolean;
+      missingFields: string[];
+      msg: string;
+    };
+    refValidation?: {
+      passed: boolean;
+      msg: string;
+    };
   } | null>(null);
   const [testingLong, setTestingLong] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -253,12 +297,39 @@ export default function SettingsPage() {
             model: model.trim(),
             messages: [
               {
-                role: 'system',
-                content: '你是 VibePilot 的生成测试器。只返回 JSON，不要 markdown。',
+                role: 'system' as const,
+                content: '你是 VibePilot 的长 JSON 生成测试器。你必须只返回一个 JSON 对象，不要 markdown，不要解释，不要使用省略号，不要使用 "..." 作为字段值。',
               },
               {
-                role: 'user',
-                content: '请基于产品想法"雅思生词和错题管理工具"返回 JSON：{"referenceEvidence":{"rawIdea":"雅思生词和错题管理工具","targetUser":"雅思备考者","scenario":"背单词和复习错题","problem":"难以跟踪生词和错题","summary":"..."},"productBrief":"...","mvpScope":"...","devSpec":"...","developmentPrompt":"..."}',
+                role: 'user' as const,
+                content: `请基于以下产品想法生成一个可解析 JSON：
+
+产品想法：雅思生词和错题管理工具
+目标用户：正在备考雅思、需要复盘阅读和听力错题的学生
+使用场景：做完剑桥雅思真题后整理生词、同义替换和错题原因
+核心问题：生词、同义替换和错题原因分散记录，无法形成可复盘的词库和错题模式
+
+必须返回以下顶层字段：
+{
+  "referenceEvidence": {
+    "rawIdea": "必须复述产品想法",
+    "targetUser": "必须复述目标用户",
+    "scenario": "必须复述使用场景",
+    "problem": "必须复述核心问题",
+    "summary": "一句话说明输出如何基于当前产品想法"
+  },
+  "productBrief": "不少于 30 个中文字符，必须包含雅思、生词、错题",
+  "mvpScope": "不少于 30 个中文字符，必须包含 Must Have 和 Out of Scope",
+  "devSpec": "不少于 30 个中文字符，必须包含页面、数据结构、验收标准",
+  "developmentPrompt": "不少于 30 个中文字符，必须说明要开发什么、不要开发什么、如何验收"
+}
+
+要求：
+1. 只能返回 JSON，不要 markdown。
+2. 不要使用省略号。
+3. 不要使用空字符串。
+4. 不要把字段嵌套到 data、result、output、content 里。
+5. 所有字段值必须是字符串或对象。`,
               },
             ],
             max_tokens: 1200,
@@ -267,50 +338,107 @@ export default function SettingsPage() {
         }),
       });
 
+      // Layer 1: API Connection
       result.apiConnection = response.ok;
 
       if (!response.ok) {
-        setLongTestResult({ ...result, jsonGeneration: false, refValidation: { passed: false, msg: `API 请求失败 (${response.status})` } });
+        setLongTestResult({
+          apiConnection: false,
+          jsonGeneration: false,
+          requiredFields: { passed: false, missingFields: ['N/A'], msg: `API 请求失败 (${response.status})` },
+          refValidation: { passed: false, msg: 'API 连接失败，无法校验。' },
+        });
         return;
       }
 
       const rawText = await response.text();
       let data: Record<string, unknown>;
       try { data = JSON.parse(rawText); } catch {
-        setLongTestResult({ ...result, jsonGeneration: false, refValidation: { passed: false, msg: '代理返回的不是有效 JSON' } });
+        setLongTestResult({
+          apiConnection: true,
+          jsonGeneration: false,
+          requiredFields: { passed: false, missingFields: ['N/A'], msg: '代理返回的不是有效 JSON' },
+          refValidation: { passed: false, msg: '代理响应格式错误。' },
+        });
         return;
       }
 
       const content = extractAIContent(data);
       if (!content) {
-        setLongTestResult({ ...result, jsonGeneration: false, refValidation: { passed: false, msg: '模型返回为空' } });
+        setLongTestResult({
+          apiConnection: true,
+          jsonGeneration: false,
+          requiredFields: { passed: false, missingFields: ['N/A'], msg: '模型返回为空' },
+          refValidation: { passed: false, msg: '模型无响应内容。' },
+        });
         return;
       }
 
-      let parsed: Record<string, unknown>;
-      try { parsed = JSON.parse(content); } catch {
-        // Try stripping markdown fences
-        const stripped = content.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
-        try { parsed = JSON.parse(stripped); } catch {
-          setLongTestResult({ ...result, jsonGeneration: false, refValidation: { passed: false, msg: '模型返回无法解析为 JSON' } });
-          return;
-        }
+      console.log('[VibePilot] Long JSON test content:', content.slice(0, 800));
+
+      // Layer 2: JSON Parse — reuse extractJson from evaluate.ts
+      const parsed = extractJson<Record<string, unknown>>(content);
+      if (!parsed) {
+        setLongTestResult({
+          apiConnection: true,
+          jsonGeneration: false,
+          requiredFields: { passed: false, missingFields: ['N/A'], msg: '模型返回无法解析为 JSON' },
+          refValidation: { passed: false, msg: `JSON 解析失败。原始内容：${content.slice(0, 160)}` },
+        });
+        return;
       }
 
       result.jsonGeneration = true;
+      console.log('[VibePilot] Long JSON parsed:', JSON.stringify(parsed).slice(0, 500));
 
-      // Check key fields
-      const hasRefEvidence = parsed.referenceEvidence && typeof parsed.referenceEvidence === 'object';
-      const hasProductBrief = typeof parsed.productBrief === 'string' && parsed.productBrief.length > 10;
-      const hasKeyFields = hasProductBrief && typeof parsed.mvpScope === 'string' && typeof parsed.developmentPrompt === 'string';
+      // Layer 3: Required Fields check
+      const fieldChecks = {
+        referenceEvidence: parsed.referenceEvidence && typeof parsed.referenceEvidence === 'object',
+        productBrief: isUsefulString(parsed.productBrief, 20),
+        mvpScope: isUsefulString(parsed.mvpScope, 20),
+        devSpec: isUsefulString(parsed.devSpec, 20),
+        developmentPrompt: isUsefulString(parsed.developmentPrompt, 20),
+      };
 
-      if (hasRefEvidence && hasKeyFields) {
-        result.refValidation = { passed: true, msg: 'referenceEvidence + 关键字段完整，校验通过' };
-      } else if (hasKeyFields) {
-        result.refValidation = { passed: true, msg: '关键字段完整（referenceEvidence 缺失）' };
-      } else {
-        result.refValidation = { passed: false, msg: '模型已响应但输出缺少关键字段 (productBrief/mvpScope/devSpec/developmentPrompt)' };
+      console.log('[VibePilot] Long JSON fieldChecks:', fieldChecks);
+
+      const missingFields = Object.entries(fieldChecks)
+        .filter(([, ok]) => !ok)
+        .map(([key]) => key);
+
+      if (missingFields.length > 0) {
+        const isDotDotDot = (
+          (typeof parsed.productBrief === 'string' && parsed.productBrief === '...') ||
+          (typeof parsed.mvpScope === 'string' && parsed.mvpScope === '...') ||
+          (typeof parsed.devSpec === 'string' && parsed.devSpec === '...') ||
+          (typeof parsed.developmentPrompt === 'string' && parsed.developmentPrompt === '...')
+        );
+        const hint = isDotDotDot
+          ? '模型可能只复制了模板中的省略号。请检查模型是否理解要求，或在 prompt 中强调不要使用省略号。'
+          : '请检查模型是否只是复读模板或返回省略号/空字符串。';
+
+        setLongTestResult({
+          ...result,
+          requiredFields: {
+            passed: false,
+            missingFields,
+            msg: `关键字段质量不足：${missingFields.join(', ')}。${hint}`,
+          },
+          refValidation: { passed: false, msg: '字段不足，无法校验内容相关性。' },
+        });
+        return;
       }
+
+      result.requiredFields = { passed: true, missingFields: [], msg: '全部关键字段可用。' };
+
+      // Layer 4: Reference Validation — reuse validateAIOutputReferencesInput
+      const validation = validateAIOutputReferencesInput(LONG_TEST_BRIEF, parsed);
+      console.log('[VibePilot] Long JSON validation:', validation);
+
+      result.refValidation = {
+        passed: validation.passed,
+        msg: validation.passed ? `通过：${validation.reason}` : `相关性不足：${validation.reason}`,
+      };
 
       setLongTestResult(result);
       saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
@@ -320,6 +448,7 @@ export default function SettingsPage() {
       setLongTestResult({
         apiConnection: false,
         jsonGeneration: false,
+        requiredFields: { passed: false, missingFields: [], msg: '' },
         refValidation: { passed: false, msg: isTimeout ? '长 JSON 生成超时（>120s），建议换更快模型' : `错误：${err instanceof Error ? err.message : String(err)}` },
       });
     } finally {
@@ -564,16 +693,31 @@ export default function SettingsPage() {
               <div style={{ display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                   <span>{longTestResult.apiConnection ? '✅' : '❌'}</span>
-                  <span><strong>API Connection:</strong> {longTestResult.apiConnection ? '通过' : '失败'}</span>
+                  <span><strong>1. API Connection:</strong> {longTestResult.apiConnection ? '通过' : '失败'}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                   <span>{longTestResult.jsonGeneration ? '✅' : '❌'}</span>
-                  <span><strong>JSON Generation:</strong> {longTestResult.jsonGeneration ? '通过' : '失败'}</span>
+                  <span><strong>2. JSON Parse:</strong> {longTestResult.jsonGeneration ? '通过' : '不通过'}</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                  <span>{longTestResult.refValidation?.passed ? '✅' : '⚠️'}</span>
-                  <span><strong>Reference Validation:</strong> {longTestResult.refValidation?.passed ? '通过' : `不通过 — ${longTestResult.refValidation?.msg}`}</span>
-                </div>
+                {longTestResult.requiredFields && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13 }}>
+                    <span>{longTestResult.requiredFields.passed ? '✅' : '❌'}</span>
+                    <div>
+                      <span><strong>3. Required Fields:</strong> {longTestResult.requiredFields.passed ? '通过' : `不通过 — ${longTestResult.requiredFields.msg}`}</span>
+                      {longTestResult.requiredFields.missingFields.length > 0 && (
+                        <div style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
+                          缺失/不足: {longTestResult.requiredFields.missingFields.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {longTestResult.refValidation && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13 }}>
+                    <span>{longTestResult.refValidation.passed ? '✅' : '⚠️'}</span>
+                    <span><strong>4. Reference Validation:</strong> {longTestResult.refValidation.msg}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -1148,7 +1148,7 @@ function tryRepairAndParse<T>(content: string): T | null {
   return null;
 }
 
-function extractJson<T>(content: string): T | null {
+export function extractJson<T>(content: string): T | null {
   return tryRepairAndParse<T>(content);
 }
 
@@ -1204,7 +1204,7 @@ export interface AIReferenceValidationResult {
   reason: string;
 }
 
-function validateAIOutputReferencesInput(brief: ProductBrief, output: unknown): AIReferenceValidationResult {
+export function validateAIOutputReferencesInput(brief: ProductBrief, output: unknown): AIReferenceValidationResult {
   const outputRecord = output && typeof output === 'object' && !Array.isArray(output)
     ? output as Record<string, unknown>
     : null;
