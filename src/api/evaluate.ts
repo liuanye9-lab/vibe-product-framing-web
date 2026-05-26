@@ -18,6 +18,8 @@ import type {
 } from '../types';
 import type { StepConfig } from '../data/steps';
 import { buildBriefContext, buildSuggestStagePrompt } from '../prompts/suggestStagePrompt';
+import { buildCompactStageContext } from '../prompts/stageContext';
+import { buildMvpScopePrompt } from '../prompts/mvpScopePrompt';
 import { buildExplainSuggestionPrompt } from '../prompts/explainSuggestionPrompt';
 import { buildOptimizeHandoffPrompt } from '../prompts/optimizeHandoffPrompt';
 import { SCOPE_CREEP_TERMS } from '../skill/systemRules';
@@ -1512,6 +1514,92 @@ function mockTechnicalSuggestions(brief?: ProductBrief): TechnicalPlanningState 
   };
 }
 
+/**
+ * Build local-rule MVP scope draft when AI is unavailable or times out.
+ * Always marked source='local-rule' to avoid pretending to be AI output.
+ */
+export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
+  const productType = brief.ideaInput.projectType || '工具';
+  const rawIdea = brief.ideaInput.rawIdea || '产品想法';
+
+  const timeoutReason = 'AI 生成超时或未连接，当前为本地规则草案，可继续编辑或稍后重新生成。';
+
+  const mustHaveItems = [
+    '用户可以输入或编辑核心想法',
+    '系统生成/保存关键结构化结果',
+    '用户可以复制或下载最终开发交付文档',
+  ];
+  if (productType.includes('管理') || productType.includes('track')) {
+    mustHaveItems.push('核心数据管理（增删改查）');
+  } else if (productType.includes('生成') || productType.includes('分析')) {
+    mustHaveItems.push('AI 生成/分析核心结果');
+  } else {
+    mustHaveItems.push(`完成${productType}的核心功能闭环`);
+  }
+
+  return {
+    mustHave: {
+      value: mustHaveItems.slice(0, 4),
+      reason: timeoutReason,
+      risks: ['如果 V1 缺少具体闭环功能，演示价值会偏低'],
+      alternatives: ['精简为 2 条核心功能先跑通', '加入导出或分享功能快速收反馈'],
+      accepted: false,
+      editedByUser: false,
+      source: 'local-rule',
+    },
+    shouldHave: {
+      value: ['历史记录查看', '重新生成 AI 建议', 'Markdown 文件下载'],
+      reason: timeoutReason,
+      risks: [],
+      alternatives: [],
+      accepted: false,
+      editedByUser: false,
+      source: 'local-rule',
+    },
+    outOfScope: {
+      value: ['登录/注册', '支付系统', '团队协作', '复杂后台', '向量数据库', 'MCP Server', '自动部署流水线'],
+      reason: timeoutReason,
+      risks: [],
+      alternatives: [],
+      accepted: false,
+      editedByUser: false,
+      source: 'local-rule',
+    },
+    v2Later: {
+      value: ['账号同步', '多项目空间', '文件上传', '多模型评测'],
+      reason: timeoutReason,
+      risks: [],
+      alternatives: [],
+      accepted: false,
+      editedByUser: false,
+      source: 'local-rule',
+    },
+    minimumLoop: {
+      value: `用户输入“${rawIdea.slice(0, 50)}”，系统生成第一版核心范围，用户确认后得到可复制的开发交付说明。`,
+      reason: timeoutReason,
+      risks: ['如果核心闭环包含过多步骤，用户可能无法完成'],
+      alternatives: ['将范围收敛到纯输入→AI分析→输出三步'],
+      accepted: false,
+      editedByUser: false,
+      source: 'local-rule',
+    },
+    scopeRisks: {
+      value: [
+        '如果加入登录/支付/团队协作会拖慢 V1 验证',
+        '如果目标用户不清晰，MVP 容易变成泛用工具',
+        '如果缺少验收标准，AI Coding 可能输出玩具 Demo',
+      ],
+      reason: timeoutReason,
+      risks: [],
+      alternatives: [],
+      accepted: false,
+      editedByUser: false,
+      source: 'local-rule',
+    },
+    scopeCreepWarning: '当前为本地规则草案，建议在 AI 可用时重新生成以获得针对你产品的具体建议。',
+  };
+}
+
 function mockMvpSuggestions(brief: ProductBrief): MvpScopeState {
   const allText = JSON.stringify(brief.ideaInput) + JSON.stringify(brief.stages.product);
   const creep = detectScopeCreep(allText);
@@ -1805,6 +1893,56 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
             ? mockBlindSpotSuggestions()
             : mockMvpSuggestions(brief);
 
+  // --- MVP fast path: lightweight context + prompt + shorter timeout ---
+  if (stage === 'mvp') {
+    const context = buildCompactStageContext('mvp', brief);
+    const cacheStage = 'stage:mvp:fast';
+    console.log('[VibePilot] MVP fast request:', {
+      contextChars: context.length,
+      maxTokens: 900,
+      timeoutMs: 75000,
+    });
+
+    try {
+      const ai = await cachedCopilotJson<Record<string, unknown>>(
+        cacheStage,
+        brief,
+        buildMvpScopePrompt(),
+        context,
+        900,
+        75000,
+      );
+      const validation = validateAIOutputReferencesInput(brief, ai);
+      if (!validation.passed) {
+        const hasSchema = ai && typeof ai === 'object' && Object.keys(ai).length > 1;
+        if (hasSchema) {
+          console.warn('[VibePilot] MVP validation salvage:', validation.reason);
+        } else {
+          throw new VibeAIError('validation', `AI MVP 输出相关性不足：${validation.reason}`, { detail: validation });
+        }
+      }
+      // Strip referenceEvidence + scopeCreepWarning before normalizing
+      const aiWithoutMeta = { ...ai };
+      delete aiWithoutMeta.referenceEvidence;
+      const scopeCreepWarning = typeof ai.scopeCreepWarning === 'string' ? ai.scopeCreepWarning : undefined;
+      delete aiWithoutMeta.scopeCreepWarning;
+      const result = normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, aiWithoutMeta as Record<string, Partial<AiSuggestion>>) as MvpScopeState;
+      if (scopeCreepWarning) result.scopeCreepWarning = scopeCreepWarning;
+      return result;
+    } catch (error) {
+      console.warn('[VibePilot] MVP fast request failed:', error);
+      if (error instanceof VibeAIError && error.type === 'timeout') {
+        // Timeout → return local-rule draft, don't throw
+        console.warn('[VibePilot] MVP AI timed out, using local-rule draft');
+        return buildLocalMvpSuggestions(brief);
+      }
+      if (!ENABLE_MOCK_FALLBACK) throw error;
+      console.warn('[VibePilot] MVP stage failed, local-rule draft used');
+      return buildLocalMvpSuggestions(brief);
+    }
+  }
+
+  // --- Original path for non-mvp stages ---
   try {
     const context = buildBriefContext(brief);
     const stageMaxTokens = STAGE_TOKEN_BUDGET[stage] || 1600;
@@ -1818,7 +1956,6 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
     );
     const validation = validateAIOutputReferencesInput(brief, ai);
     if (!validation.passed) {
-      // Schema exists but reference is weak — salvage with warning
       const hasSchema = ai && typeof ai === 'object' && Object.keys(ai).length > 1;
       if (hasSchema) {
         console.warn(`[VibePilot] Validation salvage for stage ${stage}:`, validation.reason);

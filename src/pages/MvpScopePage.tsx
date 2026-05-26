@@ -5,7 +5,7 @@ import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
 import ScopeCreepWarning from '../components/ScopeCreepWarning';
-import { detectScopeCreep, explainSuggestion, getAIErrorMessage, isAIReady, suggestStage } from '../api/evaluate';
+import { buildLocalMvpSuggestions, detectScopeCreep, explainSuggestion, getAIErrorMessage, isAIReady, isVibeAIError, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { toDisplayText } from '../lib/utils';
 import { extractCoreDecision } from '../rules/coreDecisionExtractor';
@@ -29,7 +29,11 @@ export default function MvpScopePage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [view, setView] = useState<'focus' | 'detail'>('focus');
+  const [aiAttempted, setAiAttempted] = useState(false);
   const autoRequestedRef = useRef<string | null>(null);
+
+  const hasMvpData = Boolean(brief?.stages.mvp.mustHave || brief?.stages.mvp.minimumLoop || brief?.stages.mvp.outOfScope);
+  const isLocalRule = brief?.stages.mvp.mustHave?.source === 'local-rule';
 
   const generate = useCallback(async () => {
     if (!brief || generating) return;
@@ -42,8 +46,22 @@ export default function MvpScopePage() {
     try {
       const suggestions = await suggestStage('mvp', brief);
       updateStage<MvpScopeState>('mvp', suggestions);
+      setAiAttempted(true);
+      // Check if result is local-rule (timeout fallback)
+      if (suggestions.mustHave?.source === 'local-rule') {
+        setError('AI 生成 MVP 范围超时，已切换为本地规则草案。你可以先继续下一步，也可以稍后重新生成。');
+      }
     } catch (err) {
-      setError(getAIErrorMessage(err));
+      const msg = getAIErrorMessage(err);
+      // On timeout, pre-fill local draft
+      if (isVibeAIError(err, 'timeout')) {
+        const localDraft = buildLocalMvpSuggestions(brief);
+        updateStage<MvpScopeState>('mvp', localDraft);
+        setAiAttempted(true);
+        setError('AI 生成 MVP 范围超时，已切换为本地规则草案。你可以先继续下一步，也可以稍后重新生成。');
+      } else {
+        setError(msg);
+      }
     } finally {
       setGenerating(false);
     }
@@ -51,16 +69,14 @@ export default function MvpScopePage() {
 
   useEffect(() => {
     if (!brief || loading) return;
-    if (!isAIReady()) {
-      setError(AI_NOT_READY_MESSAGE);
-      return;
-    }
-    const requestKey = `${brief.id}:mvp`;
-    if (!brief.stages.mvp.mustHave && autoRequestedRef.current !== requestKey) {
+    const requestKey = `${brief.id}:mvp-draft`;
+    if (!hasMvpData && autoRequestedRef.current !== requestKey) {
       autoRequestedRef.current = requestKey;
-      generate();
+      // Pre-fill with local-rule draft immediately, don't block on AI
+      const localDraft = buildLocalMvpSuggestions(brief);
+      updateStage<MvpScopeState>('mvp', localDraft);
     }
-  }, [brief, generate, loading]);
+  }, [brief, loading, hasMvpData, updateStage]);
 
   if (loading || !brief) return <Loader />;
 
@@ -76,7 +92,7 @@ export default function MvpScopePage() {
       previousPath={`/discovery/${brief.id}`}
       nextPath={`/technical/${brief.id}`}
       nextLabel="进入技术决策"
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} isLocalRule={isLocalRule} aiAttempted={aiAttempted} onSettings={() => navigate('/settings')} />}
     >
       <ScopeCreepWarning terms={creepTerms} warning={brief.stages.mvp.scopeCreepWarning} />
       {view === 'focus' ? (
@@ -110,7 +126,12 @@ export default function MvpScopePage() {
   );
 }
 
-function Aside({ view, onViewChange, generating, onGenerate, error, onSettings }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void }) {
+function Aside({ view, onViewChange, generating, onGenerate, error, isLocalRule, aiAttempted, onSettings }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; isLocalRule: boolean; aiAttempted: boolean; onSettings: () => void }) {
+  const buttonLabel = generating
+    ? 'AI 正在生成...'
+    : isLocalRule && !aiAttempted
+      ? 'AI 优化范围建议'
+      : '重新生成范围建议';
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第二关：第一版决策</h3>
@@ -129,7 +150,7 @@ function Aside({ view, onViewChange, generating, onGenerate, error, onSettings }
       )}
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
-        {generating ? 'AI 正在生成...' : '重新生成范围建议'}
+        {buttonLabel}
       </button>
     </div>
   );
