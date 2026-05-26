@@ -170,6 +170,102 @@ const SUGGEST_AI_TIMEOUT_MS = 120000;
 const EXPLAIN_AI_TIMEOUT_MS = 60000;
 const HANDOFF_AI_TIMEOUT_MS = 180000;
 
+/** Max retry attempts for transient network failures */
+const MAX_FETCH_RETRIES = 3;
+/** Base delay between retries (ms), multiplied by attempt number */
+const RETRY_BASE_DELAY_MS = 1000;
+
+/**
+ * Classify a fetch/Network error into a diagnostic category.
+ * Returns a human-readable category and whether it's likely retryable.
+ */
+function classifyNetworkError(err: unknown): { category: string; retryable: boolean; userAdvice: string } {
+  const msg = String(err instanceof Error ? err.message : err).toLowerCase();
+
+  // Network offline / DNS failure
+  if (
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('network request failed') ||
+    msg.includes('failed to get response') ||
+    msg.includes('load failed')
+  ) {
+    return {
+      category: 'NETWORK_FAILURE',
+      retryable: true,
+      userAdvice:
+        '网络请求失败。可能原因：1) 网络断开或切换了网络；2) API 代理服务未启动（本地开发需运行 npm run dev）；3) Vercel 部署未完成（线上环境需确认部署成功）；4) 浏览器插件拦截了请求。',
+    };
+  }
+
+  // Abort / timeout
+  if (msg.includes('abort') || msg.includes('timeout')) {
+    return {
+      category: 'TIMEOUT',
+      retryable: false,
+      userAdvice: '请求超时被中断。可能是模型响应时间过长或手动取消了操作。',
+    };
+  }
+
+  // CORS (shouldn't happen for same-origin /api but just in case)
+  if (msg.includes('cors') || msg.includes('cross-origin')) {
+    return {
+      category: 'CORS',
+      retryable: false,
+      userAdvice: '跨域请求被拒绝。这通常是配置问题，请检查 Vercel 部署设置。',
+    };
+  }
+
+  // SSL/TLS
+  if (msg.includes('ssl') || msg.includes('tls') || msg.includes('certificate')) {
+    return {
+      category: 'SSL',
+      retryable: false,
+      userAdvice: 'SSL/TLS 连接失败，可能是证书问题或中间人攻击。',
+    };
+  }
+
+  // Server returned error
+  if (msg.includes('502') || msg.includes('503') || msg.includes('504') || msg.includes('bad gateway') || msg.includes('unavailable')) {
+    return {
+      category: 'UPSTREAM_UNAVAILABLE',
+      retryable: true,
+      userAdvice: 'AI 代理服务暂时不可用（502/503/504）。通常是因为：Vercel Edge Function 冷启动失败、上游 AI API 过载或不可达。',
+    };
+  }
+
+  return {
+    category: 'UNKNOWN',
+    retryable: true,
+    userAdvice: `未知网络错误：${err instanceof Error ? err.message : String(err)}。建议刷新页面后重试。`,
+  };
+}
+
+/**
+ * Check if the AI proxy endpoint is reachable by sending a lightweight preflight.
+ * Returns true if the proxy seems available.
+ */
+async function checkProxyReachable(attempt = 1): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch('/api/ai-proxy', {
+      method: 'OPTIONS',
+      signal: ctrl.signal,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    clearTimeout(timer);
+    // 405 is fine — means endpoint exists (OPTIONS not allowed, POST works)
+    return res.status === 405 || res.status < 500;
+  } catch {
+    if (attempt < 2) {
+      await new Promise((r) => setTimeout(r, 1000));
+      return checkProxyReachable(attempt + 1);
+    }
+    return false;
+  }
+}
+
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -202,55 +298,90 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
   console.log('[VibePilot] AI Proxy Request:', { apiUrl: config.apiUrl, model: body.model, timeoutMs });
   const clientTimeoutMs = timeoutMs + 15000;
 
-  const response = await fetch('/api/ai-proxy', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    signal: abortSignalTimeout(clientTimeoutMs),
-    body: JSON.stringify({
-      apiUrl: config.apiUrl,
-      apiKey: config.apiKey,
-      body,
-      timeoutMs,
-    }),
-  });
+  let lastError: unknown;
 
-  const rawText = await response.text();
-  const durationMs = Math.round(performance.now() - startedAt);
-  console.log('[VibePilot] AI Proxy Response:', {
-    model: body.model,
-    timeoutMs,
-    durationMs,
-    status: response.status,
-    responseChars: rawText.length,
-  });
-  console.log('[VibePilot] AI Proxy Raw Response:', rawText.slice(0, 500));
-
-  if (!response.ok) {
-    let parsedError: unknown;
+  for (let attempt = 1; attempt <= MAX_FETCH_RETRIES; attempt++) {
     try {
-      parsedError = JSON.parse(rawText) as unknown;
-    } catch {
-      parsedError = null;
+      // Before first attempt, do a quick proxy reachability check
+      if (attempt === 1) {
+        const reachable = await checkProxyReachable();
+        if (!reachable) {
+          console.warn('[VibePilot] Proxy preflight check failed — proceeding with request anyway');
+        }
+      }
+
+      const response = await fetch('/api/ai-proxy', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        signal: abortSignalTimeout(clientTimeoutMs),
+        body: JSON.stringify({
+          apiUrl: config.apiUrl,
+          apiKey: config.apiKey,
+          body,
+          timeoutMs,
+        }),
+      });
+
+      const rawText = await response.text();
+      const durationMs = Math.round(performance.now() - startedAt);
+      console.log('[VibePilot] AI Proxy Response:', {
+        model: body.model,
+        timeoutMs,
+        durationMs,
+        status: response.status,
+        responseChars: rawText.length,
+        attempt,
+      });
+      console.log('[VibePilot] AI Proxy Raw Response:', rawText.slice(0, 500));
+
+      if (!response.ok) {
+        let parsedError: unknown;
+        try {
+          parsedError = JSON.parse(rawText) as unknown;
+        } catch {
+          parsedError = null;
+        }
+
+        const errorObject = parsedError && typeof parsedError === 'object' ? parsedError as Record<string, unknown> : null;
+        const errorValue = errorObject?.error;
+        const errorMessage = typeof errorValue === 'string'
+          ? errorValue
+          : errorValue && typeof errorValue === 'object' && typeof (errorValue as Record<string, unknown>).message === 'string'
+            ? (errorValue as Record<string, unknown>).message as string
+            : rawText.slice(0, 300);
+
+        throw new Error(`AI API 返回错误 (${response.status}): ${errorMessage}`);
+      }
+
+      try {
+        return JSON.parse(rawText) as Record<string, unknown>;
+      } catch {
+        throw new Error('AI API 返回的不是有效 JSON');
+      }
+    } catch (err) {
+      lastError = err;
+      const diagnosis = classifyNetworkError(err);
+
+      console.warn(`[VibePilot] AI Proxy attempt ${attempt}/${MAX_FETCH_RETRIES} failed [${diagnosis.category}]:`, err);
+
+      // Don't retry non-retryable errors (aborts, CORS)
+      if (!diagnosis.retryable || attempt >= MAX_FETCH_RETRIES) {
+        break;
+      }
+
+      // Exponential backoff before retry
+      const delay = RETRY_BASE_DELAY_MS * attempt;
+      console.warn(`[VibePilot] Retrying in ${delay}ms...`);
+      await new Promise((r) => setTimeout(r, delay));
     }
-
-    const errorObject = parsedError && typeof parsedError === 'object' ? parsedError as Record<string, unknown> : null;
-    const errorValue = errorObject?.error;
-    const errorMessage = typeof errorValue === 'string'
-      ? errorValue
-      : errorValue && typeof errorValue === 'object' && typeof (errorValue as Record<string, unknown>).message === 'string'
-        ? (errorValue as Record<string, unknown>).message as string
-        : rawText.slice(0, 300);
-
-    throw new Error(`AI API 返回错误 (${response.status}): ${errorMessage}`);
   }
 
-  try {
-    return JSON.parse(rawText) as Record<string, unknown>;
-  } catch {
-    throw new Error('AI API 返回的不是有效 JSON');
-  }
+  // All retries exhausted — throw classified error
+  const diagnosis = classifyNetworkError(lastError);
+  const userMessage = `[${diagnosis.category}] 网络请求失败，已重试 ${MAX_FETCH_RETRIES} 次。\n\n诊断：${diagnosis.userAdvice}\n\n原始错误：${lastError instanceof Error ? lastError.message : String(lastError)}`;
+  throw new Error(userMessage);
 }
 
 function buildSystemPrompt(req: EvaluateRequest): string {
@@ -899,8 +1030,21 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
   } catch (err) {
     const message = getErrorMessage(err);
     console.warn('[VibePilot] Copilot AI failed:', err);
+
+    // Check if this is a classified network error with rich diagnostics
+    const isNetworkFailure =
+      message.includes('[NETWORK_FAILURE]') ||
+      message.includes('[UPSTREAM_UNAVAILABLE]') ||
+      message.includes('[TIMEOUT]') ||
+      message.includes('[CORS]');
+
+    if (isNetworkFailure) {
+      // Pass through the rich diagnostic info directly
+      throw new Error(`大模型连接失败：${message}`, { cause: err });
+    }
+
     if (isLikelyTimeout(err)) {
-      throw new Error(`大模型响应超时：已等待 ${Math.round(timeoutMs / 1000)} 秒。请检查模型是否响应较慢，或在设置页换用更快模型。`, { cause: err });
+      throw new Error(`大模型响应超时：已等待 ${Math.round(timeoutMs / 1000)} 秒。请检查模型是否响应较慢，或在设置页换用更快模型。\n\n可能原因：1) 模型本身响应慢（如 DeepSeek、Qwen 在高峰期）2) 网络到 AI API 延迟高 3) 请求内容太长导致生成时间长`, { cause: err });
     }
     throw new Error(`大模型生成失败：${message}`, { cause: err });
   }
