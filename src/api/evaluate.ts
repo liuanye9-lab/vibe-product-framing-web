@@ -1149,7 +1149,62 @@ function tryRepairAndParse<T>(content: string): T | null {
 }
 
 export function extractJson<T>(content: string): T | null {
-  return tryRepairAndParse<T>(content);
+  const parsed = tryRepairAndParse<unknown>(content);
+  return unwrapJsonPayload<T>(parsed);
+}
+
+/**
+ * Unwrap common API wrapper patterns that models often produce:
+ * - Array → first object
+ * - { result: {...} } → unwrap
+ * - { data: {...} } → unwrap
+ * - { output: {...} } → unwrap
+ * - { content: "{...}" } → parse string content
+ * - { message: { content: "..." } } → parse string content
+ * Max 2 recursion levels to avoid infinite loops.
+ */
+function unwrapJsonPayload<T>(parsed: unknown, depth = 0): T | null {
+  if (parsed === null || parsed === undefined) return null;
+  if (depth > 2) return null;
+
+  // Array: take first element
+  if (Array.isArray(parsed)) {
+    if (parsed.length === 0) return null;
+    const first = parsed[0];
+    if (first && typeof first === 'object' && !Array.isArray(first)) {
+      return first as T;
+    }
+    return null;
+  }
+
+  if (typeof parsed !== 'object') return null;
+
+  const obj = parsed as Record<string, unknown>;
+
+  // Check nested text content fields first (string that might be JSON)
+  if (typeof obj.content === 'string') {
+    const inner = extractJson<T>(obj.content);
+    if (inner) return inner;
+  }
+  if (obj.message && typeof obj.message === 'object' && !Array.isArray(obj.message)) {
+    const msg = obj.message as Record<string, unknown>;
+    if (typeof msg.content === 'string') {
+      const inner = extractJson<T>(msg.content);
+      if (inner) return inner;
+    }
+  }
+
+  // Check wrapper keys
+  for (const key of ['result', 'data', 'output']) {
+    const value = obj[key];
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const unwrapped = unwrapJsonPayload<T>(value, depth + 1);
+      if (unwrapped) return unwrapped;
+    }
+  }
+
+  // It's already a plain object — return as-is
+  return obj as T;
 }
 
 function hashString(input: string): string {
@@ -1344,9 +1399,36 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
 
       // Detect truncation — if content starts with valid JSON but is cut short
       const truncatedHint = detectTruncationHint(content);
+
+      // Enhanced diagnostics
+      const hasFence = content.includes('\x60\x60\x60');
+      const hasPreamble = /^(以下是|好的|Here|Sure|OK|当然|没问题)/i.test(content.trim());
+      const hasBrace = content.includes('{');
+      const hasBracket = content.includes('[');
+      const braceCount = (content.match(/\{/g) || []).length;
+      const closeCount = (content.match(/\}/g) || []).length;
+
+      const diag = [
+        `len=${content.length}`,
+        hasBrace ? `brace=${braceCount}/${closeCount}` : null,
+        hasBracket ? 'hasArray' : null,
+        hasFence ? 'hasFence' : null,
+        hasPreamble ? 'hasPreamble' : null,
+      ].filter(Boolean).join(', ');
+
+      const diagHint = [
+        hasPreamble ? '模型可能有解释文字前缀' : '',
+        hasFence ? '模型用了 markdown 代码块' : '',
+        hasBrace && braceCount !== closeCount ? `花括号不匹配（${braceCount}开 ${closeCount}闭）` : '',
+        hasBracket && !hasBrace ? '模型返回了数组而非对象' : '',
+        !hasBrace ? '模型未返回花括号' : '',
+      ].filter(Boolean).join('；');
+
       const errorMsg = truncatedHint
-        ? `模型输出被截断（可能 max_tokens 不足）。${truncatedHint}。模型原始返回（前 200 字）：${content.slice(0, 200)}`
-        : `模型返回格式错误，未找到有效 JSON。模型原始返回（前 200 字）：${content.slice(0, 200)}`;
+        ? `模型输出被截断（可能 max_tokens 不足）。${truncatedHint}。原始返回：${content.slice(0, 200)}`
+        : diagHint
+          ? `模型返回不是有效 JSON（${diag}）。${diagHint}。原始返回：${content.slice(0, 200)}`
+          : `模型返回格式错误，未找到有效 JSON（${diag}）。原始返回：${content.slice(0, 200)}`;
       throw new VibeAIError('json_parse', errorMsg, { rawContent: content.slice(0, 500) });
     }
     return json;
@@ -1382,10 +1464,29 @@ async function cachedCopilotJson<T>(
     return cache[cacheKey] as T;
   }
 
-  const result = await callCopilotJson<T>(systemPrompt, userContent, maxTokens, timeoutMs);
-  cache[cacheKey] = result;
-  writeAICache(cache);
-  return result;
+  try {
+    const result = await callCopilotJson<T>(systemPrompt, userContent, maxTokens, timeoutMs);
+    cache[cacheKey] = result;
+    writeAICache(cache);
+    return result;
+  } catch (err) {
+    // JSON retry for non-MVP stages: stricter prompt, one retry
+    if (err instanceof VibeAIError && err.type === 'json_parse' && !stage.startsWith('stage:mvp')) {
+      console.warn('[VibePilot] JSON parse failed, retrying with stricter prompt...');
+      const retryPrompt = `${systemPrompt}\n\n【紧急】上一次输出不是有效 JSON，无法被程序解析。本次必须只返回一个可直接被 JSON.parse 解析的对象。不要 markdown，不要解释文字，不要省略号，不要使用 result/data/output 包裹字段。`;
+      try {
+        const result = await callCopilotJson<T>(retryPrompt, userContent, Math.floor(maxTokens * 0.8), timeoutMs);
+        cache[cacheKey] = result;
+        writeAICache(cache);
+        console.log('[VibePilot] JSON retry succeeded');
+        return result;
+      } catch (retryErr) {
+        console.error('[VibePilot] JSON retry also failed:', retryErr);
+      }
+    }
+    // MVP stages handle fallback in suggestStage; non-MVP re-throw
+    throw err;
+  }
 }
 
 export function detectScopeCreep(input: string): string[] {
@@ -1598,6 +1699,23 @@ export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
     },
     scopeCreepWarning: '当前为本地规则草案，建议在 AI 可用时重新生成以获得针对你产品的具体建议。',
   };
+}
+
+/**
+ * Annotate all suggestion reasons in an MVP draft with the fallback cause.
+ * Returns a new object, doesn't mutate the original.
+ */
+function annotateLocalFallbackReason(draft: MvpScopeState, reason: string): MvpScopeState {
+  const annotate = (prefix: string) => `${prefix}。AI 生成失败原因：${reason}。当前为本地规则草案，可继续编辑或稍后重新生成。`;
+  const keys = ['mustHave', 'shouldHave', 'outOfScope', 'v2Later', 'minimumLoop', 'scopeRisks'] as const;
+  const result = { ...draft };
+  for (const key of keys) {
+    const suggestion = result[key];
+    if (suggestion && typeof suggestion.reason === 'string') {
+      (result as Record<string, unknown>)[key] = { ...suggestion, reason: annotate(suggestion.reason) };
+    }
+  }
+  return result;
 }
 
 function mockMvpSuggestions(brief: ProductBrief): MvpScopeState {
@@ -1931,10 +2049,13 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
       return result;
     } catch (error) {
       console.warn('[VibePilot] MVP fast request failed:', error);
-      if (error instanceof VibeAIError && error.type === 'timeout') {
-        // Timeout → return local-rule draft, don't throw
-        console.warn('[VibePilot] MVP AI timed out, using local-rule draft');
-        return buildLocalMvpSuggestions(brief);
+      const fatalTypes = ['timeout', 'json_parse', 'empty', 'validation'] as AIErrorType[];
+      if (error instanceof VibeAIError && fatalTypes.includes(error.type)) {
+        console.warn(`[VibePilot] MVP AI ${error.type}, using local-rule draft. Raw: ${error.rawContent?.slice(0, 300) || 'N/A'}`);
+        return annotateLocalFallbackReason(
+          buildLocalMvpSuggestions(brief),
+          `${error.type === 'json_parse' ? 'AI 输出不是有效 JSON' : error.type === 'empty' ? 'AI 输出为空' : error.type === 'validation' ? 'AI 输出相关性不足' : 'AI 生成超时'}`
+        );
       }
       if (!ENABLE_MOCK_FALLBACK) throw error;
       console.warn('[VibePilot] MVP stage failed, local-rule draft used');

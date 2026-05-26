@@ -47,18 +47,27 @@ export default function MvpScopePage() {
       const suggestions = await suggestStage('mvp', brief);
       updateStage<MvpScopeState>('mvp', suggestions);
       setAiAttempted(true);
-      // Check if result is local-rule (timeout fallback)
+      // Check if result is local-rule (fallback in suggestStage for timeout/json_parse/validation)
       if (suggestions.mustHave?.source === 'local-rule') {
-        setError('AI 生成 MVP 范围超时，已切换为本地规则草案。你可以先继续下一步，也可以稍后重新生成。');
+        const reason = suggestions.mustHave?.reason || '';
+        const isJsonIssue = reason.includes('不是有效 JSON') || reason.includes('格式');
+        const isTimeout = reason.includes('超时');
+        const msg = isTimeout
+          ? 'AI 生成 MVP 范围超时，已切换为本地规则草案。你可以先继续下一步，也可以稍后重新生成。'
+          : isJsonIssue
+            ? 'AI 返回格式不稳定，已切换为本地 MVP 草案。你可以继续下一步，也可以稍后重新点击 AI 优化。'
+            : 'AI 生成未成功，已切换为本地 MVP 草案。你可以继续下一步，也可以稍后重新点击 AI 优化。';
+        setError(msg);
       }
     } catch (err) {
+      // suggestStage now handles json_parse/timeout internally for MVP,
+      // but catch any unexpected errors
       const msg = getAIErrorMessage(err);
-      // On timeout, pre-fill local draft
-      if (isVibeAIError(err, 'timeout')) {
+      if (isVibeAIError(err, 'timeout') || isVibeAIError(err, 'json_parse')) {
         const localDraft = buildLocalMvpSuggestions(brief);
         updateStage<MvpScopeState>('mvp', localDraft);
         setAiAttempted(true);
-        setError('AI 生成 MVP 范围超时，已切换为本地规则草案。你可以先继续下一步，也可以稍后重新生成。');
+        setError('AI 返回格式不稳定，已切换为本地 MVP 草案。你可以继续下一步，也可以稍后重新点击 AI 优化。');
       } else {
         setError(msg);
       }
