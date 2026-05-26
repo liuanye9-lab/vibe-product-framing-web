@@ -6,7 +6,7 @@ import DecisionCard from '../components/DecisionCard';
 import { buildLocalHandoff, isAIReady, optimizeHandoff } from '../api/evaluate';
 import { applyHandoffFixes } from '../evaluation/applyHandoffFixes';
 import { useProductBrief } from '../hooks/useProductBrief';
-import { toDisplayText } from '../lib/utils';
+import { toDisplayText, toDisplayList } from '../lib/utils';
 import { extractCoreDecision } from '../rules/coreDecisionExtractor';
 import { listHandoffTraces, saveHandoffTrace } from '../trace/traceStore';
 import { runRetrievalSelfCheck } from '../quality/runRetrievalSelfCheck';
@@ -303,15 +303,15 @@ function KnowledgeReferencesCard({ references, copied, onCopy }: { references?: 
           {items.map((item) => (
             <div key={item.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
-                <strong style={{ fontSize: 14 }}>{item.title}</strong>
-                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{item.type} · score {item.score ?? 0}</span>
+                <strong style={{ fontSize: 14 }}>{toDisplayText(item.title)}</strong>
+                <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{toDisplayText(item.type)} · score {toDisplayText(item.score ?? 0)}</span>
               </div>
               <KeywordRow label="Matched Aliases" items={item.matchedAliases} />
               <KeywordRow label="Matched Tags" items={item.matchedTags} />
               <KeywordRow label="Matched Fields" items={item.matchedFields} />
               <KeywordRow label="Applied To" items={item.appliedTo} />
-              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>{item.reason}</p>
-              {item.influence && <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6, marginTop: 6 }}>Influence: {item.influence}</p>}
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>{toDisplayText(item.reason)}</p>
+              {item.influence && <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6, marginTop: 6 }}>Influence: {toDisplayText(item.influence)}</p>}
             </div>
           ))}
         </div>
@@ -328,8 +328,8 @@ function KeywordRow({ label, items }: { label: string; items?: string[] }) {
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
       <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{label}:</span>
       {values.map((item) => (
-        <span key={`${label}-${item}`} style={{ fontSize: 12, border: '1px solid var(--color-border)', borderRadius: 999, padding: '2px 7px', color: 'var(--color-text-secondary)' }}>
-          {item}
+        <span key={`${label}-${toDisplayText(item)}`} style={{ fontSize: 12, border: '1px solid var(--color-border)', borderRadius: 999, padding: '2px 7px', color: 'var(--color-text-secondary)' }}>
+          {toDisplayText(item)}
         </span>
       ))}
     </div>
@@ -364,7 +364,7 @@ function EvaluationReportCard({ evaluation, copied, onCopy, onApplyFixes }: { ev
               <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Weighted Score</div>
             </div>
             <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '10px 12px' }}>
-              <div style={{ fontSize: 20, fontWeight: 700 }}>{evaluation.readiness}</div>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>{toDisplayText(evaluation.readiness)}</div>
               <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Readiness</div>
             </div>
           </div>
@@ -405,11 +405,11 @@ function FixSuggestionsList({ fixes }: { fixes: NonNullable<HandoffEvaluation['f
         {fixes.map((fix) => (
           <div key={fix.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
-              <strong style={{ fontSize: 13 }}>{fix.targetSection}</strong>
-              <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{fix.id}</span>
+              <strong style={{ fontSize: 13 }}>{toDisplayText(fix.targetSection)}</strong>
+              <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{toDisplayText(fix.id)}</span>
             </div>
-            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6, marginBottom: 8 }}>{fix.issue}</p>
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)', fontFamily: 'inherit', margin: 0 }}>{fix.patch}</pre>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6, marginBottom: 8 }}>{toDisplayText(fix.issue)}</p>
+            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, lineHeight: 1.6, color: 'var(--color-text-secondary)', fontFamily: 'inherit', margin: 0 }}>{toDisplayText(fix.patch)}</pre>
           </div>
         ))}
       </div>
@@ -421,8 +421,8 @@ function EvaluationDimensionCard({ dimension }: { dimension: HandoffEvaluationDi
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-        <strong style={{ fontSize: 13 }}>{dimension.label}</strong>
-        <strong style={{ fontSize: 13 }}>{dimension.score}/5</strong>
+        <strong style={{ fontSize: 13 }}>{toDisplayText(dimension.label)}</strong>
+        <strong style={{ fontSize: 13 }}>{toDisplayText(dimension.score)}/5</strong>
       </div>
       <EvaluationList title="Evidence" items={dimension.evidence.length ? dimension.evidence : ['暂无明确证据']} />
       <EvaluationList title="Issues" items={dimension.issues.length ? dimension.issues : ['暂无明显问题']} />
@@ -432,11 +432,12 @@ function EvaluationDimensionCard({ dimension }: { dimension: HandoffEvaluationDi
 }
 
 function EvaluationList({ title, items }: { title: string; items: string[] }) {
+  const safeItems = toDisplayList(items);
   return (
     <div>
       <h3 style={{ fontSize: 13, fontWeight: 650, marginBottom: 6 }}>{title}</h3>
       <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--color-text-secondary)', fontSize: 13, lineHeight: 1.7 }}>
-        {items.map((item) => <li key={item}>{item}</li>)}
+        {safeItems.map((item) => <li key={item}>{item}</li>)}
       </ul>
     </div>
   );

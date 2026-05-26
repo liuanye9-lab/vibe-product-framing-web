@@ -419,10 +419,13 @@ export function useProductBrief(id?: string) {
 
   const saveFinalHandoff = useCallback((finalHandoff: FinalHandoff) => {
     if (!brief) return;
+    const normalized = normalizeFinalHandoff(finalHandoff);
+    if (!normalized) return;
+    const devPrompt = toDisplayText(normalized.developmentPrompt);
     save({
       ...brief,
-      finalHandoff,
-      developmentPrompt: finalHandoff.developmentPrompt,
+      finalHandoff: normalized,
+      developmentPrompt: devPrompt,
     });
   }, [brief, save]);
 
