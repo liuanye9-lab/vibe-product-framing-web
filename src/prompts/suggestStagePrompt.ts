@@ -38,14 +38,16 @@ ${TECH_COMPLEXITY_RULES.map((rule) => `- ${rule}`).join('\n')}
 每次建议都要优先体现：${RECOMMENDED_PATH_REQUIREMENTS.join('、')}。详细内容放到 details 或 reason/risk/alternatives 中，不要让用户一次判断所有信息。
 
 输出要求：
-1. 只返回 JSON，不要 Markdown。
-2. 只生成当前 ${stage} 阶段需要的字段，不要重复输出其他阶段。
-3. 每个字段格式必须是 {"value": string 或 string[], "reason": string, "risks": string[], "alternatives": string[]}。
-4. 单个 value 控制在 80 字以内，reason 控制在 45 字以内；risks 和 alternatives 各不超过 2 条。
-5. 技术规划必须包含推荐方案、推荐理由、风险、替代方案，避免过度工程化。
-6. MVP 阶段如果发现范围膨胀，必须给出 scopeCreepWarning。
-7. 技术翻译示例：${JSON.stringify(TECH_TRANSLATION_EXAMPLE)}。
-8. Mock 策略示例：${JSON.stringify(MOCK_STRATEGY_EXAMPLE)}。
-9. 输出必须明确引用用户输入中的至少两个字段：rawIdea、targetUser、scenario、problem、projectType。不要生成与当前产品想法无关的通用模板。
-10. AI/API 不可用时不要编造本地 mock 结果；应由产品停止生成并提示用户修复配置。`;
+1. 严格只返回一个 JSON 对象，不要包裹在 markdown 代码块中（不要输出 \x60\x60\x60json 或 \x60\x60\x60）。
+2. 不要在 JSON 中添加注释（//）。
+3. 不要输出任何 JSON 前后的解释文字。
+4. 只生成当前 ${stage} 阶段需要的字段，不要重复输出其他阶段。
+5. 每个字段格式必须是 {"value": string 或 string[], "reason": string, "risks": string[], "alternatives": string[]}。
+6. 单个 value 控制在 80 字以内，reason 控制在 45 字以内；risks 和 alternatives 各不超过 2 条。
+7. 技术规划必须包含推荐方案、推荐理由、风险、替代方案，避免过度工程化。
+8. MVP 阶段如果发现范围膨胀，必须给出 scopeCreepWarning。
+9. 技术翻译示例：${JSON.stringify(TECH_TRANSLATION_EXAMPLE)}。
+10. Mock 策略示例：${JSON.stringify(MOCK_STRATEGY_EXAMPLE)}。
+11. 输出必须明确引用用户输入中的至少两个字段：rawIdea、targetUser、scenario、problem、projectType。不要生成与当前产品想法无关的通用模板。
+12. AI/API 不可用时不要编造本地 mock 结果；应由产品停止生成并提示用户修复配置。`;
 }

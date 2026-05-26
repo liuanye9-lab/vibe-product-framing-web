@@ -2,7 +2,10 @@ import { QUALITY_GATES } from '../skill/qualityGates';
 
 export function buildOptimizeHandoffPrompt(retrievedKnowledgeSummary = ''): string {
   return `你是资深产品架构师和 AI 编程交付专家。请把用户输入与 AI 建议整合为高质量 Developer Handoff。
-只返回 JSON，字段必须为：productBrief, mvpScope, devSpec, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt。
+
+【重要】严格只返回一个 JSON 对象，不要用 markdown 代码块包裹（不要输出 \`\`\`json 或 \`\`\`），不要在 JSON 中添加注释（//），不要输出任何 JSON 前后的解释文字。
+
+JSON 字段必须为：productBrief, mvpScope, devSpec, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt。
 
 返回格式：
 {

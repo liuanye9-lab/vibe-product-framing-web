@@ -311,7 +311,7 @@ ${userAnswer}
 
 ## 评价要求
 
-请严格按以下 JSON 格式返回，不要输出任何其他内容：
+请严格按以下 JSON 格式返回，不要输出任何其他内容，不要使用 markdown 代码块包裹：
 {
   "quality": "specific" | "ok" | "vague",
   "evaluation": "评价文本",
@@ -382,14 +382,13 @@ async function callDirectAI(req: EvaluateRequest, config: AIConfig): Promise<Eva
   // Parse JSON from AI response (evaluate mode)
   let result: EvaluateResponse;
   try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      result = JSON.parse(jsonMatch[0]);
-      if (!['specific', 'ok', 'vague'].includes(result.quality)) {
-        result.quality = 'ok';
-      }
-    } else {
-      throw new Error('No JSON found');
+    // Use balanced brace matching instead of greedy regex for reliability
+    const balanced = findBalancedBraces(content);
+    const jsonStr = balanced || content;
+    const cleaned = removeTrailingCommas(stripComments(stripMarkdownFences(jsonStr)));
+    result = JSON.parse(cleaned);
+    if (!['specific', 'ok', 'vague'].includes(result.quality)) {
+      result.quality = 'ok';
     }
   } catch {
     const lowerContent = content.toLowerCase();
@@ -659,18 +658,156 @@ function acceptedText(value: AiSuggestion | undefined): string {
   return normalizeSuggestionText(value.value);
 }
 
-function extractJson<T>(content: string): T | null {
-  try {
-    return JSON.parse(content) as T;
-  } catch {
-    const match = content.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      return JSON.parse(match[0]) as T;
-    } catch {
-      return null;
+/**
+ * Strip markdown code fences (```json ... ```, ``` ... ```)
+ * Many LLMs ignore "no markdown" instructions and wrap JSON in fences.
+ */
+function stripMarkdownFences(content: string): string {
+  let cleaned = content
+    // Remove opening ```json or ```JSON or ```
+    .replace(/^```(?:json|JSON)?\s*\n?/gm, '')
+    // Remove closing ```
+    .replace(/\n?```\s*$/g, '')
+    .trim();
+  // Also handle case where entire content is wrapped in a single fence block
+  const fenceMatch = cleaned.match(/^```(?:json|JSON)?\s*([\s\S]*?)\s*```\s*$/);
+  if (fenceMatch) cleaned = fenceMatch[1].trim();
+  return cleaned;
+}
+
+/**
+ * Strip single-line JavaScript-style comments (// ...)
+ * Some models emit comments inside JSON-like output.
+ */
+function stripComments(json: string): string {
+  return json.replace(/\/\/[^\n]*/g, '');
+}
+
+/**
+ * Remove trailing commas before } or ] — common non-standard JSON from some LLMs.
+ */
+function removeTrailingCommas(json: string): string {
+  return json.replace(/,\s*([}\]])/g, '$1');
+}
+
+/**
+ * Find a balanced JSON object using brace-depth counting.
+ * Unlike the greedy /\{[\s\S]*\}/ regex, this correctly handles:
+ * - Text before/after the JSON object
+ * - Nested objects and arrays inside strings
+ * - Multiple { } pairs in the response text
+ *
+ * Returns the substring from the first { to its matching closing },
+ * or null if no balanced object is found.
+ */
+function findBalancedBraces(content: string): string | null {
+  const startIdx = content.indexOf('{');
+  if (startIdx === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = startIdx; i < content.length; i++) {
+    const ch = content[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue; // skip braces inside strings
+
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return content.slice(startIdx, i + 1);
+      }
     }
   }
+
+  return null; // unbalanced / truncated
+}
+
+/**
+ * Multi-strategy JSON extraction & repair pipeline.
+ *
+ * Tries strategies in order of specificity/correctness:
+ * 1. Direct JSON.parse (already clean)
+ * 2. Strip markdown fences → parse
+ * 3. Balanced brace extraction → strip fences → parse
+ * 4. Strip comments + trailing commas + fences → parse
+ * 5. Balanced braces + full repair (comments + commas)
+ * 6. Greedy regex fallback with repair (original behavior, improved)
+ *
+ * Returns parsed object or null if all strategies fail.
+ */
+function tryRepairAndParse<T>(content: string): T | null {
+  const attempts: Array<{ label: string; fn: () => T | null }> = [
+    {
+      label: 'direct parse',
+      fn: () => { try { return JSON.parse(content) as T; } catch { return null; } },
+    },
+    {
+      label: 'strip fences',
+      fn: () => { try { return JSON.parse(stripMarkdownFences(content)) as T; } catch { return null; } },
+    },
+    {
+      label: 'balanced braces + fences',
+      fn: () => {
+        const balanced = findBalancedBraces(content);
+        if (!balanced) return null;
+        try { return JSON.parse(stripMarkdownFences(balanced)) as T; } catch { return null; }
+      },
+    },
+    {
+      label: 'full repair (comments+commas+fences)',
+      fn: () => {
+        const repaired = removeTrailingCommas(stripComments(stripMarkdownFences(content)));
+        try { return JSON.parse(repaired) as T; } catch { return null; }
+      },
+    },
+    {
+      label: 'balanced + full repair',
+      fn: () => {
+        const balanced = findBalancedBraces(content);
+        if (!balanced) return null;
+        const repaired = removeTrailingCommas(stripComments(stripMarkdownFences(balanced)));
+        try { return JSON.parse(repaired) as T; } catch { return null; }
+      },
+    },
+    {
+      label: 'greedy regex + repair',
+      fn: () => {
+        const match = content.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+        const cleaned = removeTrailingCommas(stripComments(stripMarkdownFences(match[0])));
+        try { return JSON.parse(cleaned) as T; } catch { return null; }
+      },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    const result = attempt.fn();
+    if (result !== null) {
+      console.log(`[VibePilot] JSON extracted via: ${attempt.label}`);
+      return result;
+    }
+  }
+
+  return null;
+}
+
+function extractJson<T>(content: string): T | null {
+  return tryRepairAndParse<T>(content);
 }
 
 function hashString(input: string): string {
@@ -748,9 +885,15 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
     if (!content) {
       throw new Error('模型返回为空');
     }
+    console.log('[VibePilot] Raw AI content (first 300 chars):', content.slice(0, 300));
     const json = extractJson<T>(content);
     if (!json) {
-      throw new Error('模型返回格式错误，未找到有效 JSON');
+      // Log diagnostic info for debugging
+      console.error('[VibePilot] JSON extraction failed. Raw content:', content.slice(0, 500));
+      console.error('[VibePilot] Content length:', content.length);
+      console.error('[VibePilot] Contains brace:', content.includes('{'));
+      console.error('[VibePilot] Contains fence:', content.includes('```'));
+      throw new Error(`模型返回格式错误，未找到有效 JSON。模型原始返回（前 200 字）：${content.slice(0, 200)}`);
     }
     return json;
   } catch (err) {
@@ -1238,7 +1381,7 @@ export async function suggestIdeaDiagnosis(brief: ProductBrief): Promise<{
       'ideaDiagnosis',
       brief,
       `你是产品前期构思 Copilot。基于用户输入一次性生成 Idea Diagnosis。
-只返回 JSON，不要 Markdown。必须引用 rawIdea、targetUser、scenario、problem、projectType 中至少两个字段。
+【重要】严格只返回一个 JSON 对象，不要用 markdown 代码块包裹（不要输出 \x60\x60\x60json 或 \x60\x60\x60），不要添加注释或任何多余文字。必须引用 rawIdea、targetUser、scenario、problem、projectType 中至少两个字段。
 不要输出与用户想法无关的通用模板。
 默认只生成核心决策摘要，不生成完整长文。
 
