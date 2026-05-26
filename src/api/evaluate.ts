@@ -28,6 +28,67 @@ import { evaluateHandoff } from '../evaluation/evaluateHandoff';
 import { buildStructuredDevSpec } from '../spec/buildStructuredDevSpec';
 import { formatStructuredDevSpecMarkdown } from '../spec/formatStructuredDevSpecMarkdown';
 
+// --- AI Error Types ---
+
+export type AIErrorType =
+  | 'connection'
+  | 'timeout'
+  | 'http'
+  | 'empty'
+  | 'json_parse'
+  | 'validation'
+  | 'unknown';
+
+export class VibeAIError extends Error {
+  type: AIErrorType;
+  detail?: unknown;
+  rawContent?: string;
+  constructor(
+    type: AIErrorType,
+    message: string,
+    options?: { cause?: unknown; detail?: unknown; rawContent?: string },
+  ) {
+    super(message);
+    this.name = 'VibeAIError';
+    this.type = type;
+    this.detail = options?.detail;
+    this.rawContent = options?.rawContent;
+    if (options?.cause) this.cause = options.cause;
+  }
+}
+
+/** User-friendly error messages per AIErrorType */
+export function getAIErrorMessage(error: unknown): string {
+  if (error instanceof VibeAIError) {
+    switch (error.type) {
+      case 'connection':
+        return 'API 连接失败：请检查 API URL、网络、部署环境和服务商状态。';
+      case 'timeout':
+        return '模型响应超时：当前任务输出较长。建议换更快模型，或稍后重试。';
+      case 'http':
+        return `上游 API 返回错误：${error.message.replace(/^AI API 返回错误\s*\(?\d*\)?\s*:\s*/, '')}。请检查 API key、余额、模型名和 endpoint。`;
+      case 'empty':
+        return '模型已响应但没有返回内容。请检查模型是否支持该请求格式。';
+      case 'json_parse':
+        return '模型已响应，但没有返回有效 JSON。建议换更稳定模型或降低输出长度。';
+      case 'validation':
+        return `模型已响应，但输出与当前产品想法关联不足：${error.message}。可以重新生成，或使用本地规则版。`;
+      case 'unknown':
+      default:
+        return `未知错误：${error.message}`;
+    }
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+/** Check if an error is a VibeAIError of a specific type */
+export function isVibeAIError(error: unknown, type?: AIErrorType): error is VibeAIError {
+  return error instanceof VibeAIError && (type === undefined || error.type === type);
+}
+
 // --- AI Configuration (from localStorage) ---
 
 export interface AIConfig {
@@ -352,13 +413,13 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
             ? (errorValue as Record<string, unknown>).message as string
             : rawText.slice(0, 300);
 
-        throw new Error(`AI API 返回错误 (${response.status}): ${errorMessage}`);
+        throw new VibeAIError('http', `AI API 返回错误 (${response.status}): ${errorMessage}`);
       }
 
       try {
         return JSON.parse(rawText) as Record<string, unknown>;
       } catch {
-        throw new Error('AI API 返回的不是有效 JSON');
+        throw new VibeAIError('json_parse', 'AI API 返回的不是有效 JSON', { rawContent: rawText.slice(0, 500) });
       }
     } catch (err) {
       lastError = err;
@@ -380,8 +441,9 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
 
   // All retries exhausted — throw classified error
   const diagnosis = classifyNetworkError(lastError);
-  const userMessage = `[${diagnosis.category}] 网络请求失败，已重试 ${MAX_FETCH_RETRIES} 次。\n\n诊断：${diagnosis.userAdvice}\n\n原始错误：${lastError instanceof Error ? lastError.message : String(lastError)}`;
-  throw new Error(userMessage);
+  const errorType: AIErrorType = diagnosis.category === 'TIMEOUT' ? 'timeout' : 'connection';
+  const userMessage = `${diagnosis.userAdvice}\n\n原始错误：${lastError instanceof Error ? lastError.message : String(lastError)}`;
+  throw new VibeAIError(errorType, userMessage, { cause: lastError });
 }
 
 function buildSystemPrompt(req: EvaluateRequest): string {
@@ -886,7 +948,7 @@ function attemptTruncatedJsonRecovery(content: string): string | null {
   const startIdx = content.indexOf('{');
   if (startIdx === -1) return null;
 
-  let json = content.slice(startIdx);
+  const json = content.slice(startIdx);
   let depthObj = 0;
   let depthArr = 0;
   let inString = false;
@@ -1111,8 +1173,12 @@ function writeAICache(cache: Record<string, unknown>): void {
   localStorage.setItem(AI_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
 }
 
-function getAICacheKey(stage: string, brief: ProductBrief, model: string, userContent: string): string {
-  return `${stage}:${brief.id}:${model}:${hashString(userContent)}`;
+function getAICacheKey(stage: string, brief: ProductBrief, model: string, systemPrompt: string, userContent: string): string {
+  return `${stage}:${brief.id}:${model}:${hashString(systemPrompt)}:${hashString(userContent)}`;
+}
+
+export function clearAICache(): void {
+  localStorage.removeItem(AI_CACHE_KEY);
 }
 
 function normalizeForReference(value: string): string {
@@ -1126,34 +1192,126 @@ function splitReferenceFragments(value: string): string[] {
     .filter((item) => item.length >= 4);
 }
 
-function assertAIOutputReferencesInput(brief: ProductBrief, output: unknown): void {
+export interface AIReferenceValidationResult {
+  passed: boolean;
+  score: number;
+  minRequired: number;
+  referencedCount: number;
+  matchedFields: string[];
+  missingFields: string[];
+  reason: string;
+}
+
+function validateAIOutputReferencesInput(brief: ProductBrief, output: unknown): AIReferenceValidationResult {
+  const outputRecord = output && typeof output === 'object' && !Array.isArray(output)
+    ? output as Record<string, unknown>
+    : null;
+
+  // 1) Check referenceEvidence field (from updated prompts)
+  const evidence = outputRecord?.referenceEvidence as Record<string, unknown> | undefined;
+  const evidenceMatched: string[] = [];
+  if (evidence && typeof evidence === 'object') {
+    const evidenceEntries = [
+      { key: 'rawIdea', label: 'rawIdea' },
+      { key: 'targetUser', label: 'targetUser' },
+      { key: 'scenario', label: 'scenario' },
+      { key: 'problem', label: 'problem' },
+      { key: 'projectType', label: 'projectType' },
+    ];
+    for (const { key, label } of evidenceEntries) {
+      const val = evidence[key];
+      if (val && typeof val === 'string' && val.length >= 2 && val !== '暂无' && val !== 'none') {
+        evidenceMatched.push(label);
+      }
+    }
+  }
+
+  // 2) Full-text search on JSON output
   const outputText = normalizeForReference(JSON.stringify(output));
-  const rawFields = [
-    brief.ideaInput.rawIdea,
-    brief.ideaInput.targetUser,
-    brief.ideaInput.scenario,
-    brief.ideaInput.problem,
-    brief.ideaInput.projectType,
+  const fieldWeights: Array<{ field: string; value: string; weight: number }> = [
+    { field: 'rawIdea', value: brief.ideaInput.rawIdea || '', weight: 3 },
+    { field: 'targetUser', value: brief.ideaInput.targetUser || '', weight: 2 },
+    { field: 'scenario', value: brief.ideaInput.scenario || '', weight: 2 },
+    { field: 'problem', value: brief.ideaInput.problem || '', weight: 2 },
+    { field: 'projectType', value: brief.ideaInput.projectType || '', weight: 1 },
   ];
-  // Only count fields that have meaningful, non-empty, normalizable content
-  const fields = rawFields.filter((value): value is string =>
-    Boolean(value && value.trim() && normalizeForReference(value))
-  );
 
-  // If no fields are available at all, skip the assertion (shouldn't happen in practice)
-  if (fields.length === 0) return;
+  // Filter valid fields
+  const validFields = fieldWeights.filter((fw) => {
+    const v = fw.value?.trim();
+    if (!v) return false;
+    const norm = normalizeForReference(v);
+    return norm && norm.length >= 2; // allow short but meaningful fields
+  });
 
-  const referencedCount = fields.filter((field) => {
-    const normalized = normalizeForReference(field);
-    if (normalized && outputText.includes(normalized)) return true;
-    return splitReferenceFragments(field).some((fragment) => outputText.includes(normalizeForReference(fragment)));
-  }).length;
+  // 3) Check long-form content fields for keyword presence
+  const contentFields = outputRecord ? [
+    outputRecord.productBrief,
+    outputRecord.mvpScope,
+    outputRecord.devSpec,
+    outputRecord.developmentPrompt,
+    outputRecord.technicalArchitecture,
+  ].filter((v): v is string => typeof v === 'string' && v.length > 10) : [];
+  const contentText = normalizeForReference(contentFields.join(' '));
 
-  // Require at least min(2, fields.length) references — if user only filled 1 field,
-  // matching 1 is sufficient; if 2+ fields are filled, require at least 2.
-  const minRequired = Math.min(2, fields.length);
-  if (referencedCount < minRequired) {
-    throw new Error('AI 输出没有基于当前产品想法，请重新生成。');
+  let score = 0;
+  let referencedCount = 0;
+  const matchedFields: string[] = [];
+  const missingFields: string[] = [];
+
+  for (const fw of validFields) {
+    const normalized = normalizeForReference(fw.value);
+    const hitInJson = normalized && outputText.includes(normalized);
+    const hitInContent = normalized && contentText.includes(normalized);
+    const hitInFragments = splitReferenceFragments(fw.value).some(
+      (fragment) => outputText.includes(normalizeForReference(fragment)) || contentText.includes(normalizeForReference(fragment)),
+    );
+    const hitInEvidence = evidenceMatched.includes(fw.field);
+
+    if (hitInJson || hitInContent || hitInFragments || hitInEvidence) {
+      referencedCount++;
+      matchedFields.push(fw.field);
+      score += fw.weight;
+      // Bonus for evidence match
+      if (hitInEvidence) score += 1;
+      // Bonus for rawIdea content match
+      if (fw.field === 'rawIdea' && hitInContent) score += 2;
+    } else {
+      missingFields.push(fw.field);
+    }
+  }
+
+  // 4) If projectType is very short (like "Web App"), don't count it as missing for strict validation
+  const shortProjectType = brief.ideaInput.projectType && normalizeForReference(brief.ideaInput.projectType).length < 6;
+
+  // Calculate minimum required
+  const numValidFields = validFields.length;
+  const minRequired = numValidFields === 0 ? 0 : Math.min(2, numValidFields);
+
+  const passed = (minRequired === 0) || (referencedCount >= minRequired && score >= 2);
+
+  // Build reason
+  let reason: string;
+  if (passed) {
+    reason = `命中 ${referencedCount}/${numValidFields} 字段（需要至少 ${minRequired}）: ${matchedFields.join(', ')}`;
+  } else if (shortProjectType && numValidFields - referencedCount === 1 && missingFields.includes('projectType')) {
+    reason = `仅 projectType 未命中（短字段放宽），命中 ${referencedCount}/${numValidFields} 字段: ${matchedFields.join(', ')}。可以接受。`;
+    return { passed: true, score, minRequired, referencedCount, matchedFields, missingFields: [], reason };
+  } else {
+    reason = `仅命中 ${referencedCount}/${numValidFields} 字段（需要至少 ${minRequired}）: ${matchedFields.join(', ')}。未命中: ${missingFields.join(', ')}`;
+  }
+
+  return { passed, score, minRequired, referencedCount, matchedFields, missingFields, reason };
+}
+
+function assertAIOutputReferencesInput(brief: ProductBrief, output: unknown): void {
+  const result = validateAIOutputReferencesInput(brief, output);
+  if (!result.passed) {
+    throw new VibeAIError(
+      'validation',
+      `AI 输出相关性不足：${result.reason}`,
+      { detail: result },
+    );
   }
 }
 
@@ -1171,7 +1329,7 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
     }, timeoutMs);
     const content = extractAIContent(data);
     if (!content) {
-      throw new Error('模型返回为空');
+      throw new VibeAIError('empty', '模型返回为空');
     }
     console.log('[VibePilot] Raw AI content (first 300 chars):', content.slice(0, 300));
     const json = extractJson<T>(content);
@@ -1187,29 +1345,22 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
       const errorMsg = truncatedHint
         ? `模型输出被截断（可能 max_tokens 不足）。${truncatedHint}。模型原始返回（前 200 字）：${content.slice(0, 200)}`
         : `模型返回格式错误，未找到有效 JSON。模型原始返回（前 200 字）：${content.slice(0, 200)}`;
-      throw new Error(errorMsg);
+      throw new VibeAIError('json_parse', errorMsg, { rawContent: content.slice(0, 500) });
     }
     return json;
   } catch (err) {
+    // If already a VibeAIError, re-throw
+    if (err instanceof VibeAIError) throw err;
+
     const message = getErrorMessage(err);
-    console.warn('[VibePilot] Copilot AI failed:', err);
-
-    // Check if this is a classified network error with rich diagnostics
-    const isNetworkFailure =
-      message.includes('[NETWORK_FAILURE]') ||
-      message.includes('[UPSTREAM_UNAVAILABLE]') ||
-      message.includes('[TIMEOUT]') ||
-      message.includes('[CORS]');
-
-    if (isNetworkFailure) {
-      // Pass through the rich diagnostic info directly
-      throw new Error(`大模型连接失败：${message}`, { cause: err });
-    }
 
     if (isLikelyTimeout(err)) {
-      throw new Error(`大模型响应超时：已等待 ${Math.round(timeoutMs / 1000)} 秒。请检查模型是否响应较慢，或在设置页换用更快模型。\n\n可能原因：1) 模型本身响应慢（如 DeepSeek、Qwen 在高峰期）2) 网络到 AI API 延迟高 3) 请求内容太长导致生成时间长`, { cause: err });
+      throw new VibeAIError('timeout',
+        `大模型响应超时：已等待 ${Math.round(timeoutMs / 1000)} 秒。请检查模型是否响应较慢，或在设置页换用更快模型。`,
+        { cause: err }
+      );
     }
-    throw new Error(`大模型生成失败：${message}`, { cause: err });
+    throw new VibeAIError('unknown', `大模型生成失败：${message}`, { cause: err });
   }
 }
 
@@ -1222,7 +1373,7 @@ async function cachedCopilotJson<T>(
   timeoutMs = DEFAULT_AI_TIMEOUT_MS
 ): Promise<T> {
   const config = requireAIConfig();
-  const cacheKey = getAICacheKey(stage, brief, config.model, userContent);
+  const cacheKey = getAICacheKey(stage, brief, config.model, systemPrompt, userContent);
   const cache = readAICache();
   if (cache[cacheKey]) {
     console.log('[VibePilot] AI Cache Hit:', { stage, briefId: brief.id, model: config.model });
@@ -1665,7 +1816,16 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
       stageMaxTokens,
       SUGGEST_AI_TIMEOUT_MS
     );
-    assertAIOutputReferencesInput(brief, ai);
+    const validation = validateAIOutputReferencesInput(brief, ai);
+    if (!validation.passed) {
+      // Schema exists but reference is weak — salvage with warning
+      const hasSchema = ai && typeof ai === 'object' && Object.keys(ai).length > 1;
+      if (hasSchema) {
+        console.warn(`[VibePilot] Validation salvage for stage ${stage}:`, validation.reason);
+      } else {
+        throw new VibeAIError('validation', `AI 输出相关性不足：${validation.reason}`, { detail: validation });
+      }
+    }
     if (stage === 'business') {
       return normalizeBusinessSuggestions(fallback as BusinessFramingState, ai) as Partial<CopilotStages[FramingStage]>;
     }
@@ -1727,7 +1887,16 @@ export async function suggestIdeaDiagnosis(brief: ProductBrief): Promise<{
       2000,
       SUGGEST_AI_TIMEOUT_MS
     );
-    assertAIOutputReferencesInput(brief, ai);
+    const validation = validateAIOutputReferencesInput(brief, ai);
+    if (!validation.passed) {
+      // Salvage: if discovery/product/business schemas exist, accept with warning
+      const hasSchema = ai && typeof ai === 'object' && (ai.discovery || ai.product || ai.business);
+      if (hasSchema) {
+        console.warn('[VibePilot] IdeaDiagnosis validation salvage:', validation.reason);
+      } else {
+        throw new VibeAIError('validation', `AI 输出相关性不足：${validation.reason}`, { detail: validation });
+      }
+    }
     return {
       discovery: normalizeSuggestionMap(fallback.discovery as Record<string, AiSuggestion>, ai.discovery || null) as DemandDiscoveryState,
       product: normalizeSuggestionMap(fallback.product as Record<string, AiSuggestion>, ai.product || null) as ProductFramingState,
@@ -1753,7 +1922,7 @@ export async function explainSuggestion(section: string, brief: ProductBrief): P
       EXPLAIN_AI_TIMEOUT_MS
     );
     if (!ai.explanation) {
-      throw new Error('模型返回为空');
+      throw new VibeAIError('empty', '模型返回为空');
     }
     assertAIOutputReferencesInput(brief, ai);
     return normalizeSuggestionText(ai.explanation);
@@ -1810,7 +1979,7 @@ export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff
   try {
     const context = buildBriefContext(brief);
     const knowledgeSummary = buildKnowledgeSummary(brief);
-    const ai = await cachedCopilotJson<FinalHandoff>(
+    const ai = await cachedCopilotJson<Record<string, unknown>>(
       'handoff:optimize',
       brief,
       buildOptimizeHandoffPrompt(knowledgeSummary),
@@ -1818,7 +1987,35 @@ export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff
       2400,
       HANDOFF_AI_TIMEOUT_MS
     );
-    assertAIOutputReferencesInput(brief, ai);
+    const validation = validateAIOutputReferencesInput(brief, ai);
+    // Strip referenceEvidence from AI output before passing to enhancer
+    const aiWithoutEvidence = { ...ai };
+    delete aiWithoutEvidence.referenceEvidence;
+
+    // Check if key fields exist
+    const hasKeyFields = typeof ai.productBrief === 'string' && typeof ai.mvpScope === 'string'
+      && typeof ai.devSpec === 'string' && typeof ai.developmentPrompt === 'string';
+
+    if (!validation.passed) {
+      if (hasKeyFields) {
+        // Salvage: schema is valid but reference is weak
+        console.warn('[VibePilot] Handoff validation salvage:', validation.reason);
+        const result = enhanceHandoffWithKnowledge(brief, {
+          productBrief: normalizeSuggestionText(ai.productBrief),
+          mvpScope: normalizeSuggestionText(ai.mvpScope),
+          devSpec: normalizeSuggestionText(ai.devSpec),
+          technicalArchitecture: normalizeSuggestionText(ai.technicalArchitecture),
+          dataStructure: normalizeSuggestionText(ai.dataStructure),
+          acceptanceCriteria: normalizeSuggestionText(ai.acceptanceCriteria),
+          developmentPrompt: normalizeSuggestionText(ai.developmentPrompt),
+          source: 'ai',
+        });
+        result.validationWarnings = [validation.reason];
+        return result;
+      }
+      throw new VibeAIError('validation', `AI Handoff 输出相关性不足：${validation.reason}`, { detail: validation });
+    }
+
     return enhanceHandoffWithKnowledge(brief, {
       productBrief: normalizeSuggestionText(ai.productBrief),
       mvpScope: normalizeSuggestionText(ai.mvpScope),
@@ -1875,11 +2072,10 @@ export async function getStepHint(step: StepConfig): Promise<string> {
     }, EXPLAIN_AI_TIMEOUT_MS);
     const content = extractAIContent(data);
     if (!content) {
-      throw new Error('模型返回为空');
+      throw new VibeAIError('empty', '模型返回为空');
     }
     return content;
   } catch (err) {
-    if (!ENABLE_MOCK_FALLBACK) throw err;
     console.warn('AI hint failed, explicit dev mock used:', err);
   }
 
@@ -1892,7 +2088,7 @@ export async function askFollowUp(req: EvaluateRequest): Promise<string> {
   try {
     const config = requireAIReady();
     const result = await callDirectAI({ ...req, mode: 'followup' }, config);
-    if (!result.followUp) throw new Error('模型返回为空');
+    if (!result.followUp) throw new VibeAIError('empty', '模型返回为空');
     return result.followUp;
   } catch (err) {
     if (!ENABLE_MOCK_FALLBACK) throw err;

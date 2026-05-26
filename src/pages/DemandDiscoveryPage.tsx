@@ -4,7 +4,7 @@ import { Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
-import { explainSuggestion, isAIReady, suggestIdeaDiagnosis, suggestStage } from '../api/evaluate';
+import { explainSuggestion, getAIErrorMessage, isAIReady, suggestIdeaDiagnosis, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { toDisplayText } from '../lib/utils';
 import { extractCoreDecision } from '../rules/coreDecisionExtractor';
@@ -52,7 +52,7 @@ export default function DemandDiscoveryPage() {
         },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
+      setError(getAIErrorMessage(err));
     } finally {
       setGenerating(false);
     }
@@ -76,7 +76,7 @@ export default function DemandDiscoveryPage() {
         },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
+      setError(getAIErrorMessage(err));
     } finally {
       setGenerating(false);
     }

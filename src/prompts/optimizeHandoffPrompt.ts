@@ -5,10 +5,18 @@ export function buildOptimizeHandoffPrompt(retrievedKnowledgeSummary = ''): stri
 
 【重要】严格只返回一个 JSON 对象，不要用 markdown 代码块包裹（不要输出 \`\`\`json 或 \`\`\`），不要在 JSON 中添加注释（//），不要输出任何 JSON 前后的解释文字。
 
-JSON 字段必须为：productBrief, mvpScope, devSpec, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt。
+JSON 字段必须为：referenceEvidence, productBrief, mvpScope, devSpec, technicalArchitecture, dataStructure, acceptanceCriteria, developmentPrompt。
 
 返回格式：
 {
+  "referenceEvidence": {
+    "rawIdea": "你基于的产品想法摘要",
+    "targetUser": "你基于的目标用户",
+    "scenario": "你基于的使用场景",
+    "problem": "你基于的核心问题",
+    "projectType": "你基于的产品形态",
+    "summary": "本次输出基于用户想法的原因（20字以内）"
+  },
   "productBrief": "...",
   "mvpScope": "...",
   "devSpec": "...",

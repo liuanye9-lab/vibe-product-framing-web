@@ -143,6 +143,9 @@ function normalizeFinalHandoff(raw: unknown): FinalHandoff | undefined {
       }))
     : undefined;
   const evaluation = normalizeEvaluation(raw.evaluation);
+  const validationWarnings = Array.isArray(raw.validationWarnings)
+    ? raw.validationWarnings.filter((w): w is string => typeof w === 'string')
+    : undefined;
   return {
     schemaVersion: toDisplayText(raw.schemaVersion) || 'legacy',
     productBrief: toDisplayText(raw.productBrief),
@@ -155,6 +158,7 @@ function normalizeFinalHandoff(raw: unknown): FinalHandoff | undefined {
     knowledgeReferences,
     evaluation,
     source: normalizeSource(raw.source),
+    validationWarnings,
   };
 }
 

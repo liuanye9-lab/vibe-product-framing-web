@@ -18,7 +18,18 @@ function normalizeChatCompletionsEndpoint(rawApiUrl: string): string {
     return `${cleanUrl}/completions`
   }
 
+  // Non-standard paths: if it contains /api/paas but no /chat/completions, don't guess
+  if (/\/api\/paas/i.test(cleanUrl) && !/\/chat\/completions$/i.test(cleanUrl)) {
+    return rawApiUrl
+  }
+
   return `${cleanUrl}/v1/chat/completions`
+}
+
+function normalizeTimeoutMs(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(n)) return 90000
+  return Math.min(Math.max(n, 10000), 240000)
 }
 
 function getAbortSignal(timeoutMs: number): AbortSignal {
@@ -31,12 +42,12 @@ function getAbortSignal(timeoutMs: number): AbortSignal {
   return controller.signal
 }
 
-function getUpstreamErrorMessage(error: unknown, endpoint: string): string {
+function getUpstreamErrorMessage(error: unknown, endpoint: string, timeoutMs: number): string {
   if (error instanceof Error) {
-    return `代理无法连接到上游 API：${error.message}。已尝试请求：${endpoint}`
+    return `代理无法连接到上游 API：${error.message}。已尝试请求：${endpoint}。timeoutMs: ${timeoutMs}`
   }
 
-  return `代理无法连接到上游 API。已尝试请求：${endpoint}`
+  return `代理无法连接到上游 API。已尝试请求：${endpoint}。timeoutMs: ${timeoutMs}`
 }
 
 function localAiProxy(): Plugin {
@@ -56,11 +67,14 @@ function localAiProxy(): Plugin {
           rawBody += chunk
         })
         req.on('end', async () => {
+          let endpoint = 'unknown-endpoint';
+          let timeoutMs = 90000;
           try {
             const payload = JSON.parse(rawBody || '{}') as {
               apiUrl?: string
               apiKey?: string
               body?: unknown
+              timeoutMs?: number
             }
 
             const apiUrl = payload.apiUrl?.trim().replace(/\/+$/, '')
@@ -80,7 +94,18 @@ function localAiProxy(): Plugin {
               return
             }
 
-            const endpoint = normalizeChatCompletionsEndpoint(apiUrl)
+            endpoint = normalizeChatCompletionsEndpoint(apiUrl)
+            timeoutMs = normalizeTimeoutMs(payload.timeoutMs)
+
+            // Validate non-standard endpoints
+            if (!/\/chat\/completions$/i.test(endpoint)) {
+              res.statusCode = 400
+              res.setHeader('Content-Type', 'application/json; charset=utf-8')
+              res.end(JSON.stringify({
+                error: '该服务商 API 路径可能不是 OpenAI-compatible，请填写完整 chat completions endpoint。',
+              }))
+              return
+            }
 
             const upstream = await fetch(endpoint, {
               method: 'POST',
@@ -88,7 +113,7 @@ function localAiProxy(): Plugin {
                 Authorization: `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
               },
-              signal: getAbortSignal(90000),
+              signal: getAbortSignal(timeoutMs),
               body: JSON.stringify(payload.body),
             })
 
@@ -97,11 +122,9 @@ function localAiProxy(): Plugin {
             res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json; charset=utf-8')
             res.end(text)
           } catch (error) {
-            const payload = JSON.parse(rawBody || '{}') as { apiUrl?: string }
-            const endpoint = payload.apiUrl ? normalizeChatCompletionsEndpoint(payload.apiUrl) : 'unknown endpoint'
             res.statusCode = 502
             res.setHeader('Content-Type', 'application/json; charset=utf-8')
-            res.end(JSON.stringify({ error: getUpstreamErrorMessage(error, endpoint) }))
+            res.end(JSON.stringify({ error: getUpstreamErrorMessage(error, endpoint, timeoutMs) }))
           }
         })
       })

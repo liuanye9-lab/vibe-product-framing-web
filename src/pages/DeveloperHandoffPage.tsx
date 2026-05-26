@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Check, Copy, Download, Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import DecisionCard from '../components/DecisionCard';
-import { buildLocalHandoff, isAIReady, optimizeHandoff } from '../api/evaluate';
+import { buildLocalHandoff, getAIErrorMessage, isAIReady, optimizeHandoff } from '../api/evaluate';
 import { applyHandoffFixes } from '../evaluation/applyHandoffFixes';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { toDisplayText, toDisplayList } from '../lib/utils';
@@ -127,7 +127,7 @@ export default function DeveloperHandoffPage() {
       writeTrace(handoff, useAI);
       writeSnapshot(handoff, 'generate');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成交付内容失败，请稍后重试。');
+      setError(getAIErrorMessage(err));
     } finally {
       setGenerating(false);
     }

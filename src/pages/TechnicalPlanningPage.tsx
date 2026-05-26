@@ -5,7 +5,7 @@ import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
 import GlossaryHelp from '../components/GlossaryHelp';
-import { explainSuggestion, isAIReady, suggestStage } from '../api/evaluate';
+import { explainSuggestion, getAIErrorMessage, isAIReady, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { toDisplayText } from '../lib/utils';
 import { extractCoreDecision } from '../rules/coreDecisionExtractor';
@@ -46,7 +46,7 @@ export default function TechnicalPlanningPage() {
       const suggestions = await suggestStage('technical', brief);
       updateStage<TechnicalPlanningState>('technical', suggestions);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
+      setError(getAIErrorMessage(err));
     } finally {
       setGenerating(false);
     }

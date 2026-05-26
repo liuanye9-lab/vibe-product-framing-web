@@ -277,6 +277,7 @@ export interface FinalHandoff {
   knowledgeReferences?: KnowledgeReference[];
   evaluation?: HandoffEvaluation;
   source?: OutputSource;
+  validationWarnings?: string[];
 }
 
 export interface CopilotStages {

@@ -48,6 +48,17 @@ ${TECH_COMPLEXITY_RULES.map((rule) => `- ${rule}`).join('\n')}
 8. MVP 阶段如果发现范围膨胀，必须给出 scopeCreepWarning。
 9. 技术翻译示例：${JSON.stringify(TECH_TRANSLATION_EXAMPLE)}。
 10. Mock 策略示例：${JSON.stringify(MOCK_STRATEGY_EXAMPLE)}。
-11. 输出必须明确引用用户输入中的至少两个字段：rawIdea、targetUser、scenario、problem、projectType。不要生成与当前产品想法无关的通用模板。
+11. **顶层必须包含 referenceEvidence 字段**，格式如下（逐字段填空，不相关的填"暂无"）：
+{
+  "referenceEvidence": {
+    "rawIdea": "你引用的产品想法摘要",
+    "targetUser": "你引用的目标用户",
+    "scenario": "你引用的使用场景",
+    "problem": "你引用的核心问题",
+    "projectType": "你引用的产品形态",
+    "summary": "本次输出基于用户想法的原因（20字以内）"
+  },
+  "...业务字段": {}
+}
 12. AI/API 不可用时不要编造本地 mock 结果；应由产品停止生成并提示用户修复配置。`;
 }

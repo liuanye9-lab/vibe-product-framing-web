@@ -4,7 +4,7 @@ import { Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import GlossaryHelp from '../components/GlossaryHelp';
-import { explainSuggestion, isAIReady, suggestStage } from '../api/evaluate';
+import { explainSuggestion, getAIErrorMessage, isAIReady, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import type { AiSuggestion, BusinessFramingState, BusinessRoi, SuggestionKey } from '../types';
 
@@ -39,7 +39,7 @@ export default function BusinessFramingPage() {
       const suggestions = await suggestStage('business', brief);
       updateStage<BusinessFramingState>('business', suggestions);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
+      setError(getAIErrorMessage(err));
     } finally {
       setGenerating(false);
     }

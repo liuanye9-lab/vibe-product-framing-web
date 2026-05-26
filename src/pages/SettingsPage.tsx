@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import {
   clearAIConfig,
+  clearAICache,
   getAIConfig,
   getAIConnectionStatus,
   normalizeApiUrl,
@@ -81,6 +82,12 @@ export default function SettingsPage() {
   const [showKey, setShowKey] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [longTestResult, setLongTestResult] = useState<{
+    apiConnection?: boolean;
+    jsonGeneration?: boolean;
+    refValidation?: { passed: boolean; msg: string };
+  } | null>(null);
+  const [testingLong, setTestingLong] = useState(false);
   const [saved, setSaved] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<AIConnectionStatus>(getAIConnectionStatus());
 
@@ -111,9 +118,11 @@ export default function SettingsPage() {
     const normalizedApiUrl = normalizeApiUrl(apiUrl);
     setApiUrl(normalizedApiUrl);
     saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
+    clearAICache(); // Clear cached AI responses when config changes
     setStatus('failed');
     setSaved(true);
     setTestResult(null);
+    setLongTestResult(null);
     setTimeout(() => setSaved(false), 2000);
   };
 
@@ -219,6 +228,102 @@ export default function SettingsPage() {
       });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleLongTest = async () => {
+    if (!hasConfig) return;
+    setTestingLong(true);
+    setLongTestResult(null);
+
+    const result: NonNullable<typeof longTestResult> = {};
+
+    try {
+      const signal = AbortSignal.timeout?.(150000) || undefined;
+
+      const response = await fetch('/api/ai-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal,
+        body: JSON.stringify({
+          apiUrl: normalizeApiUrl(apiUrl),
+          apiKey: apiKey.trim(),
+          timeoutMs: 120000,
+          body: {
+            model: model.trim(),
+            messages: [
+              {
+                role: 'system',
+                content: '你是 VibePilot 的生成测试器。只返回 JSON，不要 markdown。',
+              },
+              {
+                role: 'user',
+                content: '请基于产品想法"雅思生词和错题管理工具"返回 JSON：{"referenceEvidence":{"rawIdea":"雅思生词和错题管理工具","targetUser":"雅思备考者","scenario":"背单词和复习错题","problem":"难以跟踪生词和错题","summary":"..."},"productBrief":"...","mvpScope":"...","devSpec":"...","developmentPrompt":"..."}',
+              },
+            ],
+            max_tokens: 1200,
+            temperature: 0,
+          },
+        }),
+      });
+
+      result.apiConnection = response.ok;
+
+      if (!response.ok) {
+        setLongTestResult({ ...result, jsonGeneration: false, refValidation: { passed: false, msg: `API 请求失败 (${response.status})` } });
+        return;
+      }
+
+      const rawText = await response.text();
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(rawText); } catch {
+        setLongTestResult({ ...result, jsonGeneration: false, refValidation: { passed: false, msg: '代理返回的不是有效 JSON' } });
+        return;
+      }
+
+      const content = extractAIContent(data);
+      if (!content) {
+        setLongTestResult({ ...result, jsonGeneration: false, refValidation: { passed: false, msg: '模型返回为空' } });
+        return;
+      }
+
+      let parsed: Record<string, unknown>;
+      try { parsed = JSON.parse(content); } catch {
+        // Try stripping markdown fences
+        const stripped = content.replace(/```(?:json)?\s*([\s\S]*?)```/g, '$1').trim();
+        try { parsed = JSON.parse(stripped); } catch {
+          setLongTestResult({ ...result, jsonGeneration: false, refValidation: { passed: false, msg: '模型返回无法解析为 JSON' } });
+          return;
+        }
+      }
+
+      result.jsonGeneration = true;
+
+      // Check key fields
+      const hasRefEvidence = parsed.referenceEvidence && typeof parsed.referenceEvidence === 'object';
+      const hasProductBrief = typeof parsed.productBrief === 'string' && parsed.productBrief.length > 10;
+      const hasKeyFields = hasProductBrief && typeof parsed.mvpScope === 'string' && typeof parsed.developmentPrompt === 'string';
+
+      if (hasRefEvidence && hasKeyFields) {
+        result.refValidation = { passed: true, msg: 'referenceEvidence + 关键字段完整，校验通过' };
+      } else if (hasKeyFields) {
+        result.refValidation = { passed: true, msg: '关键字段完整（referenceEvidence 缺失）' };
+      } else {
+        result.refValidation = { passed: false, msg: '模型已响应但输出缺少关键字段 (productBrief/mvpScope/devSpec/developmentPrompt)' };
+      }
+
+      setLongTestResult(result);
+      saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
+      setStatus('connected');
+    } catch (err) {
+      const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
+      setLongTestResult({
+        apiConnection: false,
+        jsonGeneration: false,
+        refValidation: { passed: false, msg: isTimeout ? '长 JSON 生成超时（>120s），建议换更快模型' : `错误：${err instanceof Error ? err.message : String(err)}` },
+      });
+    } finally {
+      setTestingLong(false);
     }
   };
 
@@ -354,7 +459,7 @@ export default function SettingsPage() {
                 placeholder="https://api.openai.com"
               />
               <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
-                支持基础地址或完整接口地址，例如：https://api.openai.com、https://api.openai.com/v1、https://api.openai.com/v1/chat/completions
+                如果你的服务商不是 OpenAI-compatible，请填写完整 endpoint，例如以 /chat/completions 结尾。支持如 https://api.openai.com/v1/chat/completions
               </p>
             </div>
 
@@ -430,7 +535,14 @@ export default function SettingsPage() {
                 onClick={handleTest}
                 disabled={!hasConfig || testing}
               >
-                {testing ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '测试连接'}
+                {testing ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '测试连接（短）'}
+              </button>
+              <button
+                className="vp-btn vp-btn-ghost"
+                onClick={handleLongTest}
+                disabled={!hasConfig || testingLong}
+              >
+                {testingLong ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '测试长 JSON 生成'}
               </button>
               {storedConfig && (
                 <button
@@ -445,7 +557,28 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Test result */}
+          {/* Long JSON test result */}
+          {longTestResult && (
+            <div className="vp-card" style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>长 JSON 生成测试</h3>
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <span>{longTestResult.apiConnection ? '✅' : '❌'}</span>
+                  <span><strong>API Connection:</strong> {longTestResult.apiConnection ? '通过' : '失败'}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <span>{longTestResult.jsonGeneration ? '✅' : '❌'}</span>
+                  <span><strong>JSON Generation:</strong> {longTestResult.jsonGeneration ? '通过' : '失败'}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                  <span>{longTestResult.refValidation?.passed ? '✅' : '⚠️'}</span>
+                  <span><strong>Reference Validation:</strong> {longTestResult.refValidation?.passed ? '通过' : `不通过 — ${longTestResult.refValidation?.msg}`}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Short test result */}
           {testResult && (
             <div
               className="vp-card"

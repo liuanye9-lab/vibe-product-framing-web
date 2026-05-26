@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
-import { explainSuggestion, isAIReady, suggestStage } from '../api/evaluate';
+import { explainSuggestion, getAIErrorMessage, isAIReady, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import type { AiSuggestion, GlossaryKey, ProductFramingState, SuggestionKey } from '../types';
 
@@ -38,7 +38,7 @@ export default function ProductFramingPage() {
       const suggestions = await suggestStage('product', brief);
       updateStage<ProductFramingState>('product', suggestions);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '生成失败，请稍后重试。');
+      setError(getAIErrorMessage(err));
     } finally {
       setGenerating(false);
     }

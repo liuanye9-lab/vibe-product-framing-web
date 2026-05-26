@@ -1,7 +1,7 @@
 import type { FinalHandoff } from '../types';
 import { evaluateHandoff } from './evaluateHandoff';
 
-type FixableSection = Exclude<keyof FinalHandoff, 'knowledgeReferences' | 'evaluation' | 'source' | 'schemaVersion'>;
+type FixableSection = Exclude<keyof FinalHandoff, 'knowledgeReferences' | 'evaluation' | 'source' | 'schemaVersion' | 'validationWarnings'>;
 
 export interface ApplyFixesResult {
   handoff: FinalHandoff;
