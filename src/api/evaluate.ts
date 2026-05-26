@@ -1128,13 +1128,20 @@ function splitReferenceFragments(value: string): string[] {
 
 function assertAIOutputReferencesInput(brief: ProductBrief, output: unknown): void {
   const outputText = normalizeForReference(JSON.stringify(output));
-  const fields = [
+  const rawFields = [
     brief.ideaInput.rawIdea,
     brief.ideaInput.targetUser,
     brief.ideaInput.scenario,
     brief.ideaInput.problem,
     brief.ideaInput.projectType,
-  ].filter((value): value is string => Boolean(value && value.trim()));
+  ];
+  // Only count fields that have meaningful, non-empty, normalizable content
+  const fields = rawFields.filter((value): value is string =>
+    Boolean(value && value.trim() && normalizeForReference(value))
+  );
+
+  // If no fields are available at all, skip the assertion (shouldn't happen in practice)
+  if (fields.length === 0) return;
 
   const referencedCount = fields.filter((field) => {
     const normalized = normalizeForReference(field);
@@ -1142,7 +1149,10 @@ function assertAIOutputReferencesInput(brief: ProductBrief, output: unknown): vo
     return splitReferenceFragments(field).some((fragment) => outputText.includes(normalizeForReference(fragment)));
   }).length;
 
-  if (referencedCount < 2) {
+  // Require at least min(2, fields.length) references — if user only filled 1 field,
+  // matching 1 is sufficient; if 2+ fields are filled, require at least 2.
+  const minRequired = Math.min(2, fields.length);
+  if (referencedCount < minRequired) {
     throw new Error('AI 输出没有基于当前产品想法，请重新生成。');
   }
 }
