@@ -869,6 +869,133 @@ function findBalancedBraces(content: string): string | null {
 }
 
 /**
+ * Attempt to recover a JSON object that was truncated mid-stream (e.g., max_tokens hit).
+ *
+ * When an LLM's output exceeds max_tokens, the JSON gets cut off partway through,
+ * leaving unclosed strings, arrays, or objects. This function:
+ * 1. Scans character-by-character tracking depth of {}, [], and string state
+ * 2. Closes any open string with a quote
+ * 3. Closes open arrays with ]
+ * 4. Closes open objects with }
+ * 5. Removes trailing commas before closing brackets
+ *
+ * Returns the recovered JSON string, or null if recovery is not possible.
+ */
+function attemptTruncatedJsonRecovery(content: string): string | null {
+  // Start from the first { to avoid any preamble text
+  const startIdx = content.indexOf('{');
+  if (startIdx === -1) return null;
+
+  let json = content.slice(startIdx);
+  let depthObj = 0;
+  let depthArr = 0;
+  let inString = false;
+  let escaped = false;
+  let lastValidPos = 0;
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+
+    if (escaped) {
+      escaped = false;
+      lastValidPos = i + 1;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      if (!inString) lastValidPos = i + 1; // end of valid string
+      continue;
+    }
+
+    if (inString) {
+      lastValidPos = i + 1;
+      continue; // skip everything inside strings
+    }
+
+    if (ch === '{') { depthObj++; lastValidPos = i + 1; }
+    else if (ch === '}') { depthObj--; lastValidPos = i + 1; }
+    else if (ch === '[') { depthArr++; lastValidPos = i + 1; }
+    else if (ch === ']') { depthArr--; lastValidPos = i + 1; }
+    else if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') {
+      lastValidPos = i + 1;
+    }
+  }
+
+  // If depth is 0, it's actually balanced — no truncation
+  if (depthObj === 0 && depthArr === 0 && !inString) return null;
+
+  // Truncation detected — build recovery suffix
+  console.warn(`[VibePilot] Truncated JSON detected: objDepth=${depthObj}, arrDepth=${depthArr}, inString=${inString}, totalLen=${json.length}`);
+
+  let recovered = json.slice(0, lastValidPos);
+
+  // Close open string
+  if (inString) recovered += '"';
+
+  // Remove trailing comma if present (before we close brackets)
+  recovered = recovered.replace(/,\s*$/g, '');
+
+  // Close nested arrays first (innermost to outermost)
+  for (let a = 0; a < depthArr; a++) recovered += ']';
+
+  // Then close objects
+  for (let o = 0; o < depthObj; o++) recovered += '}';
+
+  console.log(`[VibePilot] Recovered JSON: original=${json.length} chars → recovered=${recovered.length} chars`);
+
+  return recovered;
+}
+
+/**
+ * Quick heuristic: does the content look like truncated JSON?
+ * Returns a human-readable hint string or null if not truncation.
+ */
+function detectTruncationHint(content: string): string | null {
+  const trimmed = content.trim();
+
+  // Must start with { to be JSON
+  if (!trimmed.startsWith('{')) return null;
+
+  let depthObj = 0;
+  let depthArr = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\' && inString) { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depthObj++;
+    else if (ch === '}') depthObj--;
+    else if (ch === '[') depthArr++;
+    else if (ch === ']') depthArr--;
+  }
+
+  // If brackets are unbalanced, it's truncated
+  if (depthObj > 0 || depthArr > 0 || inString) {
+    const parts: string[] = [];
+    if (inString) parts.push('字符串未闭合');
+    if (depthArr > 0) parts.push(`${depthArr} 个数组未闭合`);
+    if (depthObj > 0) parts.push(`${depthObj} 个对象未闭合（缺少 }）`);
+    // Estimate how many more characters might be needed (rough heuristic)
+    const missingChars = Math.max(depthObj * 20 + depthArr * 10 + (inString ? 5 : 0), 0);
+    if (missingChars > 0) parts.push(`预计还需要约 ${missingChars}+ 字符完成输出`);
+
+    return `检测到：${parts.join('，')}`;
+  }
+
+  return null;
+}
+
+/**
  * Multi-strategy JSON extraction & repair pipeline.
  *
  * Tries strategies in order of specificity/correctness:
@@ -913,6 +1040,26 @@ function tryRepairAndParse<T>(content: string): T | null {
         if (!balanced) return null;
         const repaired = removeTrailingCommas(stripComments(stripMarkdownFences(balanced)));
         try { return JSON.parse(repaired) as T; } catch { return null; }
+      },
+    },
+    {
+      label: 'truncated recovery (close unclosed brackets)',
+      fn: () => {
+        const recovered = attemptTruncatedJsonRecovery(content);
+        if (!recovered) return null;
+        const cleaned = removeTrailingCommas(stripComments(stripMarkdownFences(recovered)));
+        try { return JSON.parse(cleaned) as T; } catch { return null; }
+      },
+    },
+    {
+      label: 'balanced braces + truncated recovery',
+      fn: () => {
+        const balanced = findBalancedBraces(content);
+        if (!balanced) return null;
+        const recovered = attemptTruncatedJsonRecovery(balanced);
+        if (!recovered) return null;
+        const cleaned = removeTrailingCommas(stripComments(stripMarkdownFences(recovered)));
+        try { return JSON.parse(cleaned) as T; } catch { return null; }
       },
     },
     {
@@ -1024,7 +1171,13 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
       console.error('[VibePilot] Content length:', content.length);
       console.error('[VibePilot] Contains brace:', content.includes('{'));
       console.error('[VibePilot] Contains fence:', content.includes('```'));
-      throw new Error(`模型返回格式错误，未找到有效 JSON。模型原始返回（前 200 字）：${content.slice(0, 200)}`);
+
+      // Detect truncation — if content starts with valid JSON but is cut short
+      const truncatedHint = detectTruncationHint(content);
+      const errorMsg = truncatedHint
+        ? `模型输出被截断（可能 max_tokens 不足）。${truncatedHint}。模型原始返回（前 200 字）：${content.slice(0, 200)}`
+        : `模型返回格式错误，未找到有效 JSON。模型原始返回（前 200 字）：${content.slice(0, 200)}`;
+      throw new Error(errorMsg);
     }
     return json;
   } catch (err) {
@@ -1458,12 +1611,25 @@ function normalizeBusinessSuggestions(
   };
 }
 
+/** Stage-specific token budgets based on typical output size */
+const STAGE_TOKEN_BUDGET: Record<FramingStage, number> = {
+  discovery: 900,    // ~5 fields, moderate output
+  product: 1000,     // ~6 fields with longer values
+  business: 1200,    // ~7 fields + ROI sub-object
+  technical: 2400,   // ~15+ fields (architecture, frontend, backend, database, aiApi, auth,
+                      //   fileUpload, mockStrategy, mockableParts, mockDataExample,
+                      //   realApiTrigger, mockFailureFallback, dataFlow, translations[], architectureUpgrade)
+  mvp: 1400,         // ~7-9 fields including scope analysis
+  blindSpot: 1300,   // ~9 fields with detailed risk descriptions
+};
+
 export async function suggestStage(stage: 'discovery', brief: ProductBrief): Promise<DemandDiscoveryState>;
 export async function suggestStage(stage: 'product', brief: ProductBrief): Promise<ProductFramingState>;
 export async function suggestStage(stage: 'business', brief: ProductBrief): Promise<BusinessFramingState>;
 export async function suggestStage(stage: 'technical', brief: ProductBrief): Promise<TechnicalPlanningState>;
 export async function suggestStage(stage: 'mvp', brief: ProductBrief): Promise<MvpScopeState>;
 export async function suggestStage(stage: 'blindSpot', brief: ProductBrief): Promise<BlindSpotReviewState>;
+
 export async function suggestStage(stage: FramingStage, brief: ProductBrief): Promise<Partial<CopilotStages[FramingStage]>> {
   if (!ENABLE_MOCK_FALLBACK) requireAIReady();
   const fallback = stage === 'discovery'
@@ -1480,12 +1646,13 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
 
   try {
     const context = buildBriefContext(brief);
+    const stageMaxTokens = STAGE_TOKEN_BUDGET[stage] || 1600;
     const ai = await cachedCopilotJson<Record<string, Partial<AiSuggestion>>>(
       `stage:${stage}`,
       brief,
       buildSuggestStagePrompt(stage),
       context,
-      850,
+      stageMaxTokens,
       SUGGEST_AI_TIMEOUT_MS
     );
     assertAIOutputReferencesInput(brief, ai);
@@ -1547,7 +1714,7 @@ export async function suggestIdeaDiagnosis(brief: ProductBrief): Promise<{
 }
 限制：value 不超过 70 字；reason 不超过 35 字；数组最多 2 条；roiJudgement.value 只能是 positive/uncertain/negative。`,
       context,
-      850,
+      2000,
       SUGGEST_AI_TIMEOUT_MS
     );
     assertAIOutputReferencesInput(brief, ai);
