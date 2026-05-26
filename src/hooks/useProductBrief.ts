@@ -16,6 +16,9 @@ import type {
   SuggestionKey,
   TechnicalPlanningState,
   BlindSpotReviewState,
+  HandoffEvaluation,
+  HandoffEvaluationDimension,
+  KnowledgeReference,
 } from '../types';
 import { STEP_KEYS } from '../data/steps';
 import { toDisplayList, toDisplayText } from '../lib/utils';
@@ -123,14 +126,107 @@ function normalizeBusinessStage(raw: unknown): BusinessFramingState {
 
 function normalizeFinalHandoff(raw: unknown): FinalHandoff | undefined {
   if (!isRecord(raw)) return undefined;
+  const knowledgeReferences = Array.isArray(raw.knowledgeReferences)
+    ? raw.knowledgeReferences
+      .filter(isRecord)
+      .map((item): KnowledgeReference => ({
+        id: toDisplayText(item.id),
+        title: toDisplayText(item.title),
+        type: toDisplayText(item.type),
+        score: item.score === undefined ? undefined : Number(item.score) || 0,
+        matchedTags: toDisplayList(item.matchedTags),
+        matchedAliases: toDisplayList(item.matchedAliases),
+        matchedFields: toDisplayList(item.matchedFields),
+        appliedTo: toDisplayList(item.appliedTo),
+        influence: toDisplayText(item.influence),
+        reason: toDisplayText(item.reason),
+      }))
+    : undefined;
+  const evaluation = normalizeEvaluation(raw.evaluation);
   return {
+    schemaVersion: toDisplayText(raw.schemaVersion) || 'legacy',
     productBrief: toDisplayText(raw.productBrief),
     mvpScope: toDisplayText(raw.mvpScope),
+    devSpec: toDisplayText(raw.devSpec),
     technicalArchitecture: toDisplayText(raw.technicalArchitecture),
     dataStructure: toDisplayText(raw.dataStructure),
     acceptanceCriteria: toDisplayText(raw.acceptanceCriteria),
     developmentPrompt: toDisplayText(raw.developmentPrompt),
+    knowledgeReferences,
+    evaluation,
     source: normalizeSource(raw.source),
+  };
+}
+
+function normalizeEvaluation(raw: unknown): HandoffEvaluation | undefined {
+  if (!isRecord(raw)) return undefined;
+  const dimensionScores = isRecord(raw.dimensionScores) ? raw.dimensionScores : {};
+  const dimensions = normalizeEvaluationDimensions(raw.dimensions);
+  const readiness = raw.readiness === 'ready' || raw.readiness === 'needs-review' || raw.readiness === 'not-ready'
+    ? raw.readiness
+    : 'needs-review';
+  return {
+    totalScore: Number(raw.totalScore) || 0,
+    maxScore: Number(raw.maxScore) || 25,
+    weightedScore: raw.weightedScore === undefined ? undefined : Number(raw.weightedScore) || 0,
+    weightedMaxScore: raw.weightedMaxScore === undefined ? undefined : Number(raw.weightedMaxScore) || 0,
+    readiness,
+    dimensionScores: {
+      userScenarioClarity: Number(dimensionScores.userScenarioClarity) || 0,
+      mvpFocus: Number(dimensionScores.mvpFocus) || 0,
+      technicalExecutability: Number(dimensionScores.technicalExecutability) || 0,
+      acceptanceCriteriaCompleteness: Number(dimensionScores.acceptanceCriteriaCompleteness) || 0,
+      promptExecutability: Number(dimensionScores.promptExecutability) || 0,
+    },
+    dimensions,
+    strengths: toDisplayList(raw.strengths),
+    issues: toDisplayList(raw.issues),
+    suggestions: toDisplayList(raw.suggestions),
+    fixSuggestions: normalizeFixSuggestions(raw.fixSuggestions),
+  };
+}
+
+function normalizeFixSuggestions(raw: unknown): HandoffEvaluation['fixSuggestions'] {
+  if (!Array.isArray(raw)) return undefined;
+  const allowedTargets = new Set(['productBrief', 'mvpScope', 'devSpec', 'technicalArchitecture', 'dataStructure', 'acceptanceCriteria', 'developmentPrompt']);
+  return raw
+    .filter(isRecord)
+    .map((item) => ({
+      id: toDisplayText(item.id),
+      targetSection: allowedTargets.has(toDisplayText(item.targetSection)) ? toDisplayText(item.targetSection) as NonNullable<HandoffEvaluation['fixSuggestions']>[number]['targetSection'] : 'devSpec',
+      issue: toDisplayText(item.issue),
+      patch: toDisplayText(item.patch),
+    }))
+    .filter((item) => item.id && item.patch);
+}
+
+function normalizeEvaluationDimension(raw: unknown, label: string): HandoffEvaluationDimension | undefined {
+  if (!isRecord(raw)) return undefined;
+  return {
+    score: Number(raw.score) || 0,
+    label: toDisplayText(raw.label) || label,
+    evidence: toDisplayList(raw.evidence),
+    issues: toDisplayList(raw.issues),
+    suggestions: toDisplayList(raw.suggestions),
+  };
+}
+
+function normalizeEvaluationDimensions(raw: unknown): HandoffEvaluation['dimensions'] | undefined {
+  if (!isRecord(raw)) return undefined;
+  const userScenarioClarity = normalizeEvaluationDimension(raw.userScenarioClarity, 'User Scenario Clarity');
+  const mvpFocus = normalizeEvaluationDimension(raw.mvpFocus, 'MVP Focus');
+  const technicalExecutability = normalizeEvaluationDimension(raw.technicalExecutability, 'Technical Executability');
+  const acceptanceCriteriaCompleteness = normalizeEvaluationDimension(raw.acceptanceCriteriaCompleteness, 'Acceptance Criteria Completeness');
+  const promptExecutability = normalizeEvaluationDimension(raw.promptExecutability, 'Prompt Executability');
+  if (!userScenarioClarity || !mvpFocus || !technicalExecutability || !acceptanceCriteriaCompleteness || !promptExecutability) {
+    return undefined;
+  }
+  return {
+    userScenarioClarity,
+    mvpFocus,
+    technicalExecutability,
+    acceptanceCriteriaCompleteness,
+    promptExecutability,
   };
 }
 

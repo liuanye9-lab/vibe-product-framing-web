@@ -21,6 +21,12 @@ import { buildBriefContext, buildSuggestStagePrompt } from '../prompts/suggestSt
 import { buildExplainSuggestionPrompt } from '../prompts/explainSuggestionPrompt';
 import { buildOptimizeHandoffPrompt } from '../prompts/optimizeHandoffPrompt';
 import { SCOPE_CREEP_TERMS } from '../skill/systemRules';
+import { retrieveKnowledge } from '../knowledge/retrieveKnowledge';
+import { buildDevSpec } from '../knowledge/templates/devSpecTemplate';
+import { buildKnowledgeEnhancedCodexPrompt } from '../knowledge/templates/codexPromptTemplate';
+import { evaluateHandoff } from '../evaluation/evaluateHandoff';
+import { buildStructuredDevSpec } from '../spec/buildStructuredDevSpec';
+import { formatStructuredDevSpecMarkdown } from '../spec/formatStructuredDevSpecMarkdown';
 
 // --- AI Configuration (from localStorage) ---
 
@@ -221,8 +227,8 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
   });
   console.log('[VibePilot] AI Proxy Raw Response:', rawText.slice(0, 500));
 
-  let parsedError: unknown = null;
   if (!response.ok) {
+    let parsedError: unknown;
     try {
       parsedError = JSON.parse(rawText) as unknown;
     } catch {
@@ -751,9 +757,9 @@ async function callCopilotJson<T>(systemPrompt: string, userContent: string, max
     const message = getErrorMessage(err);
     console.warn('[VibePilot] Copilot AI failed:', err);
     if (isLikelyTimeout(err)) {
-      throw new Error(`大模型响应超时：已等待 ${Math.round(timeoutMs / 1000)} 秒。请检查模型是否响应较慢，或在设置页换用更快模型。`);
+      throw new Error(`大模型响应超时：已等待 ${Math.round(timeoutMs / 1000)} 秒。请检查模型是否响应较慢，或在设置页换用更快模型。`, { cause: err });
     }
-    throw new Error(`大模型生成失败：${message}`);
+    throw new Error(`大模型生成失败：${message}`, { cause: err });
   }
 }
 
@@ -992,6 +998,159 @@ function normalizeSuggestionList(value: unknown): string[] {
   return value.map((item) => normalizeSuggestionText(item)).filter(Boolean).slice(0, 3);
 }
 
+function buildKnowledgeSummary(brief: ProductBrief): string {
+  const retrieved = retrieveKnowledge({
+    rawIdea: brief.ideaInput.rawIdea,
+    projectType: brief.ideaInput.projectType,
+    targetUser: brief.ideaInput.targetUser,
+    scenario: brief.ideaInput.scenario,
+    problem: brief.ideaInput.problem,
+    maxDocs: 5,
+  });
+  const summaryItems = retrieved.items?.length
+    ? retrieved.items
+    : retrieved.docs.map((doc) => ({
+      doc,
+      score: 0,
+      matchedTags: [],
+      matchedAliases: [],
+      matchedFields: [],
+      reason: `兼容旧检索结果引用 ${doc.title}。`,
+    }));
+
+  return [
+    retrieved.explanation,
+    ...summaryItems.map((item) => [
+      `### ${item.doc.title}`,
+      `Type: ${item.doc.type}`,
+      `Score: ${item.score}`,
+      `Matched Tags: ${item.matchedTags.join(', ') || '-'}`,
+      `Matched Aliases: ${item.matchedAliases.join(', ') || '-'}`,
+      `Reason: ${item.reason}`,
+      `Summary: ${item.doc.summary}`,
+      item.doc.content,
+    ].join('\n')),
+  ].join('\n\n');
+}
+
+function getReferenceInfluence(docId: string, docType: string): { appliedTo: string[]; influence: string } {
+  if (docId === 'case-ielts-reading-webapp') {
+    return {
+      appliedTo: ['MVP Scope', 'Data Model', 'Acceptance Criteria'],
+      influence: '用于推导学习工具的记录-复盘闭环，并建议 V1 采用 localStorage 保存 VocabularyItem、WrongAnswerRecord 等本地数据。',
+    };
+  }
+  if (docId === 'case-prompteval-lab') {
+    return {
+      appliedTo: ['MVP Scope', 'Data Model', 'Evaluation'],
+      influence: '用于推导 PromptVersion、EvaluationRun、ScoreDimension 等数据结构，并强调版本对比和评分标准。',
+    };
+  }
+  if (docId === 'case-ai-customer-service-evaluation') {
+    return {
+      appliedTo: ['Evaluation', 'Acceptance Criteria', 'Prompt Rules'],
+      influence: '用于推导客服回复评分维度、证据摘录和改写建议。',
+    };
+  }
+  if (docId === 'case-vibe-copilot') {
+    return {
+      appliedTo: ['DEV_SPEC', 'Development Prompt', 'Technical Architecture'],
+      influence: '用于强化从模糊想法到 Developer Handoff 的 AI Coding 前置规格链路。',
+    };
+  }
+  return {
+    appliedTo: docType === 'prompt-sample' ? ['Development Prompt', 'Verification'] : ['DEV_SPEC', 'Development Prompt'],
+    influence: '用于补齐标准结构和交付格式。',
+  };
+}
+
+function enhanceHandoffWithKnowledge(brief: ProductBrief, handoff: FinalHandoff): FinalHandoff {
+  const retrieved = retrieveKnowledge({
+    rawIdea: brief.ideaInput.rawIdea,
+    projectType: brief.ideaInput.projectType,
+    targetUser: brief.ideaInput.targetUser,
+    scenario: brief.ideaInput.scenario,
+    problem: brief.ideaInput.problem,
+    maxDocs: 5,
+  });
+  const retrievalItems = retrieved.items?.length
+    ? retrieved.items
+    : retrieved.docs.map((doc) => ({
+      doc,
+      score: 0,
+      matchedTags: [],
+      matchedAliases: [],
+      matchedFields: [],
+      reason: `兼容旧检索结果引用 ${doc.title}。`,
+    }));
+  const knowledgeSummary = [
+    retrieved.explanation,
+    ...retrievalItems.map((item) => `- ${item.doc.title} (${item.doc.type}, score ${item.score}): ${item.reason}`),
+  ].join('\n');
+  const knowledgeReferences = retrievalItems.map((item) => {
+    const influence = getReferenceInfluence(item.doc.id, item.doc.type);
+    return {
+      id: item.doc.id,
+      title: item.doc.title,
+      type: item.doc.type,
+      score: item.score,
+      matchedTags: item.matchedTags,
+      matchedAliases: item.matchedAliases,
+      matchedFields: item.matchedFields,
+      reason: item.reason,
+      appliedTo: influence.appliedTo,
+      influence: influence.influence,
+    };
+  });
+  const normalizedOriginalPrompt = normalizeSuggestionText(handoff.developmentPrompt);
+  const baseForSpec = {
+    productBrief: normalizeSuggestionText(handoff.productBrief),
+    mvpScope: normalizeSuggestionText(handoff.mvpScope),
+    technicalArchitecture: normalizeSuggestionText(handoff.technicalArchitecture),
+    dataStructure: normalizeSuggestionText(handoff.dataStructure),
+    acceptanceCriteria: normalizeSuggestionText(handoff.acceptanceCriteria),
+    developmentPrompt: normalizedOriginalPrompt,
+  };
+  const structuredSpec = buildStructuredDevSpec({
+    brief,
+    ...baseForSpec,
+    knowledgeReferences,
+  });
+  const structuredSpecMarkdown = formatStructuredDevSpecMarkdown(structuredSpec);
+  const existingDevSpec = normalizeSuggestionText(handoff.devSpec);
+  const devSpec = existingDevSpec
+    ? existingDevSpec.includes('Structured DEV_SPEC Supplement')
+      ? existingDevSpec
+      : `${existingDevSpec}\n\n---\n\n## Structured DEV_SPEC Supplement\n\n${structuredSpecMarkdown}`
+    : structuredSpecMarkdown || buildDevSpec({ ...baseForSpec, knowledgeSummary });
+  const codexExecutionPrompt = buildKnowledgeEnhancedCodexPrompt({
+    devSpec,
+    constraints: [
+      'Preserve the existing project flow.',
+      'Do not add database, auth, payment, team collaboration, vector database, embeddings, rerank, or MCP server.',
+      'Keep the current UI style and CSS variables.',
+      'All object values must be formatted before rendering in React.',
+    ],
+    testCommand: 'npm run build',
+  });
+  const developmentPrompt = normalizedOriginalPrompt.includes('Codex Execution Wrapper')
+    ? normalizedOriginalPrompt
+    : `${normalizedOriginalPrompt}\n\n---\n\n## Codex Execution Wrapper\n\n${codexExecutionPrompt}`.trim();
+  const withDevSpec: FinalHandoff = {
+    ...handoff,
+    schemaVersion: 'v1.4',
+    ...baseForSpec,
+    devSpec,
+    developmentPrompt,
+    knowledgeReferences,
+  };
+
+  return {
+    ...withDevSpec,
+    evaluation: handoff.evaluation || evaluateHandoff(withDevSpec),
+  };
+}
+
 function normalizeBusinessSuggestions(
   fallback: BusinessFramingState,
   aiValue: Partial<Record<string, Partial<AiSuggestion> | Partial<BusinessRoi>>> | null
@@ -1169,15 +1328,16 @@ export function buildLocalHandoff(brief: ProductBrief): FinalHandoff {
   ].join('\n');
   const developmentPrompt = `# Development Prompt\n\n## 1. 产品目标\n${acceptedText(product.productOneLiner) || brief.ideaInput.rawIdea}\n\n## 2. 目标用户\n${acceptedText(product.targetUser)}\n\n## 3. 需求洞察\n谁真的有问题：${acceptedText(discovery.targetUserEvidence)}\n问题频率：${acceptedText(discovery.painFrequency)}\n当前替代方案：${acceptedText(discovery.currentAlternative)}\n不解决后果：${acceptedText(discovery.consequenceIfUnsolved)}\n需求成立证据：${acceptedText(discovery.demandEvidence)}\n需求不成立证据：${acceptedText(discovery.falsificationEvidence)}\n最小验证动作：${acceptedText(discovery.smallestValidationAction)}\n\n## 4. 用户主流程\n1. 用户输入一个模糊产品想法。\n2. 系统生成需求洞察、产品定义、业务 ROI、技术翻译和 MVP 压缩建议。\n3. 用户接受或编辑建议。\n4. 系统进行盲点审查。\n5. 用户复制或下载最终开发交付文档。\n\n## 5. MVP 范围\n${mvpScope}\n\n## 6. 页面结构\n- Landing Page：首页与模式说明\n- Idea Input：输入原始想法和模式选择\n- Demand Discovery：需求洞察\n- Product Framing：产品定义\n- Business Reasoning：业务推理与 ROI\n- Technical Translation：技术翻译与 Mock 策略\n- MVP Compression：范围压缩\n- Blind Spot Review：盲点审查\n- Developer Handoff：最终交付\n\n## 7. 技术架构\n${technicalArchitecture}\n\n## 8. 数据结构\n${dataStructure}\n\n## 9. Mock 策略\n${acceptedText(technical.mockStrategy)}\n可 mock 部分：${acceptedText(technical.mockableParts)}\nmock 数据示例：${acceptedText(technical.mockDataExample)}\n换真实 API 条件：${acceptedText(technical.realApiTrigger)}\n失败兜底：${acceptedText(technical.mockFailureFallback)}\n\n## 10. AI API 规则\n- 用户自行配置 API URL / API Key / Model。\n- 前端调用同源 /api/ai-proxy，不直接跨域请求第三方模型。\n- AI 不可用时必须停止生成并提示用户检查 API 配置，不允许输出 mock 结果冒充 AI 分析。\n- 不要在代码中硬编码用户私有 API key。\n\n## 11. 验收标准\n${acceptanceCriteria}\n\n## 12. Out of Scope\n${acceptedText(mvp.outOfScope)}\n\n## 13. 风险与盲点\n需求风险：${acceptedText(blindSpot.demandRisk)}\n业务风险：${acceptedText(blindSpot.businessRisk)}\n技术风险：${acceptedText(blindSpot.technicalRisk)}\n范围风险：${acceptedText(blindSpot.scopeRisk)}\n反证：${acceptedText(blindSpot.whatWouldProveWrong)}\n推荐调整：${acceptedText(blindSpot.recommendedAdjustment)}\n\n## 14. 禁止事项\n- V1 不做登录、支付、数据库、团队协作、完整 SaaS 后台。\n- 不把第一版扩展成大平台。\n- 不把 AI 输出失败变成白屏。\n- 不生成只有营销语言、缺少页面结构和验收标准的开发说明。\n`;
   const roiSummary = `用户收益：${roi?.userBenefitScore?.value || '-'} / 5\n所有者收益：${roi?.ownerBenefitScore?.value || '-'} / 5\n开发成本：${roi?.developmentCostScore?.value || '-'} / 5\n维护成本：${roi?.maintenanceCostScore?.value || '-'} / 5\nROI 判断：${roi?.roiJudgement?.value || 'uncertain'}\n理由：${roi?.reason?.value || ''}`;
-  return {
+  return enhanceHandoffWithKnowledge(brief, {
     productBrief,
     mvpScope,
+    devSpec: '',
     technicalArchitecture: `${technicalArchitecture}\n\n业务 ROI：\n${roiSummary}`,
     dataStructure,
     acceptanceCriteria,
     developmentPrompt,
     source: 'local-rule',
-  };
+  });
 }
 export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff> {
   if (!ENABLE_MOCK_FALLBACK) requireAIReady();
@@ -1185,24 +1345,26 @@ export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff
 
   try {
     const context = buildBriefContext(brief);
+    const knowledgeSummary = buildKnowledgeSummary(brief);
     const ai = await cachedCopilotJson<FinalHandoff>(
       'handoff:optimize',
       brief,
-      buildOptimizeHandoffPrompt(),
-      context,
-      1600,
+      buildOptimizeHandoffPrompt(knowledgeSummary),
+      `${context}\n\n## Retrieved Knowledge\n${knowledgeSummary}`,
+      2400,
       HANDOFF_AI_TIMEOUT_MS
     );
     assertAIOutputReferencesInput(brief, ai);
-    return {
+    return enhanceHandoffWithKnowledge(brief, {
       productBrief: normalizeSuggestionText(ai.productBrief),
       mvpScope: normalizeSuggestionText(ai.mvpScope),
+      devSpec: normalizeSuggestionText(ai.devSpec),
       technicalArchitecture: normalizeSuggestionText(ai.technicalArchitecture),
       dataStructure: normalizeSuggestionText(ai.dataStructure),
       acceptanceCriteria: normalizeSuggestionText(ai.acceptanceCriteria),
       developmentPrompt: normalizeSuggestionText(ai.developmentPrompt),
       source: 'ai',
-    };
+    });
   } catch (error) {
     if (!ENABLE_MOCK_FALLBACK) throw error;
     console.warn('[VibePilot] Optimize handoff failed, explicit dev mock used:', error);

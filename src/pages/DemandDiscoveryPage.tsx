@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
@@ -32,7 +32,7 @@ export default function DemandDiscoveryPage() {
   const autoRequestedRef = useRef<string | null>(null);
   const detailRequestedRef = useRef<string | null>(null);
 
-  const generateSummary = async () => {
+  const generateSummary = useCallback(async () => {
     if (!brief || generating) return;
     if (!isAIReady()) {
       setError(AI_NOT_READY_MESSAGE);
@@ -56,9 +56,9 @@ export default function DemandDiscoveryPage() {
     } finally {
       setGenerating(false);
     }
-  };
+  }, [brief, generating, save]);
 
-  const generateDetail = async () => {
+  const generateDetail = useCallback(async () => {
     if (!brief || generating) return;
     if (!isAIReady()) {
       setError(AI_NOT_READY_MESSAGE);
@@ -80,7 +80,7 @@ export default function DemandDiscoveryPage() {
     } finally {
       setGenerating(false);
     }
-  };
+  }, [brief, generating, save]);
 
   useEffect(() => {
     if (!brief || loading) return;
@@ -93,7 +93,7 @@ export default function DemandDiscoveryPage() {
       autoRequestedRef.current = requestKey;
       generateSummary();
     }
-  }, [brief?.id, loading]);
+  }, [brief, generateSummary, loading]);
 
   useEffect(() => {
     if (!brief || loading || view !== 'detail') return;
@@ -107,7 +107,7 @@ export default function DemandDiscoveryPage() {
       detailRequestedRef.current = requestKey;
       generateDetail();
     }
-  }, [brief?.id, loading, view]);
+  }, [brief, generateDetail, loading, view]);
 
   if (loading || !brief) return <Loader />;
   const decision = extractCoreDecision(brief, 'idea');

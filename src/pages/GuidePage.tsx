@@ -131,7 +131,7 @@ export default function GuidePage() {
   useEffect(() => {
     const answer = stepData?.userAnswer || '';
     dispatch({ type: 'RESET_STEP_STATE', inputValue: answer });
-  }, [step.key]);
+  }, [step.key, stepData?.userAnswer]);
 
   // Restore conversation history from stepData
   useEffect(() => {
@@ -151,7 +151,7 @@ export default function GuidePage() {
         });
       }
     }
-  }, [step.key]);
+  }, [step.key, state.conversationHistory, stepData?.aiEvaluation, stepData?.aiFollowUp, stepData?.aiQuality]);
 
   // Auto-save on input change
   useEffect(() => {
@@ -162,7 +162,7 @@ export default function GuidePage() {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [state.inputValue, step.key, id]);
+  }, [brief, id, state.inputValue, step.key, updateStep]);
 
   const completedSteps = Object.values(brief?.steps || {}).filter(s => s.isCompleted || s.userAnswer?.length > 10).length;
 

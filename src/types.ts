@@ -202,13 +202,80 @@ export interface BlindSpotReviewState {
   recommendedAdjustment?: AiSuggestion<string[]>;
 }
 
+export interface HandoffEvaluationDimension {
+  score: number;
+  label: string;
+  evidence: string[];
+  issues: string[];
+  suggestions: string[];
+}
+
+export interface HandoffFixSuggestion {
+  id: string;
+  targetSection:
+    | 'productBrief'
+    | 'mvpScope'
+    | 'devSpec'
+    | 'technicalArchitecture'
+    | 'dataStructure'
+    | 'acceptanceCriteria'
+    | 'developmentPrompt';
+  issue: string;
+  patch: string;
+}
+
+export interface HandoffEvaluationDimensions {
+  userScenarioClarity: number;
+  mvpFocus: number;
+  technicalExecutability: number;
+  acceptanceCriteriaCompleteness: number;
+  promptExecutability: number;
+}
+
+export interface HandoffEvaluation {
+  totalScore: number;
+  maxScore: number;
+  weightedScore?: number;
+  weightedMaxScore?: number;
+  readiness: 'ready' | 'needs-review' | 'not-ready';
+  dimensionScores: HandoffEvaluationDimensions;
+  dimensions?: {
+    userScenarioClarity: HandoffEvaluationDimension;
+    mvpFocus: HandoffEvaluationDimension;
+    technicalExecutability: HandoffEvaluationDimension;
+    acceptanceCriteriaCompleteness: HandoffEvaluationDimension;
+    promptExecutability: HandoffEvaluationDimension;
+  };
+  strengths: string[];
+  issues: string[];
+  suggestions: string[];
+  fixSuggestions?: HandoffFixSuggestion[];
+}
+
+export interface KnowledgeReference {
+  id: string;
+  title: string;
+  type: string;
+  score?: number;
+  matchedTags?: string[];
+  matchedAliases?: string[];
+  matchedFields?: string[];
+  appliedTo?: string[];
+  influence?: string;
+  reason: string;
+}
+
 export interface FinalHandoff {
+  schemaVersion?: string;
   productBrief: string;
   mvpScope: string;
+  devSpec: string;
   technicalArchitecture: string;
   dataStructure: string;
   acceptanceCriteria: string;
   developmentPrompt: string;
+  knowledgeReferences?: KnowledgeReference[];
+  evaluation?: HandoffEvaluation;
   source?: OutputSource;
 }
 

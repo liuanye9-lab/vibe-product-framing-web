@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
@@ -27,7 +27,7 @@ export default function BusinessFramingPage() {
   const [error, setError] = useState('');
   const autoRequestedRef = useRef<string | null>(null);
 
-  const generate = async () => {
+  const generate = useCallback(async () => {
     if (!brief || generating) return;
     if (!isAIReady()) {
       setError(AI_NOT_READY_MESSAGE);
@@ -43,7 +43,7 @@ export default function BusinessFramingPage() {
     } finally {
       setGenerating(false);
     }
-  };
+  }, [brief, generating, updateStage]);
 
   useEffect(() => {
     if (!brief || loading) return;
@@ -56,7 +56,7 @@ export default function BusinessFramingPage() {
       autoRequestedRef.current = requestKey;
       generate();
     }
-  }, [brief?.id, loading]);
+  }, [brief, generate, loading]);
 
   if (loading || !brief) return <Loader />;
 
