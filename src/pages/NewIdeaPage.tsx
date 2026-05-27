@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, Home, MapPin, Sparkles, Target, Users, Zap } from 'lucide-react';
+import { AlertCircle, Bot, ChevronRight, Home, MapPin, Sparkles, Target, Users, Zap } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import { evaluateIdea } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
@@ -46,6 +46,18 @@ export default function NewIdeaPage() {
     navigate(isAgentMode ? `/agent/${brief.id}` : `/discovery/${brief.id}`);
   };
 
+  const handleStartAgent = () => {
+    if (!input.rawIdea.trim()) return;
+    const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() }, mode);
+    navigate(`/agent/${brief.id}`);
+  };
+
+  const handleStartLegacy = () => {
+    if (!input.rawIdea.trim()) return;
+    const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() }, mode);
+    navigate(`/discovery/${brief.id}`);
+  };
+
   const setField = <K extends keyof IdeaInputState>(key: K, value: IdeaInputState[K]) => {
     setInput((prev) => ({ ...prev, [key]: value }));
   };
@@ -55,7 +67,7 @@ export default function NewIdeaPage() {
       title="Idea Input / 产品想法输入"
       subtitle="只需写下最少信息。目标用户、场景、问题和产品形态可不完整，后续由 AI 做默认假设并补全专业部分。"
       current={0}
-      nextLabel="让 AI 开始构思"
+      nextLabel=""
       onNext={handleSubmit}
       nextDisabled={!input.rawIdea.trim()}
       aside={<IdeaScoreCard evaluation={evaluation} />}
@@ -162,6 +174,52 @@ export default function NewIdeaPage() {
               技术架构、数据库、数据流、AI API、验收标准等专业内容，会在后面由 AI 根据你的产品上下文主动推荐。
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Flow Selection */}
+      <div style={{ marginTop: 24 }}>
+        <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: 'var(--color-text-secondary)' }}>
+          选择你的工作流
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <button
+            className="vp-card"
+            onClick={handleStartAgent}
+            disabled={!input.rawIdea.trim()}
+            style={{
+              textAlign: 'left', padding: '20px 22px', cursor: 'pointer',
+              background: 'linear-gradient(135deg, rgba(224,74,59,0.04), rgba(253,242,239,0.2))',
+              border: '1.5px solid rgba(224,74,59,0.18)',
+            }}
+          >
+            <Bot size={20} style={{ color: 'var(--vp-coral)', marginBottom: 8 }} />
+            <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>Agent 工作流</h3>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+              和 AI 产品经理一起决策，多角色 Agent 逐步推进产品方案。
+            </p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--vp-coral)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+              推荐 <ChevronRight size={14} />
+            </p>
+          </button>
+          <button
+            className="vp-card"
+            onClick={handleStartLegacy}
+            disabled={!input.rawIdea.trim()}
+            style={{
+              textAlign: 'left', padding: '20px 22px', cursor: 'pointer',
+              background: 'rgba(255,255,255,0.34)',
+            }}
+          >
+            <Target size={20} style={{ color: 'var(--vp-navy)', marginBottom: 8 }} />
+            <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>四步流程</h3>
+            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+              使用传统四步流程（需求诊断 → 产品定义 → MVP 范围 → 技术 + 交付）。
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 8 }}>
+              适合快速走通流程
+            </p>
+          </button>
         </div>
       </div>
     </StageLayout>

@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import type { ProductBrief } from '../types';
 import { getAgentWorkflowSummary, deleteAgentWorkflow } from '../agent/workflowStore';
+import { getAgentSessionSummary, deleteAgentSession } from '../agent-v3/sessionStore';
+import { getAgentPhaseLabel } from '../agent-v3/phaseMachine';
 import { getPhaseLabel } from '../agent/phaseUtils';
 
 const STORAGE_KEY = 'vibepilot_briefs';
@@ -78,6 +80,7 @@ export default function HistoryPage() {
   const handleDelete = (id: string) => {
     deleteBrief(id);
     deleteAgentWorkflow(id);
+    deleteAgentSession(id);
     setDeleteConfirm(null);
     refresh();
   };
@@ -138,8 +141,9 @@ export default function HistoryPage() {
         <div style={{ maxWidth: 800, margin: '0 auto' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {briefs.map((brief) => {
-              const agentSummary = getAgentWorkflowSummary(brief.id);
-              const hasAgent = agentSummary.exists;
+              const v3Summary = getAgentSessionSummary(brief.id);
+              const v2Summary = getAgentWorkflowSummary(brief.id);
+              const hasAgent = v3Summary.exists || v2Summary.exists;
               const isPending = deleteConfirm === brief.id;
 
               return (
@@ -179,14 +183,19 @@ export default function HistoryPage() {
                         {hasAgent && (
                           <>
                             <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
-                              {getPhaseLabel(agentSummary.currentPhase || 'intake')}
+                              {v3Summary.exists ? getAgentPhaseLabel(v3Summary.currentPhase || 'intake') : getPhaseLabel(v2Summary.currentPhase || 'intake')}
                             </span>
                             <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
-                              {agentSummary.messageCount} 条消息
+                              {v3Summary.messageCount || v2Summary.messageCount} 条消息
                             </span>
-                            {agentSummary.findingCount > 0 && (
+                            {v3Summary.exists && v3Summary.taskCount > 0 && (
                               <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
-                                {agentSummary.findingCount} 个判断
+                                {v3Summary.taskCount} 个任务
+                              </span>
+                            )}
+                            {v2Summary.findingCount > 0 && (
+                              <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
+                                {v2Summary.findingCount} 个判断
                               </span>
                             )}
                           </>

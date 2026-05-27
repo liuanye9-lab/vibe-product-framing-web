@@ -5,6 +5,27 @@
 
 ---
 
+## 🚀 V3.0 Real Agent Workflow System
+
+Vibe Copilot V3.0 已将 Agent 工作流从 demo 升级为真正的 **Agent Runtime + Multi-Agent Workflow**：
+
+- **Agent Runtime** (`src/agent-v3/runtime.ts`) — 核心 Runtime，替代单轮 AI 调用
+- **Multi-Agent System** — 9 个专职 Agent（Orchestrator/Intake/Demand/Product/MVP/Tech/Risk/Handoff/Reviewer）
+- **AgentSession** — 完整 session 持久化（messages, tasks, findings, commands, toolResults）
+- **Tool Registry** — 11 种 Agent Command 通过 Tool Registry 执行
+- **Action Cards** — 结构化交互卡片替代文本解析
+- **Phase State Machine** — Phase 是一等状态，不依赖字段扫描
+- **Intent Parser** — continue/skip/make_assumption 优先于缺字段检查
+- **Agent Workspace** — 对话区 + 控制面板 + Debug Panel + Action Cards
+- **历史恢复** — HistoryPage 支持恢复完整 Agent session
+- **双向互通** — 旧四步流程与 Agent 工作流可随时切换
+
+### Why this is not just a chatbot
+
+普通聊天只返回文本。Vibe Copilot Agent 维护 session、phase、tasks、commands、tool results、findings，并把对话结果转化为 DEV_SPEC 和 Codex Prompt。
+
+---
+
 ## 🎯 一句话定位
 
 Vibe Copilot 是一个 **AI 驱动的前置产品构思工具**。它不生成代码，而是在开发者把想法交给 Codex / Claude Code / Cursor 之前，先完成需求诊断、MVP 收敛、技术决策和开发交付——四步把"我想做一个 XX"变成可以交给 AI 编程工具直接执行的 Development Prompt。
