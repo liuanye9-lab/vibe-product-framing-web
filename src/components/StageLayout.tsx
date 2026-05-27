@@ -1,6 +1,6 @@
 import { Brain, ChevronLeft, ChevronRight, Home, Check } from 'lucide-react';
+import { memo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { ReactNode } from 'react';
 
 const STAGES = [
   { label: 'Idea 诊断', path: 'discovery' },
@@ -23,7 +23,7 @@ interface StageLayoutProps {
   aside?: ReactNode;
 }
 
-export default function StageLayout({
+const StageLayout = memo(function StageLayout({
   title,
   subtitle,
   current,
@@ -198,4 +198,8 @@ export default function StageLayout({
       </main>
     </div>
   );
-}
+});
+
+StageLayout.displayName = 'StageLayout';
+
+export default StageLayout;

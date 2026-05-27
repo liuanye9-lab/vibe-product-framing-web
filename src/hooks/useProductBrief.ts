@@ -25,6 +25,7 @@ import { toDisplayList, toDisplayText } from '../lib/utils';
 
 const STORAGE_KEY = 'vibepilot_briefs';
 const CURRENT_KEY = 'vibepilot_current_id';
+const MAX_BRIEFS = 50;
 
 function createEmptyStep(): StepData {
   return {
@@ -368,7 +369,14 @@ export function useProductBrief(id?: string) {
     } else {
       all.push(normalized);
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    if (all.length > MAX_BRIEFS) {
+      all.splice(MAX_BRIEFS);
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    } catch (e) {
+      console.error('[VibePilot] Failed to save briefs:', e);
+    }
   }, []);
 
   const initBrief = useCallback((ideaInput: IdeaInputState | string, mode: CopilotMode = 'beginner'): ProductBrief => {
@@ -466,5 +474,9 @@ function loadAll(): ProductBrief[] {
 }
 
 export function getCurrentBriefId(): string | null {
-  return localStorage.getItem(CURRENT_KEY);
+  try {
+    return localStorage.getItem(CURRENT_KEY);
+  } catch {
+    return null;
+  }
 }

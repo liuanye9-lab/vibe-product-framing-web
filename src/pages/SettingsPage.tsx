@@ -16,6 +16,7 @@ import {
 import {
   clearAIConfig,
   clearAICache,
+  extractAIContent,
   extractJson,
   getAIConfig,
   getAIConnectionStatus,
@@ -79,35 +80,6 @@ function isUsefulString(value: unknown, minLength = 10): value is string {
     && value.trim() !== '...'
     && value.trim() !== '待补充'
     && value.trim() !== 'N/A';
-}
-
-function extractAIContent(data: Record<string, unknown>): string {
-  let content = '';
-  const choices = data.choices;
-  if (Array.isArray(choices) && choices.length > 0) {
-    const firstChoice = choices[0] as Record<string, unknown>;
-    if (firstChoice.message && typeof (firstChoice.message as Record<string, unknown>).content === 'string') {
-      content = (firstChoice.message as Record<string, unknown>).content as string;
-    } else if (firstChoice.delta && typeof (firstChoice.delta as Record<string, unknown>).content === 'string') {
-      content = (firstChoice.delta as Record<string, unknown>).content as string;
-    } else if (typeof firstChoice.content === 'string') {
-      content = firstChoice.content;
-    }
-  } else if (typeof data.content === 'string') {
-    content = data.content;
-  } else if (Array.isArray(data.candidates) && data.candidates.length > 0) {
-    const candidate = data.candidates[0] as Record<string, unknown>;
-    const candidateContent = candidate.content;
-    if (candidateContent && typeof (candidateContent as Record<string, unknown>).text === 'string') {
-      content = (candidateContent as Record<string, unknown>).text as string;
-    } else if (candidateContent && Array.isArray((candidateContent as Record<string, unknown>).parts)) {
-      content = ((candidateContent as Record<string, unknown>).parts as Array<Record<string, unknown>>)
-        .map((part) => (typeof part.text === 'string' ? part.text : ''))
-        .join('');
-    }
-  }
-
-  return content.trim();
 }
 
 export default function SettingsPage() {
