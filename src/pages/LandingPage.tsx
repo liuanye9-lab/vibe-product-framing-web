@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, Brain, Clock, Code2, Layers3,
-  Settings, Sparkles, Target, Zap,
+  Settings, Sparkles, Target, Zap, Bot,
   Shield, Database, FileText
 } from 'lucide-react';
 
@@ -140,6 +140,16 @@ export default function LandingPage() {
           >
             开始 AI 辅助构思
             <ArrowRight size={18} />
+          </button>
+
+          {/* Agent 工作流入口 */}
+          <button
+            className="vp-btn vp-btn-ghost"
+            onClick={() => navigate('/new', { state: { fromHome: true, agentMode: true } })}
+            style={{ marginBottom: 72, marginLeft: 12, fontSize: 14 }}
+          >
+            <Bot size={16} />
+            Agent 工作流 (多角色对话)
           </button>
 
           {/* ── Value Cards Grid ── */}

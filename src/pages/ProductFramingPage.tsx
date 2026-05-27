@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, RefreshCw, Settings } from 'lucide-react';
+import { Loader2, RefreshCw, Settings, Bot } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import { explainSuggestion, getAIErrorMessage, isAIReady, suggestStage } from '../api/evaluate';
@@ -68,7 +68,7 @@ export default function ProductFramingPage() {
       previousPath={`/discovery/${brief.id}`}
       nextPath={`/business/${brief.id}`}
       nextLabel="进入业务判断"
-      aside={<Summary rawIdea={brief.ideaInput.rawIdea} generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} />}
+      aside={<Summary rawIdea={brief.ideaInput.rawIdea} generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
     >
       {FIELDS.map((field) => {
         const suggestion = brief.stages.product[field.key];
@@ -92,7 +92,7 @@ export default function ProductFramingPage() {
   );
 }
 
-function Summary({ rawIdea, generating, onGenerate, error, onSettings }: { rawIdea: string; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void }) {
+function Summary({ rawIdea, generating, onGenerate, error, onSettings, onSwitchAgent }: { rawIdea: string; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void; onSwitchAgent: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>原始想法</h3>
@@ -106,6 +106,9 @@ function Summary({ rawIdea, generating, onGenerate, error, onSettings }: { rawId
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在生成...' : '重新生成本页建议'}
+      </button>
+      <button className="vp-btn vp-btn-ghost" onClick={onSwitchAgent} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
+        <Bot size={14} /> 切换到 Agent 工作流
       </button>
     </div>
   );

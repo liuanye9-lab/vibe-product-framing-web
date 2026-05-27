@@ -15,6 +15,7 @@ export default function NewIdeaPage() {
   const { initBrief } = useProductBrief();
   const navigate = useNavigate();
   const location = useLocation();
+  const isAgentMode = (location.state as { agentMode?: boolean } | null)?.agentMode ?? false;
 
   useEffect(() => {
     const state = location.state as { fromHome?: boolean } | null;
@@ -42,7 +43,7 @@ export default function NewIdeaPage() {
   const handleSubmit = () => {
     if (!input.rawIdea.trim()) return;
     const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() }, mode);
-    navigate(`/discovery/${brief.id}`);
+    navigate(isAgentMode ? `/agent/${brief.id}` : `/discovery/${brief.id}`);
   };
 
   const setField = <K extends keyof IdeaInputState>(key: K, value: IdeaInputState[K]) => {

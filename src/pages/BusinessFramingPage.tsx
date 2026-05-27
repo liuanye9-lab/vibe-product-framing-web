@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, RefreshCw, Settings } from 'lucide-react';
+import { Loader2, RefreshCw, Settings, Bot } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import GlossaryHelp from '../components/GlossaryHelp';
@@ -69,7 +69,7 @@ export default function BusinessFramingPage() {
       previousPath={`/product/${brief.id}`}
       nextPath={`/technical/${brief.id}`}
       nextLabel="进入技术翻译"
-      aside={<Aside generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} />}
+      aside={<Aside generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
     >
       <RoiPanel roi={brief.stages.business.roi} />
       {FIELDS.map((field) => (
@@ -145,7 +145,7 @@ function Score({ label, value, inverse }: { label: string; value?: unknown; inve
   );
 }
 
-function Aside({ generating, onGenerate, error, onSettings }: { generating: boolean; onGenerate: () => void; error: string; onSettings: () => void }) {
+function Aside({ generating, onGenerate, error, onSettings, onSwitchAgent }: { generating: boolean; onGenerate: () => void; error: string; onSettings: () => void; onSwitchAgent: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第二钻：业务推理</h3>
@@ -161,6 +161,9 @@ function Aside({ generating, onGenerate, error, onSettings }: { generating: bool
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在生成...' : '重新生成业务判断'}
+      </button>
+      <button className="vp-btn vp-btn-ghost" onClick={onSwitchAgent} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
+        <Bot size={14} /> 切换到 Agent 工作流
       </button>
     </div>
   );
