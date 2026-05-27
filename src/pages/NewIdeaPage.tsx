@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, Home, Sparkles, Target, Users, MapPin, AlertCircle } from 'lucide-react';
+import { AlertCircle, ArrowRight, Home, MapPin, Sparkles, Target, Users, Zap } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import { evaluateIdea } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
@@ -301,7 +301,3 @@ function IdeaScoreCard({ evaluation }: { evaluation: EvaluateIdeaResult | null }
     </div>
   );
 }
-
-/* local icon */
-function Zap(props: { size?: number }) { return <svg width={props.size ?? 16} height={props.size ?? 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>; }
-function AlertCircle(props: { size?: number }) { return <svg width={props.size ?? 16} height={props.size ?? 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>; }
