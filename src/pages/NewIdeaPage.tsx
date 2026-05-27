@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, ArrowRight, Home, MapPin, Sparkles, Target, Users, Zap } from 'lucide-react';
+import { AlertCircle, Home, MapPin, Sparkles, Target, Users, Zap } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import { evaluateIdea } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';

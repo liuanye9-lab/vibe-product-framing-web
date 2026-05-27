@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, Brain, Clock, Code2, Layers3,
-  Settings, Sparkles, Target, Zap, ChevronRight,
+  Settings, Sparkles, Target, Zap,
   Shield, Database, FileText
 } from 'lucide-react';
 
