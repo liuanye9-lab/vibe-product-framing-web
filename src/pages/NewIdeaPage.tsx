@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, Home, Sparkles } from 'lucide-react';
+import { ArrowRight, Bot, Home, Sparkles } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import { evaluateIdea } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
@@ -12,6 +12,8 @@ export default function NewIdeaPage() {
   const [input, setInput] = useState<IdeaInputState>({ rawIdea: '', projectType: 'Web App' });
   const [mode, setMode] = useState<CopilotMode>('beginner');
   const [evaluation, setEvaluation] = useState<EvaluateIdeaResult | null>(null);
+  const [submitted, setSubmitted] = useState(false);
+  const [createdBriefId, setCreatedBriefId] = useState<string | null>(null);
   const { initBrief } = useProductBrief();
   const navigate = useNavigate();
   const location = useLocation();
@@ -42,7 +44,8 @@ export default function NewIdeaPage() {
   const handleSubmit = () => {
     if (!input.rawIdea.trim()) return;
     const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() }, mode);
-    navigate(`/discovery/${brief.id}`);
+    setCreatedBriefId(brief.id);
+    setSubmitted(true);
   };
 
   const setField = <K extends keyof IdeaInputState>(key: K, value: IdeaInputState[K]) => {
@@ -50,64 +53,141 @@ export default function NewIdeaPage() {
   };
 
   return (
-    <StageLayout
-      title="Idea Input / 产品想法输入"
-      subtitle="只需要先写最少信息。目标用户、场景、问题和产品形态都可以不完整，后续由 AI 帮你做默认假设并补全专业部分。"
-      current={0}
-      nextLabel="让 AI 开始构思"
-      onNext={handleSubmit}
-      nextDisabled={!input.rawIdea.trim()}
-      aside={<IdeaScore evaluation={evaluation} />}
-    >
-      <div className="vp-card" style={{ marginBottom: 18 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>选择模式</label>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-          <ModeButton active={mode === 'beginner'} title="Quick" desc="10 分钟出方案" onClick={() => setMode('beginner')} />
-          <ModeButton active={mode === 'builder'} title="Standard" desc="30 分钟认真构思" onClick={() => setMode('builder')} />
-          <ModeButton active={mode === 'review'} title="Review" desc="审查已有方案" onClick={() => setMode('review')} />
-        </div>
-      </div>
-
-      <div className="vp-card" style={{ marginBottom: 18 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>我想做什么 *</label>
-        <textarea
-          className="vp-textarea vp-textarea-lg"
-          value={input.rawIdea}
-          onChange={(e) => setField('rawIdea', e.target.value)}
-          placeholder="比如：我想做一个帮助 vibe coding 新手在写代码前想清楚产品方案的 AI Copilot。"
-          rows={4}
-        />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <Field title="给谁用（可选）">
-          <input className="vp-input" value={input.targetUser || ''} onChange={(e) => setField('targetUser', e.target.value)} placeholder="例如：准备做第一个 AI 产品的新手" />
-        </Field>
-        <Field title="在什么场景用（可选）">
-          <input className="vp-input" value={input.scenario || ''} onChange={(e) => setField('scenario', e.target.value)} placeholder="例如：准备交给 Cursor 开发前" />
-        </Field>
-        <Field title="想解决什么问题（可选）">
-          <input className="vp-input" value={input.problem || ''} onChange={(e) => setField('problem', e.target.value)} placeholder="例如：不知道技术方案和数据结构" />
-        </Field>
-        <Field title="产品形态（可选）">
-          <select className="vp-input" value={input.projectType || 'Web App'} onChange={(e) => setField('projectType', e.target.value as ProjectType)}>
-            {PROJECT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-          </select>
-        </Field>
-      </div>
-
-      <div className="vp-card-dashed" style={{ marginTop: 22 }}>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <Sparkles size={18} style={{ color: 'var(--color-primary)', marginTop: 2 }} />
-          <div>
-            <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 6 }}>不用一次性想完整</h3>
-            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
-              技术架构、数据库、数据流、AI API、验收标准等专业内容，会在后面由 AI 根据你的产品上下文主动推荐。
-            </p>
+    <>
+      <StageLayout
+        title="Idea Input / 产品想法输入"
+        subtitle="只需要先写最少信息。目标用户、场景、问题和产品形态都可以不完整，后续由 AI 帮你做默认假设并补全专业部分。"
+        current={0}
+        nextLabel="让 AI 开始构思"
+        onNext={handleSubmit}
+        nextDisabled={!input.rawIdea.trim()}
+        aside={<IdeaScore evaluation={evaluation} />}
+      >
+        <div className="vp-card" style={{ marginBottom: 18 }}>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>选择模式</label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+            <ModeButton active={mode === 'beginner'} title="Quick" desc="10 分钟出方案" onClick={() => setMode('beginner')} />
+            <ModeButton active={mode === 'builder'} title="Standard" desc="30 分钟认真构思" onClick={() => setMode('builder')} />
+            <ModeButton active={mode === 'review'} title="Review" desc="审查已有方案" onClick={() => setMode('review')} />
           </div>
         </div>
-      </div>
-    </StageLayout>
+
+        <div className="vp-card" style={{ marginBottom: 18 }}>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>我想做什么 *</label>
+          <textarea
+            className="vp-textarea vp-textarea-lg"
+            value={input.rawIdea}
+            onChange={(e) => setField('rawIdea', e.target.value)}
+            placeholder="比如：我想做一个帮助 vibe coding 新手在写代码前想清楚产品方案的 AI Copilot。"
+            rows={4}
+          />
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <Field title="给谁用（可选）">
+            <input className="vp-input" value={input.targetUser || ''} onChange={(e) => setField('targetUser', e.target.value)} placeholder="例如：准备做第一个 AI 产品的新手" />
+          </Field>
+          <Field title="在什么场景用（可选）">
+            <input className="vp-input" value={input.scenario || ''} onChange={(e) => setField('scenario', e.target.value)} placeholder="例如：准备交给 Cursor 开发前" />
+          </Field>
+          <Field title="想解决什么问题（可选）">
+            <input className="vp-input" value={input.problem || ''} onChange={(e) => setField('problem', e.target.value)} placeholder="例如：不知道技术方案和数据结构" />
+          </Field>
+          <Field title="产品形态（可选）">
+            <select className="vp-input" value={input.projectType || 'Web App'} onChange={(e) => setField('projectType', e.target.value as ProjectType)}>
+              {PROJECT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <div className="vp-card-dashed" style={{ marginTop: 22 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Sparkles size={18} style={{ color: 'var(--color-primary)', marginTop: 2 }} />
+            <div>
+              <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 6 }}>不用一次性想完整</h3>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+                技术架构、数据库、数据流、AI API、验收标准等专业内容，会在后面由 AI 根据你的产品上下文主动推荐。
+              </p>
+            </div>
+          </div>
+        </div>
+      </StageLayout>
+
+      {/* Entry selection overlay */}
+      {submitted && createdBriefId && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.4)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            padding: 20,
+          }}
+          onClick={() => setSubmitted(false)}
+        >
+          <div
+            className="vp-card"
+            style={{ maxWidth: 440, width: '100%', padding: 24 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 6 }}>选择工作流</h2>
+            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 20, lineHeight: 1.7 }}>
+              你的产品想法已保存。选择一种工作流继续：
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Agent flow */}
+              <button
+                className="vp-card"
+                onClick={() => navigate(`/agent/${createdBriefId}`)}
+                style={{
+                  textAlign: 'left',
+                  padding: '14px 16px',
+                  border: '2px solid var(--color-primary)',
+                  cursor: 'pointer',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <Bot size={20} style={{ color: 'var(--color-primary)' }} />
+                  <span style={{ fontSize: 14, fontWeight: 650 }}>进入 Agent 工作流</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 8, background: 'var(--color-primary)', color: '#fff' }}>NEW</span>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                  AI 产品经理 Agent 会主动追问、判断信息是否足够，像协作一样帮你一步步完成产品决策。
+                </p>
+              </button>
+
+              {/* Legacy flow */}
+              <button
+                className="vp-card"
+                onClick={() => navigate(`/discovery/${createdBriefId}`)}
+                style={{ textAlign: 'left', padding: '14px 16px', cursor: 'pointer' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <Sparkles size={20} style={{ color: 'var(--color-text-secondary)' }} />
+                  <span style={{ fontSize: 14, fontWeight: 650 }}>进入四步流程</span>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                  传统表单式流程：逐页生成产品定义、MVP 范围、技术方案和开发交付文档。
+                </p>
+              </button>
+            </div>
+
+            <button
+              className="vp-btn vp-btn-ghost"
+              onClick={() => setSubmitted(false)}
+              style={{ width: '100%', marginTop: 16 }}
+            >
+              返回编辑
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

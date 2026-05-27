@@ -135,6 +135,53 @@ vibe-copilot/
 | **Tech Decision** | TechnicalPlanning | 最低成本技术方案是什么？ | 前端/后端/数据库/AI API 推荐、Mock 策略、技术翻译、升级条件 | 确认技术路线 |
 | **Developer Handoff** | DeveloperHandoff | 是否可以交给 AI 编程工具？ | Product Brief、MVP Scope、DEV_SPEC、技术架构、数据结构、验收标准、Development Prompt + Evaluation Report | 接受/优化/修复 |
 
+## V2.0 Agentic Workflow Refactor
+
+### 核心理念
+
+V1 是**结构化 AI 生成器** —— 用户进入页面 → 点击生成 → 调用 API → 返回结构化建议 → 用户接受或编辑。
+
+V2 升级为 **Agentic Workflow** —— 系统不再只是回答用户问题，而是根据当前信息状态主动判断、追问、推进和沉淀交付物。
+
+### 新增模块
+
+| 模块 | 路径 | 职责 |
+|------|------|------|
+| Agent Types | `src/agent/types.ts` | AgentRole、AgentDecisionStatus、WorkflowPhase、AgentMessage、AgentFinding |
+| Workflow Store | `src/agent/workflowStore.ts` | localStorage 持久化的 AgentWorkflow CRUD |
+| Orchestrator | `src/agent/orchestrator.ts` | 本地规则引擎：判断下一步 Agent 和阶段 |
+| Agent Prompts | `src/agent/agentPrompts.ts` | 7 个子 Agent 的 system prompt + 用户上下文构造 |
+| Agent Runner | `src/agent/runAgent.ts` | 完整 Agent 回合：orchestrator → AI (可选) → fallback → 持久化 |
+| Patch Applier | `src/agent/applyAgentPatch.ts` | 将 Agent 输出应用到现有 brief.stages |
+| Agent Workspace | `src/pages/AgentWorkspacePage.tsx` | 对话式 Agent 工作流界面 |
+
+### 7 个子 Agent
+
+| Agent | 职责 |
+|-------|------|
+| orchestrator | 编排：判断当前该做什么，决定是否追问或推进 |
+| demand | 需求诊断：目标用户、场景、痛点、替代方案 |
+| product | 产品定义：一句话定义、用户画像、AI 介入价值 |
+| mvp | MVP 收敛：Must Have、Out of Scope、Minimum Loop |
+| tech | 技术决策：最小成本技术方案、Mock 策略、升级条件 |
+| risk | 风险审查：需求风险、业务风险、技术风险、范围风险 |
+| handoff | 开发交付：整合所有阶段的 Product Brief、DEV_SPEC、Codex Prompt |
+
+### 关键设计
+
+- **Agent 会主动判断是否需要追问**：如果 targetUser/scenario/problem 缺失，Agent 不会直接生成方案，而是先追问
+- **AI 失败时使用 local orchestrator fallback**：不阻断对话流程，明确标注降级原因
+- **保留 legacy 四步流程**：`/discovery/:id` → `/product/:id` → ... 传统流程完整保留，`/agent/:id` 为新增入口
+- **状态持久化**：Workflow 状态（messages、findings、phase）保存在 localStorage，刷新不丢失
+
+### 入口
+
+创建产品想法后，用户可选择：
+1. **进入 Agent 工作流**（新）— 对话式协作，Agent 主动推进
+2. **进入四步流程**（旧）— 传统表单式流程
+
+---
+
 每个阶段支持 **Focus（核心决策）/ Detail（完整地图）** 双视图切换。
 
 ---
@@ -309,9 +356,10 @@ npm run lint       # 0 errors
 ## 📁 项目统计
 
 ```
-57 源文件 (33 TypeScript + 21 TSX + 1 CSS + 1 SVG + 1 PNG)
+57+ 源文件 (33+ TypeScript + 21+ TSX + 1 CSS + 1 SVG + 1 PNG)
 2100+ 行评估引擎 (evaluate.ts)
-14 页面组件
+7 个子 Agent (orchestrator/demand/product/mvp/tech/risk/handoff)
+14+ 页面组件
 6 种 AI 错误分类
 8 策略 JSON 修复管线
 5 维度加权评分引擎
@@ -321,6 +369,18 @@ npm run lint       # 0 errors
 ```
 
 ---
+
+## 🗣️ Portfolio Story
+
+V1 是**结构化 AI 生成器**：用户填表 → AI 生成 → 用户确认。每个步骤都依赖用户主动触发，本质上是一个"AI 驱动的精美表单"。
+
+V2 升级为 **Agentic Workflow**：系统不再只是回答用户问题，而是根据当前信息状态主动判断、追问、推进和沉淀交付物。这代表了一个产品思维的跃迁 —— 从"工具"到"协作者"。
+
+核心工程挑战：
+- 如何在没有后端/数据库的情况下实现 Agent 状态机？
+- 如何让 Orchestrator 在本地规则下做出可解释的路由决策？
+- 如何在 AI 失败时优雅降级而不破坏 Agent 对话连续性？
+- 如何让 7 个子 Agent 的 prompt 保持一致的输出格式和追问策略？
 
 ## 🗣️ 面试 Talking Points
 
@@ -383,6 +443,7 @@ npm run lint       # 0 errors
 | **V1.6** | VibeAIError 分类 + 加权引用校验 + referenceEvidence + cache fix + salvage |
 | **V1.7** | MVP 快速通道 (compact context + light prompt + local-rule pre-fill) |
 | **Latest** | unwrapJsonPayload + 增强 JSON 诊断 + json_parse fallback + JSON retry |
+| **V2.0** | Agentic Workflow Refactor — 从页面驱动升级为 Agent 状态机驱动 |
 
 ---
 

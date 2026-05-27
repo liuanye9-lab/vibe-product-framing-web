@@ -1372,7 +1372,7 @@ function assertAIOutputReferencesInput(brief: ProductBrief, output: unknown): vo
   }
 }
 
-async function callCopilotJson<T>(systemPrompt: string, userContent: string, maxTokens = 1600, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<T> {
+export async function callCopilotJson<T>(systemPrompt: string, userContent: string, maxTokens = 1600, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<T> {
   const config = requireAIConfig();
   try {
     const data = await callAIProxy(config, {
