@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, RefreshCw, Settings } from 'lucide-react';
+import { Loader2, RefreshCw, Settings, Bot } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
@@ -78,7 +78,7 @@ export default function TechnicalPlanningPage() {
       previousPath={`/scope/${brief.id}`}
       nextPath={`/handoff/${brief.id}`}
       nextLabel="生成开发交付"
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
     >
       {view === 'focus' ? (
         <DecisionCard
@@ -178,7 +178,7 @@ function Info({ title, value, mono }: { title: string; value?: unknown; mono?: b
   );
 }
 
-function Aside({ view, onViewChange, generating, onGenerate, error, onSettings }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void }) {
+function Aside({ view, onViewChange, generating, onGenerate, error, onSettings, onSwitchAgent }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void; onSwitchAgent: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第三关：技术决策</h3>
@@ -198,6 +198,9 @@ function Aside({ view, onViewChange, generating, onGenerate, error, onSettings }
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在生成...' : '重新生成技术翻译'}
+      </button>
+      <button className="vp-btn vp-btn-ghost" onClick={onSwitchAgent} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
+        <Bot size={14} /> 切换到 Agent 工作流
       </button>
     </div>
   );

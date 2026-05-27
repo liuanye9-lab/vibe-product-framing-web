@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Check, Copy, Download, Loader2, RefreshCw, Settings } from 'lucide-react';
+import { Bot, Check, Copy, Download, Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import DecisionCard from '../components/DecisionCard';
 import { buildLocalHandoff, getAIErrorMessage, isAIReady, optimizeHandoff } from '../api/evaluate';
@@ -209,7 +209,7 @@ export default function DeveloperHandoffPage() {
       current={3}
       briefId={brief.id}
       previousPath={`/technical/${brief.id}`}
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={() => generate(true)} onDownload={download} onExportCaseStudy={exportCaseStudy} hasHandoff={Boolean(handoff)} error={error} onSettings={() => navigate('/settings')} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={() => generate(true)} onDownload={download} onExportCaseStudy={exportCaseStudy} hasHandoff={Boolean(handoff)} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
     >
       {view === 'focus' && (
         <DecisionCard
@@ -698,7 +698,7 @@ function buildMarkdownDownload(handoff: FinalHandoff): string {
   ].join('\n\n');
 }
 
-function Aside({ view, onViewChange, generating, onGenerate, onDownload, onExportCaseStudy, hasHandoff, error, onSettings }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; onExportCaseStudy: () => void; hasHandoff: boolean; error: string; onSettings: () => void }) {
+function Aside({ view, onViewChange, generating, onGenerate, onDownload, onExportCaseStudy, hasHandoff, error, onSettings, onSwitchAgent }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; onExportCaseStudy: () => void; hasHandoff: boolean; error: string; onSettings: () => void; onSwitchAgent: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第四关：开发交付</h3>
@@ -727,6 +727,9 @@ function Aside({ view, onViewChange, generating, onGenerate, onDownload, onExpor
           <Download size={14} /> Export Case Study
         </button>
       </div>
+      <button className="vp-btn vp-btn-ghost" onClick={onSwitchAgent} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
+        <Bot size={14} /> 切换到 Agent 工作流
+      </button>
     </div>
   );
 }

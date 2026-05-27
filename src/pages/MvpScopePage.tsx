@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, RefreshCw, Settings } from 'lucide-react';
+import { Loader2, RefreshCw, Settings, Bot } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
@@ -101,7 +101,7 @@ export default function MvpScopePage() {
       previousPath={`/discovery/${brief.id}`}
       nextPath={`/technical/${brief.id}`}
       nextLabel="进入技术决策"
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} isLocalRule={isLocalRule} aiAttempted={aiAttempted} onSettings={() => navigate('/settings')} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} isLocalRule={isLocalRule} aiAttempted={aiAttempted} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
     >
       <ScopeCreepWarning terms={creepTerms} warning={brief.stages.mvp.scopeCreepWarning} />
       {view === 'focus' ? (
@@ -135,7 +135,7 @@ export default function MvpScopePage() {
   );
 }
 
-function Aside({ view, onViewChange, generating, onGenerate, error, isLocalRule, aiAttempted, onSettings }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; isLocalRule: boolean; aiAttempted: boolean; onSettings: () => void }) {
+function Aside({ view, onViewChange, generating, onGenerate, error, isLocalRule, aiAttempted, onSettings, onSwitchAgent }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; isLocalRule: boolean; aiAttempted: boolean; onSettings: () => void; onSwitchAgent: () => void }) {
   const buttonLabel = generating
     ? 'AI 正在生成...'
     : isLocalRule && !aiAttempted
@@ -149,7 +149,7 @@ function Aside({ view, onViewChange, generating, onGenerate, error, isLocalRule,
         <button className={view === 'detail' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('detail')}>Detail</button>
       </div>
       <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
-        V1 只证明一个核心闭环，不做“全能平台”。
+        V1 只证明一个核心闭环，不做"全能平台"。
       </p>
       {error && <p style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, marginBottom: 10 }}>{error}</p>}
       {error === AI_NOT_READY_MESSAGE && (
@@ -160,6 +160,9 @@ function Aside({ view, onViewChange, generating, onGenerate, error, isLocalRule,
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {buttonLabel}
+      </button>
+      <button className="vp-btn vp-btn-ghost" onClick={onSwitchAgent} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
+        <Bot size={14} /> 切换到 Agent 工作流
       </button>
     </div>
   );

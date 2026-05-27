@@ -229,3 +229,54 @@ export function rejectFinding(
 }
 
 export { generateId };
+
+/**
+ * List all agent workflows, sorted by lastUpdatedAt descending.
+ * Filters out corrupted entries.
+ */
+export function listAgentWorkflows(): AgentWorkflowState[] {
+  try {
+    const workflows = loadAllWorkflows();
+    return Object.values(workflows)
+      .filter((w) => w && w.briefId && Array.isArray(w.messages))
+      .sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime());
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Delete the agent workflow for a given briefId.
+ */
+export function deleteAgentWorkflow(briefId: string): void {
+  try {
+    const workflows = loadAllWorkflows();
+    delete workflows[briefId];
+    saveAllWorkflows(workflows);
+  } catch {
+    console.warn('[AgentStore] Failed to delete workflow:', briefId);
+  }
+}
+
+/**
+ * Get a lightweight summary of the agent workflow for a given briefId.
+ * Designed for HistoryPage — avoids parsing the full workflow.
+ */
+export function getAgentWorkflowSummary(briefId: string): {
+  exists: boolean;
+  currentPhase?: WorkflowPhase;
+  messageCount: number;
+  findingCount: number;
+  lastUpdatedAt?: string;
+} {
+  const wf = getAgentWorkflow(briefId);
+  if (!wf) return { exists: false, messageCount: 0, findingCount: 0 };
+
+  return {
+    exists: true,
+    currentPhase: wf.currentPhase,
+    messageCount: Array.isArray(wf.messages) ? wf.messages.filter((m) => m.role !== 'system').length : 0,
+    findingCount: Array.isArray(wf.findings) ? wf.findings.length : 0,
+    lastUpdatedAt: wf.lastUpdatedAt,
+  };
+}

@@ -1,12 +1,10 @@
 /**
- * Agent Turn Runner — orchestrates the full Agent workflow cycle.
+ * Agent Turn Runner — orchestrates the full Agent workflow cycle (V2.1).
  *
- * For each user turn:
- * 1. Run local orchestrator to decide next step
- * 2. If AI is needed, call existing AI pipeline
- * 3. Parse Agent JSON response
- * 4. Fallback to local orchestrator on failure
- * 5. Save messages, findings, and brief patches
+ * Changes from V2.0:
+ * - Structured questions in AgentTurnResult (no more text parsing)
+ * - phaseAfterTurn drives workflow.currentPhase persistence
+ * - AgentMessage.content is reply-only (questions in metadata)
  */
 
 import type { ProductBrief } from '../types';
@@ -79,6 +77,7 @@ export interface AgentTurnResult {
   workflow: AgentWorkflowState;
   briefPatch?: Partial<ProductBrief>;
   reply: string;
+  questions: string[];
   finding?: AgentFinding;
   orchestrator: OrchestratorResult;
 }
@@ -101,8 +100,12 @@ interface AgentJsonResponse {
   };
 }
 
+function finalPhase(orchestrator: OrchestratorResult): WorkflowPhase {
+  return orchestrator.phaseAfterTurn || orchestrator.nextPhase;
+}
+
 /**
- * Execute a full Agent turn: orchestrator → AI (optionally) → save state.
+ * Execute a full Agent turn.
  */
 export async function runAgentTurn(input: {
   brief: ProductBrief;
@@ -110,47 +113,48 @@ export async function runAgentTurn(input: {
 }): Promise<AgentTurnResult> {
   const { brief, userMessage } = input;
 
-  // Step 1: Ensure workflow exists, then save user message
   const existing = getAgentWorkflow(brief.id);
   if (!existing) createWf(brief.id);
 
   const userMsg = makeMessage('user', userMessage);
   let workflow = appendAgentMessage(brief.id, userMsg);
 
-  // Step 2: Run local orchestrator
   const orchestrator = runLocalOrchestrator({ brief, workflow, userMessage });
 
-  // Step 3: If no AI call needed, return local reply
+  // --- No AI needed — return local reply directly ---
   if (!orchestrator.shouldCallAI) {
     const agentMsg = makeMessage('agent', orchestrator.reply, orchestrator.nextAgent, {
-      phase: orchestrator.nextPhase,
+      phase: finalPhase(orchestrator),
       decisionStatus: orchestrator.decisionStatus,
+      questions: orchestrator.questions.length > 0 ? orchestrator.questions : undefined,
     });
     appendAgentMessage(brief.id, agentMsg);
-    workflow = updateWorkflowPhase(brief.id, orchestrator.nextPhase);
+    workflow = updateWorkflowPhase(brief.id, finalPhase(orchestrator));
 
     return {
       workflow,
       reply: orchestrator.reply,
+      questions: orchestrator.questions,
       orchestrator,
     };
   }
 
-  // Step 4: Try AI call
+  // --- AI call ---
   const config = getAIConfig();
   if (!config) {
-    // No AI configured, use local reply
-    const fallbackReply = `${orchestrator.reply}\n\n（AI 未配置，当前使用本地规则判断。如果需要更智能的分析，请先在设置页配置 AI 连接。）`;
+    const fallbackReply = `${orchestrator.reply}\n\n（AI 未配置，当前使用本地规则判断。请在设置页配置 AI 连接以获取更智能的分析。）`;
     const agentMsg = makeMessage('agent', fallbackReply, orchestrator.nextAgent, {
-      phase: orchestrator.nextPhase,
+      phase: finalPhase(orchestrator),
       decisionStatus: orchestrator.decisionStatus,
+      questions: orchestrator.questions.length > 0 ? orchestrator.questions : undefined,
     });
     appendAgentMessage(brief.id, agentMsg);
-    workflow = updateWorkflowPhase(brief.id, orchestrator.nextPhase);
+    workflow = updateWorkflowPhase(brief.id, finalPhase(orchestrator));
 
     return {
       workflow,
       reply: fallbackReply,
+      questions: orchestrator.questions,
       orchestrator,
     };
   }
@@ -171,36 +175,29 @@ export async function runAgentTurn(input: {
       60000,
     );
 
-    // Parse agent response
     const reply = aiResponse.reply || orchestrator.reply;
-    const questions = aiResponse.questions || orchestrator.questions;
+    const questions = aiResponse.questions && aiResponse.questions.length > 0
+      ? aiResponse.questions
+      : orchestrator.questions;
 
-    // Append questions to reply if any
-    const fullReply = questions.length > 0
-      ? `${reply}\n\n${questions.map((q) => `· ${q}`).join('\n')}`
-      : reply;
-
-    // Build finding if present
     let finding: AgentFinding | undefined;
     if (aiResponse.finding) {
-      const f = aiResponse.finding;
       finding = makeFinding(
         `find-${Date.now()}`,
         orchestrator.nextAgent,
         orchestrator.nextPhase,
         {
-          title: f.title,
-          summary: f.summary,
-          evidence: f.evidence || [],
-          risks: f.risks || [],
-          missingInfo: f.missingInfo || [],
-          suggestions: f.suggestions || [],
-          decisionStatus: f.decisionStatus || orchestrator.decisionStatus,
+          title: aiResponse.finding.title,
+          summary: aiResponse.finding.summary,
+          evidence: aiResponse.finding.evidence || [],
+          risks: aiResponse.finding.risks || [],
+          missingInfo: aiResponse.finding.missingInfo || [],
+          suggestions: aiResponse.finding.suggestions || [],
+          decisionStatus: aiResponse.finding.decisionStatus || orchestrator.decisionStatus,
         },
       );
     }
 
-    // Build brief patch if present
     let briefPatch: Partial<ProductBrief> | undefined;
     if (aiResponse.updates?.patch && aiResponse.updates?.targetStage) {
       briefPatch = applyAgentPatchToBrief({
@@ -210,30 +207,28 @@ export async function runAgentTurn(input: {
       });
     }
 
-    // Save agent message
-    const agentMsg = makeMessage('agent', fullReply, orchestrator.nextAgent, {
-      phase: orchestrator.nextPhase,
+    const agentMsg = makeMessage('agent', reply, orchestrator.nextAgent, {
+      phase: finalPhase(orchestrator),
       decisionStatus: orchestrator.decisionStatus,
+      questions: questions.length > 0 ? questions : undefined,
     });
     workflow = appendAgentMessage(brief.id, agentMsg);
 
-    // Save finding
     if (finding) {
       workflow = addAgentFinding(brief.id, finding);
     }
 
-    // Update phase
-    workflow = updateWorkflowPhase(brief.id, orchestrator.nextPhase);
+    workflow = updateWorkflowPhase(brief.id, finalPhase(orchestrator));
 
     return {
       workflow,
       briefPatch,
-      reply: fullReply,
+      reply,
+      questions,
       finding,
       orchestrator,
     };
   } catch (error) {
-    // AI call failed — fallback to local orchestrator reply
     console.warn('[Agent] AI turn failed, using local orchestrator fallback:', error);
 
     const errorHint = error instanceof VibeAIError
@@ -242,15 +237,17 @@ export async function runAgentTurn(input: {
 
     const fallbackReply = orchestrator.reply + errorHint;
     const agentMsg = makeMessage('agent', fallbackReply, orchestrator.nextAgent, {
-      phase: orchestrator.nextPhase,
+      phase: finalPhase(orchestrator),
       decisionStatus: orchestrator.decisionStatus,
+      questions: orchestrator.questions.length > 0 ? orchestrator.questions : undefined,
     });
     appendAgentMessage(brief.id, agentMsg);
-    workflow = updateWorkflowPhase(brief.id, orchestrator.nextPhase);
+    workflow = updateWorkflowPhase(brief.id, finalPhase(orchestrator));
 
     return {
       workflow,
       reply: fallbackReply,
+      questions: orchestrator.questions,
       orchestrator,
     };
   }
@@ -258,12 +255,12 @@ export async function runAgentTurn(input: {
 
 /**
  * Send a welcome message when entering the Agent workspace.
+ * Only sends if no messages exist — prevents duplicate welcomes on history resume.
  */
 export function sendWelcomeMessage(brief: ProductBrief): AgentWorkflowState {
   const existing = getAgentWorkflow(brief.id);
   const workflow = existing || createWf(brief.id);
 
-  // Only send welcome if no messages exist
   if (workflow.messages.length > 0) return workflow;
 
   const orchestrator = runLocalOrchestrator({

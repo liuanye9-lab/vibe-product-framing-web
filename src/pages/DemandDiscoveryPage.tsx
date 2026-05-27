@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, RefreshCw, Settings } from 'lucide-react';
+import { Loader2, RefreshCw, Settings, Bot } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
@@ -121,7 +121,7 @@ export default function DemandDiscoveryPage() {
       previousPath="/new"
       nextPath={`/scope/${brief.id}`}
       nextLabel="进入第一版决策"
-      aside={<Aside mode={brief.mode} view={view} onViewChange={setView} generating={generating} onGenerate={view === 'detail' ? generateDetail : generateSummary} error={error} onSettings={() => navigate('/settings')} />}
+      aside={<Aside mode={brief.mode} view={view} onViewChange={setView} generating={generating} onGenerate={view === 'detail' ? generateDetail : generateSummary} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
     >
       {view === 'focus' ? (
         <DecisionCard
@@ -152,7 +152,7 @@ export default function DemandDiscoveryPage() {
   );
 }
 
-function Aside({ mode, view, onViewChange, generating, onGenerate, error, onSettings }: { mode: string; view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void }) {
+function Aside({ mode, view, onViewChange, generating, onGenerate, error, onSettings, onSwitchAgent }: { mode: string; view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; onSettings: () => void; onSwitchAgent: () => void }) {
   const modeLabel = mode === 'review' ? 'Review Mode · 审查已有方案' : mode === 'builder' ? 'Standard Mode · 30 分钟认真构思' : 'Quick Mode · 10 分钟出方案';
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
@@ -176,6 +176,9 @@ function Aside({ mode, view, onViewChange, generating, onGenerate, error, onSett
       <button className="vp-btn vp-btn-ghost" onClick={onGenerate} disabled={generating} style={{ width: '100%' }}>
         {generating ? <Loader2 size={14} className="vp-spin" /> : <RefreshCw size={14} />}
         {generating ? 'AI 正在生成...' : '重新生成诊断'}
+      </button>
+      <button className="vp-btn vp-btn-ghost" onClick={onSwitchAgent} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
+        <Bot size={14} /> 切换到 Agent 工作流
       </button>
     </div>
   );

@@ -44,6 +44,7 @@ export interface AgentMessage {
     decisionStatus?: AgentDecisionStatus;
     referencedFields?: string[];
     toolCalls?: string[];
+    questions?: string[];
   };
 }
 
