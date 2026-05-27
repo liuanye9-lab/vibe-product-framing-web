@@ -1,12 +1,12 @@
-import { Brain, ChevronLeft, ChevronRight, Home } from 'lucide-react';
+import { Brain, ChevronLeft, ChevronRight, Home, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 const STAGES = [
-  { label: 'Idea Diagnosis', path: 'discovery' },
-  { label: 'MVP Decision', path: 'scope' },
-  { label: 'Tech Decision', path: 'technical' },
-  { label: 'Handoff', path: 'handoff' },
+  { label: 'Idea 诊断', path: 'discovery' },
+  { label: 'MVP 决策', path: 'scope' },
+  { label: '技术决策', path: 'technical' },
+  { label: '交付文档', path: 'handoff' },
 ];
 
 interface StageLayoutProps {
@@ -48,34 +48,77 @@ export default function StageLayout({
 
   return (
     <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* ── Header ── */}
       <header className="vp-header">
         <div className="vp-header-inner" style={{ justifyContent: 'space-between' }}>
+          {/* Left: Home + Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回首页">
-              <Home size={16} />
+            <button
+              className="vp-btn-text"
+              onClick={() => navigate('/')}
+              style={{ padding: '6px', borderRadius: 'var(--radius-md)' }}
+              title="返回首页"
+            >
+              <Home size={15} />
             </button>
-            <Brain size={18} style={{ color: 'var(--color-primary)' }} />
-            <span style={{ fontWeight: 600, fontSize: 14 }}>VibePilot Copilot</span>
+
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 10px',
+              borderRadius: 'var(--radius-full)',
+              background: 'linear-gradient(135deg, rgba(224,74,59,0.08), rgba(30,58,76,0.04))',
+            }}>
+              <Brain size={16} style={{ color: 'var(--color-primary)' }} />
+              <span style={{ fontWeight: 700, fontSize: 13, letterSpacing: '-0.01em' }}>VibePilot</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+
+          {/* Right: Stage Pills */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            background: 'rgba(255,255,255,0.38)',
+            padding: '3px',
+            borderRadius: 'var(--radius-full)',
+            border: '1px solid rgba(255,255,255,0.52)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+          }}>
             {STAGES.map((stage, index) => {
               const active = index === current;
+              const done = index < current;
               const enabled = Boolean(briefId);
               const path = `/${stage.path}/${briefId}`;
+
               return (
                 <button
                   key={stage.label}
-                  className="vp-btn-text"
+                  className="vp-step-btn"
                   disabled={!enabled}
                   onClick={() => enabled && navigate(path)}
                   style={{
                     fontSize: 11,
-                    padding: '4px 8px',
-                    borderRadius: 999,
-                    background: active ? 'var(--color-primary-light)' : 'transparent',
-                    color: active ? 'var(--color-primary)' : 'var(--color-text-hint)',
+                    padding: '5px 12px',
+                    background: active
+                      ? 'linear-gradient(135deg, rgba(224,74,59,0.10), rgba(30,58,76,0.04))'
+                      : done
+                        ? 'rgba(74,156,129,0.06)'
+                        : 'transparent',
+                    color: active
+                      ? 'var(--vp-coral)'
+                      : done
+                        ? 'var(--color-success)'
+                        : 'var(--color-text-hint)',
+                    fontWeight: active ? 700 : done ? 600 : 500,
+                    border: active
+                      ? '1px solid rgba(224,74,59,0.16)'
+                      : done
+                        ? '1px solid rgba(74,156,129,0.14)'
+                        : '1px solid transparent',
                   }}
                 >
+                  {done && <Check size={10} />}
                   {stage.label}
                 </button>
               );
@@ -84,29 +127,70 @@ export default function StageLayout({
         </div>
       </header>
 
-      <main style={{ flex: 1, padding: '2rem' }}>
-        <div style={{ maxWidth: aside ? 1120 : 880, margin: '0 auto' }}>
-          <div style={{ marginBottom: 28 }}>
-            <h1 style={{ fontSize: 28, fontWeight: 650, letterSpacing: '-0.02em', marginBottom: 8 }}>{title}</h1>
-            <p style={{ fontSize: 15, color: 'var(--color-text-secondary)', lineHeight: 1.8, maxWidth: 720 }}>{subtitle}</p>
+      {/* ── Main Content ── */}
+      <main style={{ flex: 1, padding: '2.5rem 2rem' }}>
+        <div style={{ maxWidth: aside ? 1160 : 880, margin: '0 auto' }}>
+          {/* Title Section */}
+          <div style={{ marginBottom: 32 }}>
+            <h1 style={{
+              fontSize: 30,
+              fontWeight: 700,
+              letterSpacing: '-0.03em',
+              marginBottom: 10,
+              color: 'var(--vp-navy)',
+            }}>
+              {title}
+            </h1>
+            <p style={{
+              fontSize: 15,
+              color: 'var(--color-text-secondary)',
+              lineHeight: 1.8,
+              maxWidth: 720,
+            }}>
+              {subtitle}
+            </p>
           </div>
 
-          <div style={{ display: aside ? 'grid' : 'block', gridTemplateColumns: aside ? 'minmax(0, 1fr) 320px' : undefined, gap: 24, alignItems: 'start' }}>
+          {/* Body + Aside Layout */}
+          <div style={{
+            display: aside ? 'grid' : 'block',
+            gridTemplateColumns: aside ? 'minmax(0, 1fr) 340px' : undefined,
+            gap: 24,
+            alignItems: 'start',
+          }}>
             <section>{children}</section>
             {aside && <aside>{aside}</aside>}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 32, paddingTop: 20, borderTop: '1px solid var(--color-border)' }}>
+          {/* Bottom Navigation Bar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: 36,
+            paddingTop: 22,
+            borderTop: '1px solid rgba(30,58,76,0.08)',
+          }}>
             {previousPath ? (
-              <button className="vp-btn vp-btn-ghost" onClick={() => navigate(previousPath)}>
-                <ChevronLeft size={14} />
+              <button
+                className="vp-btn vp-btn-ghost"
+                onClick={() => navigate(previousPath)}
+                style={{ fontSize: 13 }}
+              >
+                <ChevronLeft size={15} />
                 上一步
               </button>
             ) : <span />}
+
             {(nextPath || onNext) && (
-              <button className="vp-btn vp-btn-primary" onClick={goNext} disabled={nextDisabled}>
+              <button
+                className="vp-btn vp-btn-primary"
+                onClick={goNext}
+                disabled={nextDisabled}
+                style={{ fontSize: 13, padding: '10px 22px' }}
+              >
                 {nextLabel}
-                <ChevronRight size={14} />
+                <ChevronRight size={15} />
               </button>
             )}
           </div>
