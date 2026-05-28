@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Bot, Check, Copy, Download, Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import DecisionCard from '../components/DecisionCard';
-import { buildLocalHandoff, getAIErrorMessage, isAIReady, optimizeHandoff } from '../api/evaluate';
+import { getAIErrorMessage, isAIReady, optimizeHandoff } from '../api/evaluate';
 import { applyHandoffFixes } from '../evaluation/applyHandoffFixes';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { toDisplayText, toDisplayList } from '../lib/utils';
@@ -113,18 +113,19 @@ export default function DeveloperHandoffPage() {
     }
   }, [brief, refreshTraces]);
 
-  const generate = useCallback(async (useAI = false) => {
+  const generate = useCallback(async () => {
     if (!brief || generating) return;
-    if (useAI && !isAIReady()) {
+    if (!isAIReady()) {
       setError(AI_NOT_READY_MESSAGE);
       return;
     }
     setGenerating(true);
     setError('');
     try {
-      const handoff = useAI ? await optimizeHandoff(brief) : buildLocalHandoff(brief);
+      // V4.4: Only AI-generated handoff. No local-rule fallback.
+      const handoff = await optimizeHandoff(brief);
       saveFinalHandoff(handoff);
-      writeTrace(handoff, useAI);
+      writeTrace(handoff, true);
       writeSnapshot(handoff, 'generate');
     } catch (err) {
       setError(getAIErrorMessage(err));
@@ -151,7 +152,7 @@ export default function DeveloperHandoffPage() {
     const requestKey = `${brief.id}:handoff-enhanced-v14`;
     if (needsEnhancedHandoff && autoRequestedRef.current !== requestKey) {
       autoRequestedRef.current = requestKey;
-      generate(false);
+      generate();
     }
   }, [brief, generate, loading, refreshSnapshots, refreshTraces]);
 
@@ -209,7 +210,7 @@ export default function DeveloperHandoffPage() {
       current={3}
       briefId={brief.id}
       previousPath={`/technical/${brief.id}`}
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={() => generate(true)} onDownload={download} onExportCaseStudy={exportCaseStudy} hasHandoff={Boolean(handoff)} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} onDownload={download} onExportCaseStudy={exportCaseStudy} hasHandoff={Boolean(handoff)} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
     >
       {view === 'focus' && (
         <DecisionCard
@@ -217,8 +218,8 @@ export default function DeveloperHandoffPage() {
           glossaryKey="acceptanceCriteria"
           accepted={Boolean(handoff?.developmentPrompt)}
           loading={generating}
-          onAccept={() => generate(true)}
-          onSimplify={() => generate(false)}
+          onAccept={() => generate()}
+          onSimplify={generate}
           editableValue={toDisplayText(handoff?.developmentPrompt)}
           onEdit={() => undefined}
         />

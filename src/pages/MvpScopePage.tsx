@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Settings, Bot } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import SuggestionCard from '../components/SuggestionCard';
 import DecisionCard from '../components/DecisionCard';
 import ScopeCreepWarning from '../components/ScopeCreepWarning';
-import { buildLocalMvpSuggestions, detectScopeCreep, explainSuggestion, getAIErrorMessage, isAIReady, isVibeAIError, suggestStage } from '../api/evaluate';
+import { detectScopeCreep, explainSuggestion, getAIErrorMessage, isAIReady, suggestStage } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { toDisplayText } from '../lib/utils';
 import { extractCoreDecision } from '../rules/coreDecisionExtractor';
@@ -30,10 +30,9 @@ export default function MvpScopePage() {
   const [error, setError] = useState('');
   const [view, setView] = useState<'focus' | 'detail'>('focus');
   const [aiAttempted, setAiAttempted] = useState(false);
-  const autoRequestedRef = useRef<string | null>(null);
+  // V4.4: auto-request removed — no local pre-fill. User triggers AI manually.
 
   const hasMvpData = Boolean(brief?.stages.mvp.mustHave || brief?.stages.mvp.minimumLoop || brief?.stages.mvp.outOfScope);
-  const isLocalRule = brief?.stages.mvp.mustHave?.source === 'local-rule';
 
   const generate = useCallback(async () => {
     if (!brief || generating) return;
@@ -47,44 +46,17 @@ export default function MvpScopePage() {
       const suggestions = await suggestStage('mvp', brief);
       updateStage<MvpScopeState>('mvp', suggestions);
       setAiAttempted(true);
-      // Check if result is local-rule (fallback in suggestStage for timeout/json_parse/validation)
-      if (suggestions.mustHave?.source === 'local-rule') {
-        const reason = suggestions.mustHave?.reason || '';
-        const isJsonIssue = reason.includes('不是有效 JSON') || reason.includes('格式');
-        const isTimeout = reason.includes('超时');
-        const msg = isTimeout
-          ? 'AI 生成 MVP 范围超时，已切换为本地规则草案。你可以先继续下一步，也可以稍后重新生成。'
-          : isJsonIssue
-            ? 'AI 返回格式不稳定，已切换为本地 MVP 草案。你可以继续下一步，也可以稍后重新点击 AI 优化。'
-            : 'AI 生成未成功，已切换为本地 MVP 草案。你可以继续下一步，也可以稍后重新点击 AI 优化。';
-        setError(msg);
-      }
     } catch (err) {
-      // suggestStage now handles json_parse/timeout internally for MVP,
-      // but catch any unexpected errors
-      const msg = getAIErrorMessage(err);
-      if (isVibeAIError(err, 'timeout') || isVibeAIError(err, 'json_parse')) {
-        const localDraft = buildLocalMvpSuggestions(brief);
-        updateStage<MvpScopeState>('mvp', localDraft);
-        setAiAttempted(true);
-        setError('AI 返回格式不稳定，已切换为本地 MVP 草案。你可以继续下一步，也可以稍后重新点击 AI 优化。');
-      } else {
-        setError(msg);
-      }
+      // V4.4: No local-rule fallback. Show error and let user fix API.
+      setError(getAIErrorMessage(err));
     } finally {
       setGenerating(false);
     }
   }, [brief, generating, updateStage]);
 
   useEffect(() => {
-    if (!brief || loading) return;
-    const requestKey = `${brief.id}:mvp-draft`;
-    if (!hasMvpData && autoRequestedRef.current !== requestKey) {
-      autoRequestedRef.current = requestKey;
-      // Pre-fill with local-rule draft immediately, don't block on AI
-      const localDraft = buildLocalMvpSuggestions(brief);
-      updateStage<MvpScopeState>('mvp', localDraft);
-    }
+    // V4.4: No local-rule pre-fill. User must trigger AI generation manually.
+    void brief; void loading; void hasMvpData; void updateStage;
   }, [brief, loading, hasMvpData, updateStage]);
 
   if (loading || !brief) return <Loader />;
@@ -101,7 +73,7 @@ export default function MvpScopePage() {
       previousPath={`/discovery/${brief.id}`}
       nextPath={`/technical/${brief.id}`}
       nextLabel="进入技术决策"
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} isLocalRule={isLocalRule} aiAttempted={aiAttempted} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} error={error} aiAttempted={aiAttempted} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
     >
       <ScopeCreepWarning terms={creepTerms} warning={brief.stages.mvp.scopeCreepWarning} />
       {view === 'focus' ? (
@@ -135,12 +107,12 @@ export default function MvpScopePage() {
   );
 }
 
-function Aside({ view, onViewChange, generating, onGenerate, error, isLocalRule, aiAttempted, onSettings, onSwitchAgent }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; isLocalRule: boolean; aiAttempted: boolean; onSettings: () => void; onSwitchAgent: () => void }) {
+function Aside({ view, onViewChange, generating, onGenerate, error, aiAttempted, onSettings, onSwitchAgent }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; error: string; aiAttempted: boolean; onSettings: () => void; onSwitchAgent: () => void }) {
   const buttonLabel = generating
     ? 'AI 正在生成...'
-    : isLocalRule && !aiAttempted
-      ? 'AI 优化范围建议'
-      : '重新生成范围建议';
+    : aiAttempted
+      ? '重新生成范围建议'
+      : 'AI 生成范围建议';
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第二关：第一版决策</h3>

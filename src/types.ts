@@ -1,6 +1,6 @@
 export type SuggestionValue = string | string[] | number | boolean;
 
-export type OutputSource = 'ai' | 'mock' | 'local-rule';
+export type OutputSource = 'ai' | 'error' | 'local-rule' | 'mock';
 
 export type ProjectType = 'Web App' | 'AI Agent' | 'SaaS' | 'Portfolio' | 'Other';
 

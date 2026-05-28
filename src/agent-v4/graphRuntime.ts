@@ -1,12 +1,10 @@
 /**
- * Agent Graph Runtime V4.1 — Anti-Loop & Slot-Aware Execution Engine.
+ * Agent Graph Runtime V4.4 — API Required Runtime Lock.
  *
- * Key improvements over V4.0:
- * 1. Intent parsed BEFORE calling nodes → continue/skip/assume bypass slot checks.
- * 2. SlotFillingState tracks what's been asked/assumed/skipped.
- * 3. QuestionLedger prevents repeating the same question.
- * 4. AskedCount >= 2 → auto-assume instead of asking again.
- * 5. Max 2 nodes per turn, max 5 commands per turn.
+ * V4.4 changes:
+ * - assertApiReady() must pass before any AI turn.
+ * - No local-rule or mock fallback on AI failure.
+ * - AI failure → status='failed', no phase advancement.
  */
 
 import type { ProductBrief } from '../types';
@@ -40,6 +38,7 @@ import { generateDefaultAssumptions } from './defaultAssumptions';
 
 // AI integration
 import { callCopilotJson, getAIConfig, VibeAIError } from '../api/evaluate';
+import { assertApiReady } from '../api/apiHealth';
 import { getNodeLabel } from './graph';
 
 // Node runners
@@ -54,7 +53,9 @@ import { runHandoffNode } from './nodes/handoffNode';
 import { runReviewerNode } from './nodes/reviewerNode';
 import { runReflectionNode } from './nodes/reflectionNode';
 
-const NODE_RUNNERS: Record<string, typeof runOrchestratorNode> = {
+// Node runners (kept for reference; V4.4 local fallback removed)
+void (function registerNodeRunners() {
+  const runners: Record<string, typeof runOrchestratorNode> = {
   orchestrator: runOrchestratorNode,
   intake: runIntakeNode,
   demand: runDemandNode,
@@ -65,7 +66,9 @@ const NODE_RUNNERS: Record<string, typeof runOrchestratorNode> = {
   handoff: runHandoffNode,
   reviewer: runReviewerNode,
   reflection: runReflectionNode,
-};
+  };
+  void runners;
+})();
 
 const MAX_COMMANDS_PER_TURN = 5;
 
@@ -104,7 +107,10 @@ export async function runAgentGraphTurn(input: {
   const briefId = brief.id;
   const events: AgentGraphEvent[] = [];
 
-  // 1. Get or create session, init slot filling
+  // 1. Assert API ready (V4.4: no local-rule fallback)
+  assertApiReady();
+
+  // 2. Get or create session, init slot filling
   let session = getGraphSession(briefId);
   if (!session) session = createGraphSession(brief);
 
@@ -574,132 +580,28 @@ ${userMessage}
     return { session, briefPatch, events, userVisibleReply: aiResult.reply, interrupted };
   }
 
-  // AI unavailable or failed — fallback to local business node
-  onProgress({ phase: 'running_node', message: '使用本地规则执行节点' });
-  const targetNodeId = orchResult.nextNodeId || session.state.currentNodeId;
-  if (targetNodeId !== 'orchestrator' && targetNodeId !== 'human_interrupt' && targetNodeId !== 'end' && NODE_RUNNERS[targetNodeId]) {
-    onProgress({ phase: 'running_node', message: `运行节点: ${targetNodeId}` });
-    const runner = NODE_RUNNERS[targetNodeId];
+  // V4.4: AI unavailable or failed — no local-rule fallback. Mark session as failed.
+  onProgress({ phase: 'failed', message: 'AI 调用失败，本轮未生成结果。' });
 
-    events.push(createGraphEvent({
-      sessionId: session.id, briefId: session.briefId, type: 'node_started',
-      nodeId: targetNodeId, message: `进入 ${targetNodeId} 节点`,
-    }));
-    session = appendGraphEvent(session, events[events.length - 1]);
+  session = {
+    ...session,
+    state: { ...session.state, status: 'failed', updatedAt: new Date().toISOString() },
+  };
 
-    let nodeResult;
-    try {
-      nodeResult = await runner({ brief: { ...brief, ...briefPatch }, session, userMessage });
-    } catch (e) {
-      events.push(createGraphEvent({
-        sessionId: session.id, briefId: session.briefId, type: 'error',
-        nodeId: targetNodeId, message: `${targetNodeId} 执行失败: ${String(e)}`,
-      }));
-      return { session: { ...session, state: { ...session.state, status: 'waiting_user' } }, briefPatch, events, userVisibleReply: '处理出错，请重试或说「继续下一步」跳过当前节点。', interrupted: true };
-    }
-
-    events.push(createGraphEvent({
-      sessionId: session.id, briefId: session.briefId, type: 'node_completed',
-      nodeId: targetNodeId, message: nodeResult.reply.slice(0, 200),
-    }));
-
-    const nodeExecResult = await executeCommands({ session, brief: { ...brief, ...briefPatch }, commands: nodeResult.commands, nodeId: targetNodeId });
-    session = nodeExecResult.session;
-    events.push(...nodeExecResult.events);
-    if (nodeExecResult.briefPatch) briefPatch = { ...briefPatch, ...nodeExecResult.briefPatch };
-
-    // V4.1: If nodeResult.shouldInterrupt, check if slots have been asked too many times
-    if (nodeResult.shouldInterrupt) {
-      const slotState = session.state.slotFilling!;
-      const missing = getMissingRequiredSlots({ slotState, phase: targetNodeId });
-      const unaskables = missing.filter((s) => s.askedCount >= 2);
-
-      if (unaskables.length > 0) {
-        // Auto-assume slots that have been asked too many times
-        events.push(createGraphEvent({
-          sessionId: session.id, briefId: session.briefId, type: 'repeated_question_prevented',
-          nodeId: targetNodeId,
-          message: `防止重复追问: ${unaskables.map((s) => s.label).join(', ')}`,
-        }));
-        let newSlotState = slotState;
-        const assumptions = generateDefaultAssumptions({ brief, phase: targetNodeId, missingSlots: unaskables });
-        for (const a of assumptions) {
-          newSlotState = markSlotAssumed({ slotState: newSlotState, key: a.slotKey, value: a.value });
-        }
-        for (const ms of unaskables) {
-          if (!assumptions.find((a) => a.slotKey === ms.key)) {
-            newSlotState = markSlotSkipped({ slotState: newSlotState, key: ms.key });
-          }
-        }
-        session = { ...session, state: { ...session.state, slotFilling: newSlotState } };
-
-        // Force advance
-        const nextId = getDefaultNextNode(targetNodeId);
-        if (nextId !== targetNodeId) {
-          session = {
-            ...session,
-            state: { ...session.state, previousNodeId: targetNodeId, currentNodeId: nextId as AgentNodeId, status: 'idle' },
-          };
-          events.push(createGraphEvent({
-            sessionId: session.id, briefId: session.briefId, type: 'phase_advanced',
-            nodeId: targetNodeId, message: `自动推进: ${targetNodeId} → ${nextId}`,
-          }));
-        }
-        saveGraphSession(session);
-        return { session, briefPatch, events, userVisibleReply: '为了不阻塞流程，已自动使用默认假设并进入下一阶段。', interrupted: false };
-      }
-    }
-
-    const newStatus = nodeResult.shouldInterrupt ? 'waiting_user' : (nodeResult.nextNodeId === 'end' ? 'completed' : 'idle');
-    session = {
-      ...session,
-      state: {
-        ...session.state,
-        previousNodeId: session.state.currentNodeId,
-        currentNodeId: (nodeResult.nextNodeId || session.state.currentNodeId) as AgentNodeId,
-        status: newStatus, activeAgentName: targetNodeId,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-
-    const agentEvent = createGraphEvent({
-      sessionId: session.id, briefId: session.briefId, type: 'agent_message',
-      nodeId: targetNodeId, message: nodeResult.reply.slice(0, 300),
-    });
-    session = appendGraphEvent(session, agentEvent);
-    events.push(agentEvent);
-
-    if (!session.state.userGoal && brief.rawIdea) {
-      session = { ...session, state: { ...session.state, userGoal: brief.rawIdea } };
-    }
-
-    saveGraphSession(session);
-    return { session, briefPatch, events, userVisibleReply: nodeResult.reply, interrupted: nodeResult.shouldInterrupt };
-  }
-
-  // Handle human_interrupt / end
-  if (targetNodeId === 'human_interrupt') {
-    session = {
-      ...session,
-      state: { ...session.state, status: 'waiting_user', currentNodeId: 'human_interrupt', previousNodeId: session.state.currentNodeId, updatedAt: new Date().toISOString() },
-    };
-    saveGraphSession(session);
-    return { session, briefPatch, events, userVisibleReply: orchResult.reply, interrupted: true };
-  }
-  if (targetNodeId === 'end') {
-    session = {
-      ...session,
-      state: { ...session.state, status: 'completed', currentNodeId: 'end', previousNodeId: session.state.currentNodeId, updatedAt: new Date().toISOString() },
-    };
-    saveGraphSession(session);
-    return { session, briefPatch, events, userVisibleReply: orchResult.reply || '工作流已完成。', interrupted: false };
-  }
+  events.push(createGraphEvent({
+    sessionId: session.id, briefId: session.briefId, type: 'error',
+    message: 'API 调用失败，本轮 Agent 未执行。请检查 API 配置后重试。',
+  }));
 
   saveGraphSession(session);
-  return { session, briefPatch, events, userVisibleReply: orchResult.reply, interrupted: false };
+  return {
+    session, briefPatch, events,
+    userVisibleReply: 'API 调用失败，本轮 Agent 未执行。请检查 API 配置后重试。',
+    interrupted: false,
+  };
 }
 
-// ---- Command Executor (unchanged from V4.0, keeps all tool mappings) ----
+// ---- Command Executor ----
 
 async function executeCommands(input: {
   session: AgentGraphSession; brief: ProductBrief; commands: AgentGraphCommand[]; nodeId: AgentNodeId;

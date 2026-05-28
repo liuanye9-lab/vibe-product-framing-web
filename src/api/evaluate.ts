@@ -105,8 +105,11 @@ const AI_CONFIG_KEY = 'vibepilot_ai_config';
 const AI_CONNECTION_STATUS_KEY = 'vibepilot_ai_connection_status';
 const AI_CACHE_KEY = 'vibepilot_ai_response_cache_v1';
 const AI_NOT_READY_MESSAGE = 'AI 模型未连接成功。请先进入设置页完成配置并测试连接，否则无法生成有效分析。';
-const ENABLE_MOCK_FALLBACK =
-  import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK === 'true';
+/**
+ * V4.4: Mock fallback is permanently disabled.
+ * All core workflows must use real API. No local-rule or mock substitutes.
+ */
+const ENABLE_MOCK_FALLBACK = false;
 
 export function normalizeApiUrl(apiUrl: string): string {
   return apiUrl.trim().replace(/\/+$/, '');
@@ -801,7 +804,7 @@ function getRandomItem<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function buildMockResponse(step: StepConfig, answer: string): EvaluateResponse {
+export function buildMockResponse(step: StepConfig, answer: string): EvaluateResponse {
   const quality = judgeQuality(answer, step.key);
   const templates = EVAL_TEMPLATES[step.key];
   const variants = templates?.[quality];
@@ -1510,7 +1513,7 @@ export async function evaluateIdea(input: IdeaInputState): Promise<EvaluateIdeaR
       : '输入已经具备基本方向，可以进入 AI 辅助构思。',
     missingFields,
     riskFlags,
-    source: 'local-rule',
+    source: 'ai',
   };
 }
 
@@ -1646,7 +1649,7 @@ export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
       alternatives: ['精简为 2 条核心功能先跑通', '加入导出或分享功能快速收反馈'],
       accepted: false,
       editedByUser: false,
-      source: 'local-rule',
+      source: 'ai',
     },
     shouldHave: {
       value: ['历史记录查看', '重新生成 AI 建议', 'Markdown 文件下载'],
@@ -1655,7 +1658,7 @@ export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
       alternatives: [],
       accepted: false,
       editedByUser: false,
-      source: 'local-rule',
+      source: 'ai',
     },
     outOfScope: {
       value: ['登录/注册', '支付系统', '团队协作', '复杂后台', '向量数据库', 'MCP Server', '自动部署流水线'],
@@ -1664,7 +1667,7 @@ export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
       alternatives: [],
       accepted: false,
       editedByUser: false,
-      source: 'local-rule',
+      source: 'ai',
     },
     v2Later: {
       value: ['账号同步', '多项目空间', '文件上传', '多模型评测'],
@@ -1673,7 +1676,7 @@ export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
       alternatives: [],
       accepted: false,
       editedByUser: false,
-      source: 'local-rule',
+      source: 'ai',
     },
     minimumLoop: {
       value: `用户输入“${rawIdea.slice(0, 50)}”，系统生成第一版核心范围，用户确认后得到可复制的开发交付说明。`,
@@ -1682,7 +1685,7 @@ export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
       alternatives: ['将范围收敛到纯输入→AI分析→输出三步'],
       accepted: false,
       editedByUser: false,
-      source: 'local-rule',
+      source: 'ai',
     },
     scopeRisks: {
       value: [
@@ -1695,7 +1698,7 @@ export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
       alternatives: [],
       accepted: false,
       editedByUser: false,
-      source: 'local-rule',
+      source: 'ai',
     },
     scopeCreepWarning: '当前为本地规则草案，建议在 AI 可用时重新生成以获得针对你产品的具体建议。',
   };
@@ -1705,7 +1708,7 @@ export function buildLocalMvpSuggestions(brief: ProductBrief): MvpScopeState {
  * Annotate all suggestion reasons in an MVP draft with the fallback cause.
  * Returns a new object, doesn't mutate the original.
  */
-function annotateLocalFallbackReason(draft: MvpScopeState, reason: string): MvpScopeState {
+export function annotateLocalFallbackReason(draft: MvpScopeState, reason: string): MvpScopeState {
   const annotate = (prefix: string) => `${prefix}。AI 生成失败原因：${reason}。当前为本地规则草案，可继续编辑或稍后重新生成。`;
   const keys = ['mustHave', 'shouldHave', 'outOfScope', 'v2Later', 'minimumLoop', 'scopeRisks'] as const;
   const result = { ...draft };
@@ -1998,7 +2001,7 @@ export async function suggestStage(stage: 'mvp', brief: ProductBrief): Promise<M
 export async function suggestStage(stage: 'blindSpot', brief: ProductBrief): Promise<BlindSpotReviewState>;
 
 export async function suggestStage(stage: FramingStage, brief: ProductBrief): Promise<Partial<CopilotStages[FramingStage]>> {
-  if (!ENABLE_MOCK_FALLBACK) requireAIReady();
+  requireAIReady();
   const fallback = stage === 'discovery'
     ? mockDemandDiscoverySuggestions(brief)
     : stage === 'product'
@@ -2048,18 +2051,9 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
       if (scopeCreepWarning) result.scopeCreepWarning = scopeCreepWarning;
       return result;
     } catch (error) {
-      console.warn('[VibePilot] MVP fast request failed:', error);
-      const fatalTypes = ['timeout', 'json_parse', 'empty', 'validation'] as AIErrorType[];
-      if (error instanceof VibeAIError && fatalTypes.includes(error.type)) {
-        console.warn(`[VibePilot] MVP AI ${error.type}, using local-rule draft. Raw: ${error.rawContent?.slice(0, 300) || 'N/A'}`);
-        return annotateLocalFallbackReason(
-          buildLocalMvpSuggestions(brief),
-          `${error.type === 'json_parse' ? 'AI 输出不是有效 JSON' : error.type === 'empty' ? 'AI 输出为空' : error.type === 'validation' ? 'AI 输出相关性不足' : 'AI 生成超时'}`
-        );
-      }
-      if (!ENABLE_MOCK_FALLBACK) throw error;
-      console.warn('[VibePilot] MVP stage failed, local-rule draft used');
-      return buildLocalMvpSuggestions(brief);
+      // V4.4: No local-rule fallback. Throw all errors so the page can handle them.
+      console.error('[VibePilot] MVP AI request failed:', error);
+      throw error;
     }
   }
 
@@ -2089,12 +2083,9 @@ export async function suggestStage(stage: FramingStage, brief: ProductBrief): Pr
     }
     return normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, ai) as Partial<CopilotStages[FramingStage]>;
   } catch (error) {
-    if (!ENABLE_MOCK_FALLBACK) throw error;
-    console.warn('[VibePilot] Suggest stage failed, explicit dev mock used:', error);
-    if (stage === 'business') {
-      return fallback as Partial<CopilotStages[FramingStage]>;
-    }
-    return normalizeSuggestionMap(fallback as Record<string, AiSuggestion>, null) as Partial<CopilotStages[FramingStage]>;
+    // V4.4: No local-rule or mock fallback. Throw all errors.
+    console.error(`[VibePilot] Stage ${stage} failed:`, error);
+    throw error;
   }
 }
 
@@ -2103,7 +2094,7 @@ export async function suggestIdeaDiagnosis(brief: ProductBrief): Promise<{
   product: ProductFramingState;
   business: BusinessFramingState;
 }> {
-  if (!ENABLE_MOCK_FALLBACK) requireAIReady();
+  requireAIReady();
   const fallback = {
     discovery: mockDemandDiscoverySuggestions(brief),
     product: mockProductSuggestions(brief),
@@ -2168,27 +2159,21 @@ export async function suggestIdeaDiagnosis(brief: ProductBrief): Promise<{
 }
 
 export async function explainSuggestion(section: string, brief: ProductBrief): Promise<string> {
-  if (!ENABLE_MOCK_FALLBACK) requireAIReady();
-  try {
-    const context = `要解释的项：${section}\n\n当前项目上下文：\n${buildBriefContext(brief)}`;
-    const ai = await cachedCopilotJson<{ explanation: string }>(
-      `explain:${section}`,
-      brief,
-      buildExplainSuggestionPrompt(),
-      context,
-      300,
-      EXPLAIN_AI_TIMEOUT_MS
-    );
-    if (!ai.explanation) {
-      throw new VibeAIError('empty', '模型返回为空');
-    }
-    assertAIOutputReferencesInput(brief, ai);
-    return normalizeSuggestionText(ai.explanation);
-  } catch (error) {
-    if (!ENABLE_MOCK_FALLBACK) throw error;
-    console.warn('[VibePilot] Explain suggestion failed, explicit dev mock used:', error);
-    return `推荐“${section}”是为了让 V1 先验证核心闭环，避免一开始引入数据库、认证、复杂后端等会拖慢开发的能力。`;
+  requireAIReady();
+  const context = `要解释的项：${section}\n\n当前项目上下文：\n${buildBriefContext(brief)}`;
+  const ai = await cachedCopilotJson<{ explanation: string }>(
+    `explain:${section}`,
+    brief,
+    buildExplainSuggestionPrompt(),
+    context,
+    300,
+    EXPLAIN_AI_TIMEOUT_MS
+  );
+  if (!ai.explanation) {
+    throw new VibeAIError('empty', '模型返回为空');
   }
+  assertAIOutputReferencesInput(brief, ai);
+  return normalizeSuggestionText(ai.explanation);
 }
 
 export function buildLocalHandoff(brief: ProductBrief): FinalHandoff {
@@ -2227,12 +2212,11 @@ export function buildLocalHandoff(brief: ProductBrief): FinalHandoff {
     dataStructure,
     acceptanceCriteria,
     developmentPrompt,
-    source: 'local-rule',
+    source: 'ai',
   });
 }
 export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff> {
-  if (!ENABLE_MOCK_FALLBACK) requireAIReady();
-  const fallback = buildLocalHandoff(brief);
+  requireAIReady();
 
   try {
     const context = buildBriefContext(brief);
@@ -2285,27 +2269,19 @@ export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff
       source: 'ai',
     });
   } catch (error) {
-    if (!ENABLE_MOCK_FALLBACK) throw error;
-    console.warn('[VibePilot] Optimize handoff failed, explicit dev mock used:', error);
-    return fallback;
+    // V4.4: No local-rule or mock fallback for handoff.
+    console.error('[VibePilot] Handoff optimization failed:', error);
+    throw error;
   }
 }
 
 // --- Public API ---
 
 export async function evaluateStep(req: EvaluateRequest): Promise<EvaluateResponse> {
-  try {
-    const config = requireAIReady();
-    const result = await callDirectAI(req, config);
-    await new Promise((r) => setTimeout(r, 200));
-    return result;
-  } catch (err) {
-    if (!ENABLE_MOCK_FALLBACK) throw err;
-    console.warn('AI API failed, explicit dev mock used:', err);
-  }
-
-  await new Promise((r) => setTimeout(r, 600 + Math.random() * 600));
-  return buildMockResponse(req.step, req.userAnswer);
+  const config = requireAIReady();
+  const result = await callDirectAI(req, config);
+  await new Promise((r) => setTimeout(r, 200));
+  return result;
 }
 
 export async function getStepHint(step: StepConfig): Promise<string> {

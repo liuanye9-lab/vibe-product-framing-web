@@ -24,7 +24,7 @@ function normalizeList(value: unknown): string[] {
 }
 
 function normalizeSource(value: unknown): OutputSource {
-  return value === 'ai' || value === 'local-rule' ? value : 'local-rule';
+  return value === 'ai' ? 'ai' : 'error';
 }
 
 /** Convert a raw value to an AiSuggestion. */
@@ -51,7 +51,7 @@ function toAiSuggestion(raw: unknown, key: string): AiSuggestion {
       alternatives: [],
       accepted: false,
       editedByUser: false,
-      source: 'local-rule',
+      source: 'error',
     };
   }
 
@@ -92,7 +92,7 @@ export function updateBriefStage(input: {
   const p = input.payload;
   const targetStage = String(p.targetStage || '');
   const patch = isRecord(p.patch) ? p.patch : {};
-  const source = normalizeSource(p.source || 'local-rule');
+  const source = normalizeSource(p.source || 'error');
 
   const validStages: FramingStage[] = ['discovery', 'product', 'business', 'technical', 'mvp', 'blindSpot'];
   if (!validStages.includes(targetStage as FramingStage) && targetStage !== 'finalHandoff') {

@@ -61,7 +61,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeSource(value: unknown): AiSuggestion['source'] {
-  return value === 'ai' || value === 'mock' || value === 'local-rule' ? value : 'local-rule';
+  return value === 'ai' || value === 'error' ? value : 'error';
 }
 
 function normalizeSuggestion(raw: unknown): AiSuggestion | undefined {

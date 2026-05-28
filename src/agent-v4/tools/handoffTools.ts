@@ -28,36 +28,21 @@ export function generateLocalHandoff(input: {
   }
 }
 
-/** Optimize handoff using AI, fallback to local on failure. */
+/** Optimize handoff using AI. V4.4: No local fallback on failure. */
 export async function optimizeHandoffWithAI(input: {
   brief: ProductBrief;
   state: AgentGraphState;
   payload: Record<string, unknown>;
 }): Promise<AgentToolResult> {
-  try {
-    const { optimizeHandoff } = await import('../../api/evaluate');
-    const handoff = await optimizeHandoff(input.brief);
-    if (handoff) {
-      return makeToolResult(true, 'AI 优化 Handoff 完成', {
-        briefPatch: { finalHandoff: handoff } as Partial<ProductBrief>,
-        data: { handoff, source: 'ai' as OutputSource },
-      });
-    }
-  } catch {
-    // Fallback to local
-  }
-
-  // Fallback
-  const localResult = generateLocalHandoff(input);
-  if (localResult.success && localResult.briefPatch?.finalHandoff) {
-    const handoff = localResult.briefPatch.finalHandoff;
-    (handoff as FinalHandoff).source = 'local-rule';
-    return makeToolResult(true, 'AI 不可用，使用本地 Handoff', {
+  const { optimizeHandoff } = await import('../../api/evaluate');
+  const handoff = await optimizeHandoff(input.brief);
+  if (handoff) {
+    return makeToolResult(true, 'AI 优化 Handoff 完成', {
       briefPatch: { finalHandoff: handoff } as Partial<ProductBrief>,
-      data: { handoff, source: 'local-rule' as OutputSource },
+      data: { handoff, source: 'ai' as OutputSource },
     });
   }
-  return localResult;
+  return makeToolResult(false, 'AI 生成 Handoff 失败，请检查 API 配置后重试。');
 }
 
 /** Evaluate the quality of the final handoff. */

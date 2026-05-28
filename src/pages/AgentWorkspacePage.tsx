@@ -34,7 +34,7 @@ import { useProductBrief } from '../hooks/useProductBrief';
 import { getAgentSession } from '../agent-v3/sessionStore';
 import { runAgentRuntimeTurn, sendV3WelcomeMessage } from '../agent-v3/runtime';
 import { migrateLegacyAgentWorkflowIfNeeded } from '../agent-v3/migrateLegacyAgent';
-import { buildLocalHandoff, optimizeHandoff } from '../api/evaluate';
+import { optimizeHandoff } from '../api/evaluate';
 import { getAgentPhaseLabel, getNextAgentPhase } from '../agent-v3/phaseMachine';
 import type {
   AgentSession,
@@ -163,13 +163,13 @@ export default function AgentWorkspacePage() {
     if (!brief) return;
     setGeneratingHandoff(true);
     try {
-      let handoff;
-      try { handoff = await optimizeHandoff(brief); } catch { handoff = buildLocalHandoff(brief); }
+      // V4.4: Only AI handoff. No local-rule fallback.
+      const handoff = await optimizeHandoff(brief);
       if (handoff) {
         saveFinalHandoff(handoff);
         navigate(`/handoff/${brief.id}`);
       }
-    } catch { /* fallback */ } finally { setGeneratingHandoff(false); }
+    } catch { /* API error already surfaced via evaluate.ts */ } finally { setGeneratingHandoff(false); }
   }, [brief, saveFinalHandoff, navigate]);
 
   if (loading) {

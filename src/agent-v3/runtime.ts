@@ -35,7 +35,8 @@ import { getAgentPhaseLabel, getNextAgentPhase, getAgentRoleForPhase } from './p
 import { AGENT_CONTRACTS } from './agentContracts';
 import { buildAgentV3SystemPrompt, buildAgentV3UserPrompt } from './agentPromptBuilder';
 import { executeAgentCommand } from './toolRegistry';
-import { callCopilotJson, VibeAIError, getAIConfig, buildLocalHandoff } from '../api/evaluate';
+import { callCopilotJson } from '../api/evaluate';
+import { assertApiReady } from '../api/apiHealth';
 
 function makeMessage(
   role: 'user' | 'agent' | 'system' | 'tool',
@@ -276,11 +277,8 @@ export async function runAgentRuntimeTurn(input: {
   }
 
   // 5. Try AI call for normal intent
-  const config = getAIConfig();
-  if (!config) {
-    // No AI config — use local fallback
-    return handleAIFallback(session, brief, intent, briefId, 'AI 未配置，使用本地规则判断。');
-  }
+  // V4.4: No local-rule fallback. Require API ready.
+  assertApiReady();
 
   try {
     // Build context
@@ -349,8 +347,8 @@ export async function runAgentRuntimeTurn(input: {
 
     // Build handoff and evaluate handler closures
     const buildHandoffFn = async (b: ProductBrief) => {
-      try { return await (await import('../api/evaluate')).optimizeHandoff(b); }
-      catch { return buildLocalHandoff(b); }
+      const { optimizeHandoff } = await import('../api/evaluate');
+      return optimizeHandoff(b);
     };
     const evaluateHandoffFn = async (b: ProductBrief) => {
       // evaluateHandoff doesn't exist as standalone; use local handoff + check evaluation field
@@ -404,81 +402,14 @@ export async function runAgentRuntimeTurn(input: {
       shouldWaitForUser: questions.length > 0,
     };
   } catch (error) {
-    console.warn('[AgentV3] AI turn failed:', error);
-    const errorMsg = error instanceof VibeAIError
-      ? `AI 返回不稳定：${error.message.slice(0, 100)}。当前先用本地规则判断。`
-      : 'AI 调用失败，当前先用本地规则判断。';
-    return handleAIFallback(session, brief, intent, briefId, errorMsg);
+    // V4.4: No local-rule fallback on AI failure.
+    console.error('[AgentV3] AI turn failed:', error);
+    const errorMsg = 'API 调用失败，本轮 Agent 未执行。请检查 API 配置后重试。';
+    const failedSession = appendMessage(briefId, makeMessage('agent', errorMsg, 'orchestrator'));
+    updateSessionState(briefId, { runStatus: 'failed' });
+    return { session: failedSession, userVisibleReply: errorMsg, actionCards: [], shouldWaitForUser: false };
   }
 }
-
-async function handleAIFallback(
-  session: AgentSession,
-  brief: ProductBrief,
-  intent: UserIntent,
-  briefId: string,
-  errorMsg: string,
-): Promise<AgentRuntimeResult> {
-  const phase = session.currentPhase;
-  const phaseLabel = getAgentPhaseLabel(phase);
-
-  let fallbackReply = `${errorMsg}\n\n当前阶段：**${phaseLabel}**。`;
-  let actionCards: AgentActionCard[] = [];
-
-  if (intent === 'normal') {
-    // Check if we should ask questions or can move forward
-    fallbackReply += '\n\n你可以选择：补充信息、继续下一步、或让我做默认假设。';
-    actionCards = [
-      {
-        id: generateId(),
-        type: 'decision',
-        title: '当前阶段：' + phaseLabel,
-        description: 'AI 暂时不可用，使用本地规则推进。',
-        actions: [
-          { id: generateId(), label: '继续下一步', intent: 'continue' },
-          { id: generateId(), label: '先跳过', intent: 'skip' },
-          { id: generateId(), label: '帮我做默认假设', intent: 'make_assumption' },
-          { id: generateId(), label: '生成 Handoff', intent: 'generate_handoff' },
-        ],
-      },
-    ];
-  } else {
-    // For intent-driven fallback, still execute the local decision
-    const localResult = handleLocalDecision(intent, session);
-    if (localResult.commands.length > 0) {
-      for (const cmd of localResult.commands) {
-        session = appendCommand(briefId, cmd);
-        const exec = await executeAgentCommand({
-          command: cmd,
-          brief,
-          session,
-        });
-        session = appendToolResult(briefId, exec.toolResult);
-        if (exec.sessionPatch) {
-          session = updateSessionState(briefId, exec.sessionPatch);
-        }
-      }
-      fallbackReply = localResult.reply + '\n\n（AI 暂时不可用，使用本地规则推进。）';
-      actionCards = localResult.actionCards;
-    }
-  }
-
-  const agentMsg = makeMessage('agent', fallbackReply, session.activeAgent, {
-    actionCards: actionCards.length > 0 ? actionCards : undefined,
-    phase: session.currentPhase,
-  });
-  void appendMessage(briefId, agentMsg);
-
-  void updateSessionState(briefId, { runStatus: 'waiting_user' });
-
-  return {
-    session,
-    userVisibleReply: fallbackReply,
-    actionCards,
-    shouldWaitForUser: true,
-  };
-}
-
 /**
  * Send welcome message for V3 agent workspace.
  */

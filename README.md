@@ -26,7 +26,37 @@ V4.3 fixes the critical gap: **the agent-v4 runtime now actually calls the LLM**
 
 ---
 
-## 🚀 V4.2 Realtime Agent Feedback Upgrade
+## 🚀 V4.4 API Required Runtime Lock
+
+V4.4 is a **breaking change** that removes all local-rule and mock fallback paths. Vibe Copilot is no longer a demo that can run offline — it requires a genuine LLM API connection.
+
+### What changed:
+- **API Health System** — `src/api/apiHealth.ts` tracks readiness: unknown/not_configured/connection_failed/json_failed/validation_failed/ready.
+- **ApiRequiredGate** — Blocks pages that need API when health is not `ready`. Shows clear status card with navigation to Settings.
+- **All mock fallbacks removed** — `ENABLE_MOCK_FALLBACK` permanently disabled. `evaluateStep`, `explainSuggestion`, `suggestStage`, `suggestIdeaDiagnosis` no longer fall back to mock.
+- **All local-rule fallbacks removed** — `buildLocalMvpSuggestions` no longer used as catch fallback. `buildLocalHandoff` no longer used as catch fallback. `handleAIFallback` removed from agent-v3.
+- **Agent Runtime gated** — Both `agent-v3/runtime.ts` and `agent-v4/graphRuntime.ts` now call `assertApiReady()` before any AI turn. AI failure → `status='failed'`, no phase advancement.
+- **Handoff requires AI** — `optimizeHandoff` no longer falls back to `buildLocalHandoff`. Developer handoff page only generates via AI.
+- **Cleaner OutputSource** — New messages use only `'ai'` or `'error'`. Legacy `'local-rule'` and `'mock'` kept for historical data display.
+
+### Verification
+Check Event Timeline or conversation — if `ai_call_started` and `ai_call_completed` appear, the Agent is genuinely calling the LLM. If API is not ready, the page shows a clear blocking gate.
+
+**Product positioning**: "V4.4 之后，Vibe Copilot 不再是可离线运行的 demo，而是一个必须连接真实大模型 API 的 Agent 工作流产品。"
+
+### V4.4 Tech
+- `src/api/apiHealth.ts` — Health state tracking + `assertApiReady()`
+- `src/components/ApiRequiredGate.tsx` — API readiness gate component
+- `src/api/evaluate.ts` — All fallbacks removed, `ENABLE_MOCK_FALLBACK = false`
+- `src/agent-v4/graphRuntime.ts` — `assertApiReady()` at entry, AI failure → failed
+- `src/agent-v3/runtime.ts` — `assertApiReady()` at entry, `handleAIFallback` removed
+- `src/pages/MvpScopePage.tsx` — Local draft auto-fill removed, catch fallback removed
+- `src/pages/DeveloperHandoffPage.tsx` — Local handoff fallback removed
+- `src/pages/AgentWorkspacePage.tsx` — Local handoff fallback removed
+
+---
+
+## 🚀 V4.3 Real Agent Runtime Wiring Patch
 
 V4.2 eliminates the "blank waiting" experience. Users now see immediate Agent acknowledgement the moment they send a message.
 
