@@ -1,5 +1,17 @@
+/**
+ * V4.4 API Proxy — Vercel Serverless Function
+ *
+ * Forwards AI API requests from the browser to any OpenAI-compatible endpoint.
+ * Uses Vercel Serverless runtime (no edge) for 60s timeout on Hobby / 900s on Pro.
+ *
+ * Added: detailed error diagnostics, CORS headers, maxDuration support.
+ */
+
+// DO NOT export runtime: 'edge' — Edge has 30s limit, too short for AI calls.
+// Serverless default: 60s (Hobby), up to 900s (Pro with maxDuration config).
+
 export const config = {
-  runtime: 'edge',
+  maxDuration: 55, // seconds — just under Vercel Hobby 60s limit
 };
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
@@ -38,8 +50,9 @@ function normalizeChatCompletionsEndpoint(rawApiUrl: string): string {
 
 function normalizeTimeoutMs(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(n)) return 90000;
-  return Math.min(Math.max(n, 10000), 240000);
+  if (!Number.isFinite(n)) return 50000;
+  // V4.4: Cap at 50s to stay within Vercel serverless 55s limit
+  return Math.min(Math.max(n, 10000), 50000);
 }
 
 function getAbortSignal(timeoutMs: number): AbortSignal {

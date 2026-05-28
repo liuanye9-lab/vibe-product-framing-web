@@ -153,7 +153,7 @@ export default function SettingsPage() {
       const normalizedApiUrl = normalizeApiUrl(apiUrl);
       setApiUrl(normalizedApiUrl);
       const signal = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
-        ? AbortSignal.timeout(105000)
+        ? AbortSignal.timeout(40000)
         : undefined;
 
       const response = await fetch('/api/ai-proxy', {
@@ -165,7 +165,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           apiUrl: normalizedApiUrl,
           apiKey: apiKey.trim(),
-          timeoutMs: 90000,
+          timeoutMs: 40000,
           body: {
             model: model.trim(),
             messages: [
@@ -239,12 +239,15 @@ export default function SettingsPage() {
       const errorName = err && typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name) : '';
       const errorMessage = err instanceof Error ? err.message : String(err);
       const isTimeout = errorName === 'TimeoutError' || /timeout|timed out|超时|aborted|abort/i.test(errorMessage);
-      setTestResult({
-        ok: false,
-        msg: isTimeout
-          ? '测试连接超时：模型响应较慢或 API 地址不可达。请确认地址、模型名和服务商状态。'
-          : err instanceof TypeError ? '网络请求失败，请检查 API 地址是否正确。' : `未知错误：${String(err)}`,
-      });
+      const isFailedFetch = errorMessage.includes('Failed to fetch') || errorMessage.includes('fetch failed');
+      const msg = isTimeout
+        ? '连接超时（>40s）：API 地址或模型响应太慢。建议更换更快的模型，或使用 OpenAI/DeepSeek 官方 API。'
+        : isFailedFetch
+          ? '无法连接到 API。可能原因：① API 地址拼写错误 ② 该服务商屏蔽了 Vercel IP ③ 需要开 VPN/代理。建议先在本机 curl 测试连通性。'
+          : err instanceof TypeError
+            ? `网络请求失败：${err.message}。请检查 API 地址格式（需以 https:// 开头）。`
+            : `未知错误：${String(err)}`;
+      setTestResult({ ok: false, msg });
     } finally {
       setTesting(false);
     }
@@ -258,7 +261,7 @@ export default function SettingsPage() {
     const result: NonNullable<typeof longTestResult> = {};
 
     try {
-      const signal = AbortSignal.timeout?.(150000) || undefined;
+      const signal = AbortSignal.timeout?.(50000) || undefined;
 
       const response = await fetch('/api/ai-proxy', {
         method: 'POST',
@@ -267,7 +270,7 @@ export default function SettingsPage() {
         body: JSON.stringify({
           apiUrl: normalizeApiUrl(apiUrl),
           apiKey: apiKey.trim(),
-          timeoutMs: 120000,
+          timeoutMs: 50000,
           body: {
             model: model.trim(),
             messages: [
@@ -307,7 +310,7 @@ export default function SettingsPage() {
 5. 所有字段值必须是字符串或对象。`,
               },
             ],
-            max_tokens: 1200,
+            max_tokens: 800,
             temperature: 0,
           },
         }),

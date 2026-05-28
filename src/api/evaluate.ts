@@ -231,10 +231,12 @@ export function extractAIContent(data: Record<string, unknown>): string {
   return content.trim();
 }
 
-const DEFAULT_AI_TIMEOUT_MS = 90000;
-const SUGGEST_AI_TIMEOUT_MS = 120000;
-const EXPLAIN_AI_TIMEOUT_MS = 60000;
-const HANDOFF_AI_TIMEOUT_MS = 180000;
+// V4.4: Timeouts capped to 50s for Vercel serverless (max 55s on Hobby plan).
+// If deployed to Vercel Pro (300s+) or self-hosted, increase these.
+const DEFAULT_AI_TIMEOUT_MS = 50000;
+const SUGGEST_AI_TIMEOUT_MS = 50000;
+const EXPLAIN_AI_TIMEOUT_MS = 40000;
+const HANDOFF_AI_TIMEOUT_MS = 50000;
 
 /** Max retry attempts for transient network failures */
 const MAX_FETCH_RETRIES = 3;
