@@ -26,6 +26,7 @@ import {
   validateAIOutputReferencesInput,
   type AIConnectionStatus,
 } from '../api/evaluate';
+import { clearApiHealth, getApiHealth, markApiFailed, markApiReady, type ApiHealthStatus } from '../api/apiHealth';
 
 const PRESETS = [
   {
@@ -134,7 +135,8 @@ export default function SettingsPage() {
     const normalizedApiUrl = normalizeApiUrl(apiUrl);
     setApiUrl(normalizedApiUrl);
     saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
-    clearAICache(); // Clear cached AI responses when config changes
+    clearAICache();
+    clearApiHealth(); // V4.4: Reset health when config changes
     setStatus('failed');
     setSaved(true);
     setTestResult(null);
@@ -232,6 +234,7 @@ export default function SettingsPage() {
       if (hasConfig) {
         saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
       }
+      markApiFailed('connection_failed', `连接测试失败: ${err instanceof Error ? err.message.slice(0, 80) : String(err).slice(0, 80)}`);
       setStatus('failed');
       const errorName = err && typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name) : '';
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -415,7 +418,17 @@ export default function SettingsPage() {
       setLongTestResult(result);
       saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
       setStatus('connected');
+
+      // V4.4: All 4 layers passed → API is ready
+      const allPassed = result.apiConnection && result.jsonGeneration && result.requiredFields.passed && result.refValidation.passed;
+      if (allPassed) {
+        markApiReady({ model: model.trim(), apiUrl: normalizeApiUrl(apiUrl) });
+      } else {
+        const failStatus: Exclude<ApiHealthStatus, 'ready' | 'unknown'> = !result.apiConnection ? 'connection_failed' : !result.jsonGeneration ? 'json_failed' : 'validation_failed';
+        markApiFailed(failStatus, `API 验证部分失败。Connection: ${result.apiConnection ? '✓' : '✗'}, JSON: ${result.jsonGeneration ? '✓' : '✗'}, Fields: ${result.requiredFields.passed ? '✓' : '✗'}, Validation: ${result.refValidation.passed ? '✓' : '✗'}`);
+      }
     } catch (err) {
+      markApiFailed('connection_failed', `长 JSON 测试失败: ${err instanceof Error ? err.message.slice(0, 80) : String(err).slice(0, 80)}`);
       const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
       setLongTestResult({
         apiConnection: false,
@@ -430,6 +443,7 @@ export default function SettingsPage() {
 
   const handleClear = () => {
     clearAIConfig();
+    clearApiHealth(); // V4.4: Reset health when config cleared
     setStatus('unconfigured');
     setApiUrl('');
     setApiKey('');
@@ -459,6 +473,46 @@ export default function SettingsPage() {
 
       <main style={{ flex: 1, padding: '2rem' }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
+          {/* V4.4: API Runtime Status Card */}
+          {(() => {
+            const health = getApiHealth();
+            const statusColors: Record<ApiHealthStatus, string> = {
+              unknown: 'var(--color-warning)',
+              not_configured: 'var(--color-text-hint)',
+              connection_failed: 'var(--color-danger)',
+              json_failed: 'var(--color-danger)',
+              validation_failed: 'var(--color-warning)',
+              ready: 'var(--color-success)',
+            };
+            const statusLabels: Record<ApiHealthStatus, string> = {
+              unknown: '状态未知',
+              not_configured: '未配置',
+              connection_failed: '连接失败',
+              json_failed: 'JSON 生成失败',
+              validation_failed: '输出校验失败',
+              ready: '就绪 ✓',
+            };
+            const color = statusColors[health.status] || 'var(--color-text-hint)';
+            const label = statusLabels[health.status] || '未知';
+            return (
+              <div className="vp-card" style={{ marginBottom: 16, borderColor: `${color}30`, background: `${color}08` }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color }}>API Runtime: {label}</span>
+                    {health.checkedAt && <span style={{ fontSize: 10, color: 'var(--color-text-hint)', marginLeft: 8 }}>{new Date(health.checkedAt).toLocaleString()}</span>}
+                    {health.model && <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginLeft: 8 }}>{health.model}</span>}
+                  </div>
+                  {health.status !== 'ready' && (
+                    <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                      只有 API 状态为 Ready，Agent 工作流和生成流程才能运行
+                    </span>
+                  )}
+                </div>
+                {health.message && <p style={{ fontSize: 11, color: 'var(--color-text-hint)', marginTop: 4 }}>{health.message}</p>}
+              </div>
+            );
+          })()}
+
           {/* Intro */}
           <div style={{ marginBottom: 32 }}>
             <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>

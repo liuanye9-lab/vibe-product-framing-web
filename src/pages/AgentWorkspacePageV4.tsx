@@ -56,6 +56,8 @@ import { AgentProgressIndicator } from '../agent-v4/ui/AgentProgressIndicator';
 import { AgentThinkingBubble } from '../agent-v4/ui/AgentThinkingBubble';
 import { listMcpLikeTools } from '../agent-v4/adapters/mcpLikeToolAdapter';
 import { buildImmediateAgentReply } from '../agent-v4/immediateReply';
+import { ApiRequiredGate } from '../components/ApiRequiredGate';
+import { getApiHealth } from '../api/apiHealth';
 import {
   type AgentTurnLifecycle,
   createAgentTurnLifecycle,
@@ -190,10 +192,10 @@ export default function AgentWorkspacePageV4() {
 
       const errMsg = e instanceof Error ? e.message : String(e);
       const fallbackReply = errMsg.includes('timeout') || errMsg.includes('timed out')
-        ? '这一步 AI 响应慢了，我先用本地规则继续推进，不会卡住流程。'
+        ? 'API 响应超时，本轮未生成结果。请检查 API 配置或网络后重试。'
         : errMsg.includes('json') || errMsg.includes('parse')
-          ? '模型返回格式不稳定，我先保留你的输入，并用本地规则生成建议。'
-          : '处理消息时遇到问题，但你的工作流不会丢。我会先用本地规则继续。';
+          ? '模型返回格式不稳定，本轮未生成结果。建议更换稳定模型后重试。'
+          : 'API 调用失败，本轮 Agent 未执行。请检查 API 配置后重试。';
 
       setOptimisticAgentReply(fallbackReply);
       setError(fallbackReply);
@@ -259,6 +261,10 @@ export default function AgentWorkspacePageV4() {
   );
 
   return (
+    <ApiRequiredGate
+      title="Agent 工作流需要 API"
+      description="Agent Decision OS 依赖真实大模型 API 进行多阶段产品决策。API 未通过验证前，系统不会使用本地规则或 mock 结果继续生成。"
+    >
     <div className="vp-page" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
       {/* Header */}
       <header className="vp-header" style={{ flexShrink: 0 }}>
@@ -511,6 +517,7 @@ export default function AgentWorkspacePageV4() {
         </div>
       </div>
     </div>
+    </ApiRequiredGate>
   );
 }
 
@@ -571,11 +578,16 @@ function EventBubble({ event }: { event: AgentGraphEvent }) {
           <Bot size={14} />
         </div>
         <div style={{ maxWidth: '80%' }}>
-          {nodeLabel && (
-            <p style={{ fontSize: 11, color: 'var(--color-text-hint)', marginBottom: 4, fontWeight: 600 }}>
-              {nodeLabel}
-            </p>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            {nodeLabel && (
+              <p style={{ fontSize: 11, color: 'var(--color-text-hint)', fontWeight: 600, margin: 0 }}>
+                {nodeLabel}
+              </p>
+            )}
+            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 6, background: 'var(--color-primary)', color: '#fff', lineHeight: '16px' }}>
+              AI
+            </span>
+          </div>
           <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             {fmtVal(event.message)}
           </div>
@@ -592,8 +604,23 @@ function StateView({ session }: { session: AgentGraphSession | null }) {
   const state = session?.state;
   if (!state) return <p style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>无状态数据</p>;
 
+  // V4.4: API Health
+  const apiHealth = getApiHealth();
+  const apiReady = apiHealth.status === 'ready';
+  const apiColors: Record<string, string> = { ready: 'var(--color-success)', connection_failed: 'var(--color-danger)', json_failed: 'var(--color-danger)', validation_failed: 'var(--color-warning)', unknown: 'var(--color-text-hint)', not_configured: 'var(--color-text-hint)' };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+      {/* API Status */}
+      <div className="vp-card" style={{ padding: '10px 12px', borderColor: apiReady ? 'rgba(0,180,90,0.2)' : 'rgba(220,38,38,0.15)' }}>
+        <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginBottom: 2 }}>API Runtime</p>
+        <p style={{ fontSize: 13, fontWeight: 600, color: apiColors[apiHealth.status] || 'var(--color-text-hint)', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: apiColors[apiHealth.status] || 'var(--color-text-hint)', display: 'inline-block' }} />
+          {apiReady ? 'Ready' : `Blocked: ${apiHealth.status}`}
+        </p>
+        {apiHealth.model && <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginTop: 2 }}>{apiHealth.model}</p>}
+      </div>
+
       <div className="vp-card" style={{ padding: '10px 12px' }}>
         <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginBottom: 2 }}>当前阶段</p>
         <p style={{ fontSize: 14, fontWeight: 600 }}>{getNodeLabel(state.currentNodeId)}</p>
