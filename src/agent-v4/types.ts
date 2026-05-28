@@ -63,6 +63,13 @@ export interface AgentGraphEvent {
     | 'checkpoint_created'
     | 'evaluation_completed'
     | 'reflection_created'
+    | 'slot_asked'
+    | 'slot_answered'
+    | 'slot_assumed'
+    | 'slot_skipped'
+    | 'phase_advanced'
+    | 'repeated_question_prevented'
+    | 'user_action_clicked'
     | 'error';
   nodeId?: AgentNodeId;
   message?: string;
@@ -167,6 +174,14 @@ export interface AgentGraphState {
     issues: string[];
     suggestions: string[];
   };
+  /** V4.1: Slot filling state to prevent repeated questions */
+  slotFilling?: SlotFillingState;
+  /** V4.1: Question ledger to track asked/answered/skipped questions */
+  questionLedger?: AgentQuestionRecord[];
+  /** V4.1: Count how many times user advanced the flow */
+  advancementCount?: number;
+  /** V4.1: Current blocking reason, if any */
+  blockReason?: string;
   createdAt: string;
   updatedAt: string;
   schemaVersion: 'agent-graph-v4';
@@ -194,6 +209,65 @@ export interface AgentGraphRunResult {
   events: AgentGraphEvent[];
   userVisibleReply: string;
   interrupted: boolean;
+}
+
+// --------------- Slot Filling ---------------
+
+export type InfoSlotKey =
+  | 'rawIdea'
+  | 'targetUser'
+  | 'scenario'
+  | 'coreProblem'
+  | 'currentAlternative'
+  | 'mvpMustHave'
+  | 'mvpOutOfScope'
+  | 'minimumLoop'
+  | 'technicalConstraint'
+  | 'successCriteria';
+
+export type InfoSlotStatus =
+  | 'unknown'
+  | 'asked'
+  | 'answered'
+  | 'assumed'
+  | 'skipped';
+
+export interface InfoSlot {
+  key: InfoSlotKey;
+  label: string;
+  value?: string;
+  status: InfoSlotStatus;
+  askedCount: number;
+  lastAskedAt?: string;
+  source?: 'user' | 'agent_assumption' | 'legacy_brief' | 'local_rule';
+  confidence: number;
+}
+
+export interface SlotFillingState {
+  slots: Record<InfoSlotKey, InfoSlot>;
+  updatedAt: string;
+}
+
+// --------------- Question Ledger ---------------
+
+export interface AgentQuestionRecord {
+  id: string;
+  slotKey?: InfoSlotKey;
+  question: string;
+  askedAt: string;
+  answeredAt?: string;
+  status: 'pending' | 'answered' | 'assumed' | 'skipped';
+}
+
+// --------------- Action Card V4.1 Types ---------------
+
+export interface AgentActionCardV4 {
+  id: string;
+  type: 'missing_info' | 'assumption' | 'phase_ready' | 'blocked' | 'handoff_ready';
+  title: string;
+  description: string;
+  items?: Array<{ label: string; value: string; status: InfoSlotStatus }>;
+  actions: Array<{ id: string; label: string; intent: string }>;
 }
 
 // --------------- Helpers ---------------

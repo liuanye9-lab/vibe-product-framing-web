@@ -5,6 +5,32 @@
 
 ---
 
+## 🚀 V4.1 Agent Interaction & Anti-Loop Upgrade
+
+V4.1 fixes the core Agent interaction loop problem: **the Agent no longer asks the same question repeatedly**.
+
+### Key changes:
+- **Slot Filling State** — Tracks every info gap (targetUser, scenario, coreProblem, etc.) with askedCount/status.
+- **Ask-Once Protocol** — Same slot asked >= 2 times → auto-assume instead of re-asking.
+- **Question Ledger** — Prevents duplicate questions; records every question asked.
+- **Intent Priority** — continue/skip/make_assumption **always override** field-checking logic.
+- **Default Assumptions** — Keyword-based rule engine fills missing slots with low-confidence guesses.
+- **Anti-Loop** — If the same slots are missing after being asked twice, the system auto-assumes and advances.
+- **Slot Panel** — New Decision OS tab showing all info slots with status (✓ known / ◎ assumed / → skipped / ? missing).
+- **Abridged Agent Messages** — Agent responds concisely: "这个想法可以继续，现在还缺 X。补充或用默认假设推进。"
+
+### V4.1 Tech
+- `src/agent-v4/slotFilling.ts` — SlotFillingState, derive/ask/assume/skip operations
+- `src/agent-v4/questionLedger.ts` — Prevents duplicate questions
+- `src/agent-v4/defaultAssumptions.ts` — Rule-based assumption generation
+- `src/agent-v4/graphRuntime.ts` — Rewritten runtime with intent-prioritized execution
+- `src/agent-v4/nodes/intakeNode.ts` — Slot-aware questioning
+- `src/agent-v4/ui/AgentSlotPanel.tsx` — Slot status visualization
+
+**Product positioning**: "Vibe Copilot 的 Agent 模式不是无限聊天，而是一个可推进、可中断、可恢复的产品决策工作流。"
+
+---
+
 ## 🚀 V4.0 Agent Graph Runtime & Decision OS
 
 Vibe Copilot V4.0 将 Agent Workspace 从"对话页面 + Agent 状态"升级为真正的 **Agent Graph Runtime**：

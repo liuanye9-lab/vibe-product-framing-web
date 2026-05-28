@@ -30,6 +30,7 @@ import {
   Lightbulb,
   Zap,
   GitBranch,
+  Database,
 } from 'lucide-react';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { getGraphSession } from '../agent-v4/graphStore';
@@ -49,6 +50,7 @@ import { AgentMemoryPanel } from '../agent-v4/ui/AgentMemoryPanel';
 import { AgentSkillPanel } from '../agent-v4/ui/AgentSkillPanel';
 import { AgentDebugPanel } from '../agent-v4/ui/AgentDebugPanel';
 import { AgentInterruptCard } from '../agent-v4/ui/AgentInterruptCard';
+import { AgentSlotPanel } from '../agent-v4/ui/AgentSlotPanel';
 import { listMcpLikeTools } from '../agent-v4/adapters/mcpLikeToolAdapter';
 
 const STATUS_LABELS: Record<AgentGraphStatus, { label: string; color: string }> = {
@@ -60,10 +62,11 @@ const STATUS_LABELS: Record<AgentGraphStatus, { label: string; color: string }> 
   failed: { label: '失败', color: 'var(--color-danger)' },
 };
 
-type TabKey = 'state' | 'tasks' | 'findings' | 'memory' | 'skills' | 'debug';
+type TabKey = 'state' | 'slots' | 'tasks' | 'findings' | 'memory' | 'skills' | 'debug';
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'state', label: '状态', icon: <Activity size={12} /> },
+  { key: 'slots', label: '信息槽', icon: <Database size={12} /> },
   { key: 'tasks', label: '任务', icon: <ListChecks size={12} /> },
   { key: 'findings', label: '判断', icon: <Lightbulb size={12} /> },
   { key: 'memory', label: '记忆', icon: <Brain size={12} /> },
@@ -334,6 +337,7 @@ export default function AgentWorkspacePageV4() {
 
           <div style={{ padding: '10px 12px' }}>
             {activeTab === 'state' && <StateView session={session} />}
+            {activeTab === 'slots' && <AgentSlotPanel slots={state?.slotFilling?.slots as Record<string, import('../agent-v4/types').InfoSlot> | undefined} />}
             {activeTab === 'tasks' && (
               <AgentTaskBoard
                 tasks={state?.tasks || []}
@@ -458,7 +462,33 @@ function StateView({ session }: { session: AgentGraphSession | null }) {
         <p style={{ fontSize: 11, color: 'var(--color-text-hint)', marginTop: 4 }}>
           Active Agent: {state.activeAgentName} · Status: {state.status}
         </p>
+        {state.advancementCount != null && state.advancementCount > 0 && (
+          <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginTop: 2 }}>
+            已推进 {state.advancementCount} 次
+          </p>
+        )}
       </div>
+
+      {/* Slot Status Summary */}
+      {state.slotFilling?.slots && (() => {
+        const slots = Object.values(state.slotFilling.slots);
+        const answered = slots.filter((s) => s.status === 'answered').length;
+        const assumed = slots.filter((s) => s.status === 'assumed').length;
+        const skipped = slots.filter((s) => s.status === 'skipped').length;
+        const unknown = slots.filter((s) => s.status === 'unknown' || s.status === 'asked').length;
+        if (answered + assumed + skipped + unknown === 0) return null;
+        return (
+          <div className="vp-card" style={{ padding: '10px 12px' }}>
+            <p style={{ fontSize: 10, fontWeight: 600, marginBottom: 4 }}>信息槽状态</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 10 }}>
+              <span style={{ color: 'var(--color-success)' }}>✓ 已知: {answered}</span>
+              <span style={{ color: 'var(--color-warning)' }}>◎ 假设: {assumed}</span>
+              <span style={{ color: 'var(--color-text-hint)' }}>→ 跳过: {skipped}</span>
+              <span style={{ color: 'var(--color-danger)' }}>? 未知: {unknown}</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {state.pendingQuestions.length > 0 && (
         <div className="vp-card" style={{ padding: '10px 12px', borderColor: 'var(--color-warning)' }}>
