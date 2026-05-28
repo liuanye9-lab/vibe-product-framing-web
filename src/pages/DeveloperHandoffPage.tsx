@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Bot, Check, Copy, Download, Loader2, RefreshCw, Settings } from 'lucide-react';
+import { Bot, Check, Copy, Download, FileText, Loader2, RefreshCw, Settings } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
 import DecisionCard from '../components/DecisionCard';
 import { getAIErrorMessage, isAIReady, optimizeHandoff } from '../api/evaluate';
@@ -17,7 +17,12 @@ import { DEMO_IDEAS } from '../demo/demoIdeas';
 import type { HandoffTrace } from '../trace/types';
 import type { RetrievalSelfCheckResult } from '../quality/runRetrievalSelfCheck';
 import type { HandoffSnapshot } from '../snapshot/types';
-import type { FinalHandoff, HandoffEvaluation, HandoffEvaluationDimension, KnowledgeReference } from '../types';
+import type { FinalHandoff, HandoffEvaluation, HandoffEvaluationDimension, KnowledgeReference, DecisionStageProgress } from '../types';
+import { buildDevSpec } from '../lib/devSpecBuilder';
+import { buildCodexTaskPack } from '../lib/codexTaskPackBuilder';
+import DevSpecPreview from '../components/DevSpecPreview';
+import CodexTaskPackPreview from '../components/CodexTaskPackPreview';
+import { calculatePhaseProgress } from '../lib/progressCalculator';
 
 type TextHandoffSectionKey =
   | 'productBrief'
@@ -156,6 +161,21 @@ export default function DeveloperHandoffPage() {
     }
   }, [brief, generate, loading, refreshSnapshots, refreshTraces]);
 
+  const phases = useMemo<DecisionStageProgress[]>(() => {
+    if (!brief) return [];
+    return calculatePhaseProgress(brief);
+  }, [brief]);
+
+  const devSpecData = useMemo(() => {
+    if (!brief) return null;
+    return buildDevSpec(brief);
+  }, [brief]);
+
+  const codexTaskPackData = useMemo(() => {
+    if (!devSpecData) return null;
+    return buildCodexTaskPack({ devSpec: devSpecData });
+  }, [devSpecData]);
+
   if (loading || !brief) return <Loader />;
 
   const handoff = brief.finalHandoff;
@@ -209,8 +229,9 @@ export default function DeveloperHandoffPage() {
       subtitle="最后只判断一件事：这份方案是否已经足够清晰，可以交给 Codex / Claude Code / Cursor 开发。"
       current={3}
       briefId={brief.id}
+      phases={phases}
       previousPath={`/technical/${brief.id}`}
-      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} onDownload={download} onExportCaseStudy={exportCaseStudy} hasHandoff={Boolean(handoff)} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} />}
+      aside={<Aside view={view} onViewChange={setView} generating={generating} onGenerate={generate} onDownload={download} onExportCaseStudy={exportCaseStudy} hasHandoff={Boolean(handoff)} error={error} onSettings={() => navigate('/settings')} onSwitchAgent={() => navigate(`/agent/${brief.id}`)} onViewDecisionOutput={() => navigate(`/output/${brief.id}`)} />}
     >
       {view === 'focus' && (
         <DecisionCard
@@ -256,6 +277,8 @@ export default function DeveloperHandoffPage() {
           <GenerationTraceCard traces={traces} />
           <DemoSamplesCard />
           <RetrievalSelfCheckCard results={selfCheckResults} />
+          {devSpecData && <DevSpecPreview devSpec={devSpecData} />}
+          {codexTaskPackData && <CodexTaskPackPreview taskPack={codexTaskPackData} />}
         </>
       )}
     </StageLayout>
@@ -699,7 +722,7 @@ function buildMarkdownDownload(handoff: FinalHandoff): string {
   ].join('\n\n');
 }
 
-function Aside({ view, onViewChange, generating, onGenerate, onDownload, onExportCaseStudy, hasHandoff, error, onSettings, onSwitchAgent }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; onExportCaseStudy: () => void; hasHandoff: boolean; error: string; onSettings: () => void; onSwitchAgent: () => void }) {
+function Aside({ view, onViewChange, generating, onGenerate, onDownload, onExportCaseStudy, hasHandoff, error, onSettings, onSwitchAgent, onViewDecisionOutput }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; onExportCaseStudy: () => void; hasHandoff: boolean; error: string; onSettings: () => void; onSwitchAgent: () => void; onViewDecisionOutput: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
       <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第四关：开发交付</h3>
@@ -728,6 +751,9 @@ function Aside({ view, onViewChange, generating, onGenerate, onDownload, onExpor
           <Download size={14} /> Export Case Study
         </button>
       </div>
+      <button className="vp-btn vp-btn-ghost" onClick={onViewDecisionOutput} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
+        <FileText size={14} /> 查看决策输出
+      </button>
       <button className="vp-btn vp-btn-ghost" onClick={onSwitchAgent} style={{ width: '100%', marginTop: 8, fontSize: 12 }}>
         <Bot size={14} /> 切换到 Agent 工作流
       </button>

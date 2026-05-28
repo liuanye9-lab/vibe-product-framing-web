@@ -10,6 +10,7 @@ import MvpScopePage from './pages/MvpScopePage';
 import BlindSpotReviewPage from './pages/BlindSpotReviewPage';
 import DeveloperHandoffPage from './pages/DeveloperHandoffPage';
 import AgentWorkspacePageV4 from './pages/AgentWorkspacePageV4';
+import DecisionOutputPage from './pages/DecisionOutputPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -117,7 +118,7 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/guide/:id" element={<LegacyRedirect to="product" />} />
           <Route path="/preview/:id" element={<LegacyRedirect to="handoff" />} />
-          <Route path="/output/:id" element={<LegacyRedirect to="handoff" />} />
+          <Route path="/output/:id" element={<DecisionOutputPage />} />
         </Routes>
       </AppErrorBoundary>
     </BrowserRouter>

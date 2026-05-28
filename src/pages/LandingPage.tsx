@@ -95,7 +95,7 @@ export default function LandingPage() {
             WebkitBackdropFilter: 'blur(20px)',
           }}>
             <Sparkles size={13} style={{ color: 'var(--color-primary)' }} />
-            AI 辅助 · 产品前期构思 Copilot
+            AI 辅助 · Vibe Decision Copilot
           </div>
 
           {/* Main Heading */}
@@ -201,8 +201,8 @@ export default function LandingPage() {
             />
             <GlassValueCard
               icon={<Code2 size={18} />}
-              title="交付开发提示词"
-              desc="最终输出 Product Brief、MVP Scope、Technical Architecture 和 Development Prompt。"
+              title="DEV_SPEC + CODEX_TASK_PACK"
+              desc="最终输出 DEV_SPEC 开发规格和 CODEX_TASK_PACK 可执行任务包，直接交给 Codex。"
               accent="sage"
             />
           </div>
@@ -210,14 +210,15 @@ export default function LandingPage() {
           {/* ── Feature Highlight ── */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, 1fr)',
+            gridTemplateColumns: 'repeat(5, 1fr)',
             gap: 12,
             marginTop: 20,
           }}>
             <MiniFeature icon={<Zap size={15} />} label="10 步引导流程" />
             <MiniFeature icon={<Shield size={15} />} label="AI 质量检查" />
             <MiniFeature icon={<Database size={15} />} label="数据模型生成" />
-            <MiniFeature icon={<FileText size={15} />} label="开发文档输出" />
+            <MiniFeature icon={<FileText size={15} />} label="CODEX_TASK_PACK" />
+            <MiniFeature icon={<Target size={15} />} label="进度可视化" />
           </div>
         </div>
       </main>
@@ -229,7 +230,7 @@ export default function LandingPage() {
         fontSize: 12,
         color: 'var(--color-text-hint)',
       }}>
-        VibePilot — 让 AI 辅助产品思维，而不是替代它
+        Vibe Decision Copilot — 把模糊想法转化为 Codex 可执行任务包
       </footer>
     </div>
   );

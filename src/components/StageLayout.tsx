@@ -1,6 +1,8 @@
 import { Brain, ChevronLeft, ChevronRight, Home, Check } from 'lucide-react';
 import { memo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ProgressBar from './ProgressBar';
+import type { DecisionStageProgress } from '../types';
 
 const STAGES = [
   { label: 'Idea 诊断', path: 'discovery' },
@@ -14,6 +16,7 @@ interface StageLayoutProps {
   subtitle: string;
   current: number;
   briefId?: string;
+  phases?: DecisionStageProgress[];
   children: ReactNode;
   nextLabel?: string;
   previousPath?: string;
@@ -28,6 +31,7 @@ const StageLayout = memo(function StageLayout({
   subtitle,
   current,
   briefId,
+  phases,
   children,
   nextLabel = '下一步',
   previousPath,
@@ -126,6 +130,13 @@ const StageLayout = memo(function StageLayout({
           </div>
         </div>
       </header>
+
+      {/* ── Progress Bar ── */}
+      {phases && phases.length > 0 && (
+        <div style={{ maxWidth: 880, margin: '0 auto', padding: '16px 2rem 0' }}>
+          <ProgressBar phases={phases} />
+        </div>
+      )}
 
       {/* ── Main Content ── */}
       <main style={{ flex: 1, padding: '2.5rem 2rem' }}>

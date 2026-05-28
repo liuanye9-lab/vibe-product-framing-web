@@ -330,3 +330,137 @@ export interface EvaluateIdeaResult {
   riskFlags: string[];
   source?: OutputSource;
 }
+
+// ===== Vibe Decision Copilot P0 新类型 =====
+
+export type CopilotPhase =
+  | 'rawIdea'
+  | 'problemFraming'
+  | 'userScenario'
+  | 'demandEvidence'
+  | 'mvpScope'
+  | 'riskCounterargument'
+  | 'techConstraints'
+  | 'acceptanceCriteria'
+  | 'devSpec'
+  | 'codexTaskPack';
+
+export const PHASE_LABELS: Record<CopilotPhase, string> = {
+  rawIdea: '原始想法',
+  problemFraming: '问题框架',
+  userScenario: '用户场景',
+  demandEvidence: '需求证据',
+  mvpScope: 'MVP 范围',
+  riskCounterargument: '风险反证',
+  techConstraints: '技术约束',
+  acceptanceCriteria: '验收标准',
+  devSpec: 'DEV_SPEC',
+  codexTaskPack: 'CODEX_TASK_PACK',
+};
+
+export interface DecisionStageProgress {
+  key: CopilotPhase;
+  label: string;
+  progressPercent: number;
+  status: 'empty' | 'draft' | 'needs_review' | 'confirmed' | 'blocked';
+  qualityScore: number;
+  missingInfo: string[];
+  questions: string[];
+  acceptanceChecks: string[];
+  confirmedByUser: boolean;
+}
+
+export interface RequirementQualityScore {
+  clarity: number;
+  specificity: number;
+  userEvidence: number;
+  scopeControl: number;
+  testability: number;
+  technicalFeasibility: number;
+  riskAwareness: number;
+  codexExecutability: number;
+  total: number;
+  issues: string[];
+  improvementSuggestions: string[];
+}
+
+export interface AmbiguityIssue {
+  id: string;
+  stage: CopilotPhase;
+  severity: 'low' | 'medium' | 'high';
+  message: string;
+  question: string;
+}
+
+export interface ScopeControlResult {
+  p0: string[];
+  p1: string[];
+  p2: string[];
+  outOfScope: string[];
+  scopeRisks: string[];
+  suggestions: string[];
+}
+
+export interface EarsRequirement {
+  id: string;
+  type: 'ubiquitous' | 'event_driven' | 'state_driven' | 'optional' | 'unwanted';
+  text: string;
+}
+
+export interface CodexTask {
+  id: string;
+  name: string;
+  description: string;
+  files: string[];
+  dependencies: string[];
+  acceptanceCriteria: string[];
+  priority: 'P0' | 'P1' | 'P2';
+}
+
+export interface FilePlanItem {
+  path: string;
+  purpose: string;
+  dependencies: string[];
+}
+
+export interface DevSpec {
+  productGoal: string;
+  targetUsers: string[];
+  userScenarios: string[];
+  p0Features: string[];
+  p1Features: string[];
+  p2Features: string[];
+  outOfScope: string[];
+  dataEntities: string[];
+  coreFlows: string[];
+  acceptanceCriteria: string[];
+  nonFunctionalRequirements: string[];
+  risks: string[];
+  generatedAt?: string;
+}
+
+export interface CodexTaskPack {
+  title: string;
+  context: string;
+  objective: string;
+  constraints: string[];
+  filePlan: FilePlanItem[];
+  tasks: CodexTask[];
+  implementationSteps: string[];
+  acceptanceTests: string[];
+  forbiddenChanges: string[];
+  progressChecklist: Array<{
+    label: string;
+    percent: number;
+    done: boolean;
+  }>;
+  generatedAt?: string;
+}
+
+export interface DecisionLogEntry {
+  id: string;
+  briefId: string;
+  phase: CopilotPhase;
+  summary: string;
+  createdAt: string;
+}
