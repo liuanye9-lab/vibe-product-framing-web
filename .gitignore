@@ -14,6 +14,10 @@ __MACOSX
 *.zip
 *.local
 
+# Workspace assistant memory
+.workbuddy/
+.codebuddy/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
