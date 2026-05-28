@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, Bot, ChevronRight, Home, MapPin, Sparkles, Target, Users, Zap } from 'lucide-react';
+import { AlertCircle, Bot, ChevronRight, Home, MapPin, Settings, Sparkles, Target, Users, Zap } from 'lucide-react';
 import StageLayout from '../components/StageLayout';
-import { evaluateIdea } from '../api/evaluate';
+import { evaluateIdea, isAIReady } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import type { CopilotMode, EvaluateIdeaResult, IdeaInputState, ProjectType } from '../types';
 
@@ -47,6 +47,10 @@ export default function NewIdeaPage() {
   };
 
   const handleStartAgent = () => {
+    if (!isAIReady()) {
+      navigate('/settings');
+      return;
+    }
     if (!input.rawIdea.trim()) return;
     const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() }, mode);
     navigate(`/agent/${brief.id}`);
@@ -186,21 +190,44 @@ export default function NewIdeaPage() {
           <button
             className="vp-card"
             onClick={handleStartAgent}
-            disabled={!input.rawIdea.trim()}
             style={{
               textAlign: 'left', padding: '20px 22px', cursor: 'pointer',
-              background: 'linear-gradient(135deg, rgba(224,74,59,0.04), rgba(253,242,239,0.2))',
-              border: '1.5px solid rgba(224,74,59,0.18)',
+              background: isAIReady()
+                ? 'linear-gradient(135deg, rgba(224,74,59,0.04), rgba(253,242,239,0.2))'
+                : 'linear-gradient(135deg, rgba(30,58,76,0.04), rgba(224,74,59,0.06))',
+              border: isAIReady()
+                ? '1.5px solid rgba(224,74,59,0.18)'
+                : '1.5px solid rgba(224,74,59,0.12)',
             }}
           >
             <Bot size={20} style={{ color: 'var(--vp-coral)', marginBottom: 8 }} />
-            <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>Agent 工作流</h3>
+            <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>Agent Decision OS</h3>
             <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-              和 AI 产品经理一起决策，多角色 Agent 逐步推进产品方案。
+              AI 产品经理多角色对话，图工作流自动推进 + 任务管理 + 记忆沉淀。
             </p>
-            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--vp-coral)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-              推荐 <ChevronRight size={14} />
-            </p>
+            {isAIReady() ? (
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--vp-coral)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+                推荐 <ChevronRight size={14} />
+              </p>
+            ) : (
+              <div style={{ marginTop: 8 }}>
+                <p style={{
+                  fontSize: 11, color: 'var(--color-warning)',
+                  display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6,
+                }}>
+                  <AlertCircle size={12} />
+                  需先配置 AI API
+                </p>
+                <span style={{
+                  fontSize: 11, fontWeight: 600,
+                  padding: '4px 10px', borderRadius: 6,
+                  background: 'rgba(224,74,59,0.08)', color: 'var(--vp-coral)',
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}>
+                  <Settings size={11} /> 点击去配置
+                </span>
+              </div>
+            )}
           </button>
           <button
             className="vp-card"

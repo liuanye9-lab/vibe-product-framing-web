@@ -4,6 +4,7 @@ import {
   Settings, Sparkles, Target, Zap, Bot,
   Shield, Database, FileText
 } from 'lucide-react';
+import { isAIReady } from '../api/evaluate';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -132,25 +133,52 @@ export default function LandingPage() {
             最后生成可直接交给 Cursor / Claude Code 的 Development Prompt。
           </p>
 
-          {/* CTA Button */}
-          <button
-            className="vp-btn-cta"
-            onClick={() => navigate('/new', { state: { fromHome: true } })}
-            style={{ marginBottom: 72 }}
-          >
-            开始 AI 辅助构思
-            <ArrowRight size={18} />
-          </button>
+          {/* CTA Buttons */}
+          <div style={{ marginBottom: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
+            {/* Agent 工作流 — Primary CTA */}
+            <button
+              className="vp-btn-cta"
+              onClick={() => {
+                if (!isAIReady()) {
+                  navigate('/settings');
+                } else {
+                  navigate('/new', { state: { fromHome: true, agentMode: true } });
+                }
+              }}
+              style={{
+                background: isAIReady()
+                  ? 'linear-gradient(135deg, var(--vp-coral) 0%, #D44236 100%)'
+                  : 'linear-gradient(135deg, var(--vp-navy) 0%, #1a3a5c 100%)',
+                boxShadow: isAIReady()
+                  ? 'var(--glass-highlight), 0 12px 36px rgba(224, 74, 59, 0.32), 0 4px 10px rgba(224, 74, 59, 0.18)'
+                  : 'var(--glass-highlight), 0 12px 36px rgba(30, 58, 76, 0.32), 0 4px 10px rgba(30, 58, 76, 0.18)',
+              }}
+            >
+              {isAIReady() ? (
+                <>
+                  <Bot size={18} />
+                  Agent Decision OS
+                  <ArrowRight size={18} />
+                </>
+              ) : (
+                <>
+                  <Settings size={18} />
+                  配置 AI API 以使用 Agent
+                  <ArrowRight size={18} />
+                </>
+              )}
+            </button>
 
-          {/* Agent 工作流入口 */}
-          <button
-            className="vp-btn vp-btn-ghost"
-            onClick={() => navigate('/new', { state: { fromHome: true, agentMode: true } })}
-            style={{ marginBottom: 72, marginLeft: 12, fontSize: 14 }}
-          >
-            <Bot size={16} />
-            Agent 工作流 (多角色对话)
-          </button>
+            {/* 传统四步流程 — Secondary */}
+            <button
+              className="vp-btn vp-btn-ghost"
+              onClick={() => navigate('/new', { state: { fromHome: true } })}
+              style={{ fontSize: 14, padding: '12px 24px' }}
+            >
+              <Target size={16} />
+              传统四步流程
+            </button>
+          </div>
 
           {/* ── Value Cards Grid ── */}
           <div style={{
