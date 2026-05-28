@@ -38,6 +38,10 @@ import {
 } from './questionLedger';
 import { generateDefaultAssumptions } from './defaultAssumptions';
 
+// AI integration
+import { callCopilotJson, getAIConfig, VibeAIError } from '../api/evaluate';
+import { getNodeLabel } from './graph';
+
 // Node runners
 import { runOrchestratorNode } from './nodes/orchestratorNode';
 import { runIntakeNode } from './nodes/intakeNode';
@@ -340,10 +344,149 @@ export async function runAgentGraphTurn(input: {
     }
   }
 
-  // Normal path: run orchestrator then business node
+  // ---- AI Agent Call (V4.3: actually calls the LLM) ----
+
+  async function attemptAIAgentCall(params: {
+    session: AgentGraphSession;
+    brief: ProductBrief;
+    userMessage: string;
+    intent: string;
+    events: AgentGraphEvent[];
+  }): Promise<{
+    reply: string;
+    commands: Array<{ type: string; reason: string; payload: Record<string, unknown> }>;
+    questions: string[];
+    actionCards: Array<{ type: string; title: string; description: string; actions: Array<{ id: string; label: string; intent: string }> }>;
+    usedAI: boolean;
+  } | null> {
+    const config = getAIConfig();
+    if (!config) return null;
+
+    const { session, brief, userMessage, intent, events } = params;
+    const currentNodeId = session.state.currentNodeId;
+    const nodeLabel = getNodeLabel(currentNodeId);
+
+    // Build compact context
+    const context = JSON.stringify({
+      rawIdea: (brief.rawIdea || brief.ideaInput?.rawIdea || '').slice(0, 240),
+      targetUser: brief.ideaInput?.targetUser || '',
+      scenario: brief.ideaInput?.scenario || '',
+      problem: brief.ideaInput?.problem || '',
+      projectType: brief.ideaInput?.projectType || '',
+      currentNodeId,
+      currentNodeLabel: nodeLabel,
+      status: session.state.status,
+      pendingQuestions: session.state.pendingQuestions.slice(0, 3),
+      advancementCount: session.state.advancementCount ?? 0,
+      knownFacts: session.state.slotFilling
+        ? Object.entries(session.state.slotFilling.slots)
+            .filter(([, s]) => s.status === 'answered' && s.value)
+            .map(([k, s]) => ({ key: k, value: (s.value || '').slice(0, 100) }))
+            .slice(0, 6)
+        : [],
+      assumptions: session.state.slotFilling
+        ? Object.entries(session.state.slotFilling.slots)
+            .filter(([, s]) => s.status === 'assumed' && s.value)
+            .map(([k, s]) => ({ key: k, value: (s.value || '').slice(0, 100), confidence: s.confidence }))
+            .slice(0, 6)
+        : [],
+      userMessage: userMessage.slice(0, 300),
+      intent,
+    });
+
+    const systemPrompt = `你是 Vibe Copilot 的 ${nodeLabel} Agent，一个 AI 产品经理。
+你的任务：根据产品上下文和用户输入，输出结构化 JSON，帮助推进产品决策流程。
+
+## 可用命令
+- ASK_USER：追问用户缺失信息，payload: { questions: string[] }
+- UPDATE_BRIEF：更新产品文档某阶段，payload: { targetStage, patch }
+- MOVE_NODE：推进到下一节点，payload: { targetNodeId }
+- CREATE_FINDING：记录分析判断，payload: { title, summary }
+- GENERATE_HANDOFF：生成开发交付文档，payload: {}
+- EVALUATE_HANDOFF：评估交付质量，payload: {}
+
+## 规则
+1. 只返回 JSON，不要 markdown，不要解释文字。
+2. 每轮最多 2 个 commands。
+3. 如果信息不足需要追问，用 ASK_USER + questions。
+4. 如果信息足够推进，用 MOVE_NODE。
+5. reply 要像产品经理协作，简洁有行动感，不超过 3 句话。
+6. 如果用户输入是普通描述（不是继续/跳过等），先 UPDATE_BRIEF 保存关键信息。
+7. 不要返回空 commands。`;
+
+    const userPrompt = `## 当前产品上下文
+${context}
+
+## 用户最新输入
+${userMessage}
+
+请返回 JSON（只有这个对象，无其他内容）：
+{
+  "reply": "给用户的回复",
+  "commands": [{"type": "ASK_USER|UPDATE_BRIEF|MOVE_NODE|CREATE_FINDING", "reason": "...", "payload": {}}],
+  "questions": ["追问1"],
+  "actionCards": [{"type": "question|decision|next_step", "title": "...", "description": "...", "actions": [{"id": "1", "label": "继续", "intent": "continue"}]}]
+}`;
+
+    events.push(createGraphEvent({
+      sessionId: session.id, briefId: session.briefId, type: 'ai_call_started',
+      nodeId: currentNodeId, message: `AI Agent 调用: ${nodeLabel}`,
+      payload: { userMessage: userMessage.slice(0, 100) },
+    }));
+
+    try {
+      const aiResponse = await callCopilotJson<{
+        reply?: string;
+        commands?: Array<{ type?: string; reason?: string; payload?: Record<string, unknown> }>;
+        questions?: string[];
+        actionCards?: Array<{ type?: string; title?: string; description?: string; actions?: Array<{ id?: string; label?: string; intent?: string }> }>;
+      }>(systemPrompt, userPrompt, 1500, 60000);
+
+      events.push(createGraphEvent({
+        sessionId: session.id, briefId: session.briefId, type: 'ai_call_completed',
+        nodeId: currentNodeId, message: `AI Agent 响应成功`,
+        payload: { hasCommands: Boolean(aiResponse.commands?.length), hasReply: Boolean(aiResponse.reply) },
+      }));
+
+      return {
+        reply: aiResponse.reply || '我分析了当前情况，请查看我的判断。',
+        commands: (aiResponse.commands || []).slice(0, 3).map((c) => ({
+          type: String(c.type || 'ASK_USER'),
+          reason: String(c.reason || 'Agent 判断'),
+          payload: c.payload || {},
+        })),
+        questions: (aiResponse.questions || []).slice(0, 2),
+        actionCards: (aiResponse.actionCards || []).slice(0, 2).map((c) => ({
+          type: String(c.type || 'question'),
+          title: String(c.title || ''),
+          description: String(c.description || ''),
+          actions: (c.actions || []).map((a) => ({
+            id: String(a.id || `ac-${Date.now()}`),
+            label: String(a.label || ''),
+            intent: String(a.intent || 'continue'),
+          })),
+        })),
+        usedAI: true,
+      };
+    } catch (e) {
+      const errorMsg = e instanceof VibeAIError
+        ? `${e.type}: ${e.message.slice(0, 100)}`
+        : String(e).slice(0, 100);
+
+      events.push(createGraphEvent({
+        sessionId: session.id, briefId: session.briefId, type: 'ai_call_failed',
+        nodeId: currentNodeId, message: `AI 调用失败: ${errorMsg}`,
+        payload: { errorType: e instanceof VibeAIError ? e.type : 'unknown', error: errorMsg },
+      }));
+
+      return null; // trigger local fallback
+    }
+  }
+
+  // Normal path: run orchestrator, try AI, fallback to local node
   session = { ...session, state: { ...session.state, status: 'running', updatedAt: new Date().toISOString() } };
 
-  // 4. Run orchestrator
+  // 4. Run orchestrator (local, always fast)
   onProgress({ phase: 'planning', message: '运行 orchestrator' });
   const orchEventStart = createGraphEvent({
     sessionId: session.id, briefId: session.briefId, type: 'node_started',
@@ -375,7 +518,64 @@ export async function runAgentGraphTurn(input: {
   events.push(...orchExecResult.events);
   if (orchExecResult.briefPatch) briefPatch = { ...briefPatch, ...orchExecResult.briefPatch };
 
-  // 5. Run business node
+  // V4.3: Try AI agent call for normal intents
+  onProgress({ phase: 'running_node', message: '尝试 AI Agent 调用' });
+  const aiResult = await attemptAIAgentCall({
+    session, brief: { ...brief, ...briefPatch }, userMessage, intent, events,
+  });
+
+  if (aiResult && aiResult.usedAI) {
+    // AI succeeded — use AI commands and reply
+    onProgress({ phase: 'running_tools', message: '执行 AI Agent 命令' });
+
+    // Convert AI command types to AgentGraphCommand
+    const aiCommands: AgentGraphCommand[] = aiResult.commands.map((c) => ({
+      id: `ai-cmd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: (c.type === 'ASK_USER' || c.type === 'UPDATE_BRIEF' || c.type === 'MOVE_NODE' ||
+             c.type === 'CREATE_FINDING' || c.type === 'GENERATE_HANDOFF' ||
+             c.type === 'EVALUATE_HANDOFF')
+        ? c.type as AgentGraphCommand['type']
+        : 'ASK_USER' as AgentGraphCommand['type'],
+      reason: c.reason,
+      payload: c.payload,
+    }));
+
+    const aiExecResult = await executeCommands({
+      session, brief: { ...brief, ...briefPatch }, commands: aiCommands.slice(0, 3), nodeId: session.state.currentNodeId,
+    });
+    session = aiExecResult.session;
+    events.push(...aiExecResult.events);
+    if (aiExecResult.briefPatch) briefPatch = { ...briefPatch, ...aiExecResult.briefPatch };
+
+    // Update pending questions from AI
+    if (aiResult.questions.length > 0) {
+      session = { ...session, state: { ...session.state, pendingQuestions: aiResult.questions } };
+    }
+
+    // Add agent message event
+    events.push(createGraphEvent({
+      sessionId: session.id, briefId: session.briefId, type: 'agent_message',
+      nodeId: session.state.currentNodeId,
+      message: aiResult.reply.slice(0, 300),
+    }));
+
+    const interrupted = aiResult.questions.length > 0;
+    const newStatus = interrupted ? 'waiting_user' : (session.state.currentNodeId === 'end' ? 'completed' : 'idle');
+
+    session = {
+      ...session,
+      state: { ...session.state, status: newStatus, updatedAt: new Date().toISOString() },
+    };
+
+    onProgress({ phase: 'updating_state', message: '保存状态' });
+    saveGraphSession(session);
+    onProgress({ phase: 'completed', message: '完成' });
+
+    return { session, briefPatch, events, userVisibleReply: aiResult.reply, interrupted };
+  }
+
+  // AI unavailable or failed — fallback to local business node
+  onProgress({ phase: 'running_node', message: '使用本地规则执行节点' });
   const targetNodeId = orchResult.nextNodeId || session.state.currentNodeId;
   if (targetNodeId !== 'orchestrator' && targetNodeId !== 'human_interrupt' && targetNodeId !== 'end' && NODE_RUNNERS[targetNodeId]) {
     onProgress({ phase: 'running_node', message: `运行节点: ${targetNodeId}` });

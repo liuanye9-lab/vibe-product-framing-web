@@ -5,6 +5,27 @@
 
 ---
 
+## 🚀 V4.3 Real Agent Runtime Wiring Patch
+
+V4.3 fixes the critical gap: **the agent-v4 runtime now actually calls the LLM**.
+
+### What changed:
+- **AI Agent Call** — Normal intents trigger `callCopilotJson` with full product context and structured system prompt.
+- **ai_call_started / ai_call_completed / ai_call_failed events** — Every AI call is logged in the event stream.
+- **Conversation visibility** — AI call status shown as light indicators (`AI →` / `AI ✓` / `AI ✗`) in the main chat.
+- **Graceful fallback** — If AI fails or is not configured, local business nodes execute as before.
+- **Event Timeline enhancement** — AI events, slot events, and phase events now have distinct colors and labels.
+
+**Verification**: Check Event Timeline or conversation — if `ai_call_started` and `ai_call_completed` appear, the Agent is genuinely calling the LLM.
+
+### V4.3 Tech
+- `src/agent-v4/graphRuntime.ts` — `attemptAIAgentCall()` function with context builder + callCopilotJson integration
+- `src/agent-v4/types.ts` — Added `ai_call_started`, `ai_call_completed`, `ai_call_failed` event types
+- `src/agent-v4/ui/AgentEventTimeline.tsx` — Updated color/label map for AI + slot events
+- `src/pages/AgentWorkspacePageV4.tsx` — AI events visible in conversation
+
+---
+
 ## 🚀 V4.2 Realtime Agent Feedback Upgrade
 
 V4.2 eliminates the "blank waiting" experience. Users now see immediate Agent acknowledgement the moment they send a message.

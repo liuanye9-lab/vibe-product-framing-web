@@ -25,6 +25,16 @@ const EVENT_TYPE_COLORS: Record<string, string> = {
   checkpoint_created: 'var(--color-text-hint)',
   evaluation_completed: 'var(--color-primary)',
   reflection_created: 'var(--color-primary)',
+  ai_call_started: 'var(--color-primary)',
+  ai_call_completed: 'var(--color-success)',
+  ai_call_failed: 'var(--color-danger)',
+  slot_asked: 'var(--color-warning)',
+  slot_answered: 'var(--color-success)',
+  slot_assumed: 'var(--color-warning)',
+  slot_skipped: 'var(--color-text-hint)',
+  phase_advanced: 'var(--color-primary)',
+  repeated_question_prevented: 'var(--color-warning)',
+  user_action_clicked: 'var(--color-text-secondary)',
   error: 'var(--color-danger)',
 };
 
@@ -40,6 +50,16 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   checkpoint_created: '快照',
   evaluation_completed: '评估',
   reflection_created: '反思',
+  ai_call_started: 'AI 调用',
+  ai_call_completed: 'AI ✓',
+  ai_call_failed: 'AI ✗',
+  slot_asked: '追问',
+  slot_answered: '回答',
+  slot_assumed: '假设',
+  slot_skipped: '跳过',
+  phase_advanced: '推进',
+  repeated_question_prevented: '防重复',
+  user_action_clicked: '操作',
   error: '错误',
 };
 

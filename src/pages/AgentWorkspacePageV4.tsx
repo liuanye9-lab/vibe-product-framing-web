@@ -255,7 +255,7 @@ export default function AgentWorkspacePageV4() {
 
   // V4.2: Filter only user-visible events for conversation
   const conversationEvents = (session?.events || []).filter((e) =>
-    ['user_message', 'agent_message', 'tool_completed', 'error'].includes(e.type),
+    ['user_message', 'agent_message', 'ai_call_started', 'ai_call_completed', 'ai_call_failed', 'tool_completed', 'error'].includes(e.type),
   );
 
   return (
@@ -519,6 +519,9 @@ function EventBubble({ event }: { event: AgentGraphEvent }) {
   const isUser = event.type === 'user_message';
   const isAgent = event.type === 'agent_message';
   const isTool = event.type === 'tool_completed';
+  const isAIStart = event.type === 'ai_call_started';
+  const isAIDone = event.type === 'ai_call_completed';
+  const isAIFail = event.type === 'ai_call_failed';
   const isError = event.type === 'error';
   const nodeLabel = event.nodeId ? AGENT_NODE_LABELS[event.nodeId] || event.nodeId : '';
 
@@ -539,6 +542,16 @@ function EventBubble({ event }: { event: AgentGraphEvent }) {
     return (
       <div style={{ marginBottom: 4, marginLeft: 48, fontSize: 10, color: 'var(--color-text-hint)', opacity: 0.6 }}>
         &#9881; {fmtVal(event.message)}
+      </div>
+    );
+  }
+
+  if (isAIStart || isAIDone || isAIFail) {
+    const color = isAIFail ? 'var(--color-danger)' : isAIDone ? 'var(--color-success)' : 'var(--color-primary)';
+    const label = isAIFail ? 'AI ✗' : isAIDone ? 'AI ✓' : 'AI →';
+    return (
+      <div style={{ marginBottom: 4, marginLeft: 48, fontSize: 10, color, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontWeight: 600 }}>{label}</span> {fmtVal(event.message)}
       </div>
     );
   }

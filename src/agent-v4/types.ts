@@ -70,6 +70,9 @@ export interface AgentGraphEvent {
     | 'phase_advanced'
     | 'repeated_question_prevented'
     | 'user_action_clicked'
+    | 'ai_call_started'
+    | 'ai_call_completed'
+    | 'ai_call_failed'
     | 'error';
   nodeId?: AgentNodeId;
   message?: string;
