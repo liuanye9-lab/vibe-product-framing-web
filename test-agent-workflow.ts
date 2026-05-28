@@ -124,9 +124,9 @@ async function runTest() {
   const mvpPrompt = `你是 MVP 范围决策 Agent。基于产品定义，划分 Must Have / Should Have / Out of Scope。
 返回 JSON: {"reply": "...", "mustHave": "...", "shouldHave": "...", "outOfScope": "...", "minimumLoop": "用户从打开到获得价值的最短路径", "commands": []}`;
 
-  const mvpResult = await callAI(mvpPrompt,
-    `产品One-liner：${accumulatedContext.productOneLiner || '雅思生词错题管理小程序'}
-请划分第一版范围。`;
+  const mvpUserContent = `产品One-liner：${accumulatedContext.productOneLiner || '雅思生词错题管理小程序'}\n请划分第一版范围。`;
+
+  const mvpResult = await callAI(mvpPrompt, mvpUserContent);
 
   try {
     const j = JSON.parse(mvpResult.content);
