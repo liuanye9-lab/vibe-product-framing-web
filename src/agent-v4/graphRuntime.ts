@@ -489,7 +489,7 @@ ${userMessage}
     }
   }
 
-  // Normal path: run orchestrator, try AI, fallback to local node
+  // Normal path: run orchestrator, try AI — on failure → status='failed'
   session = { ...session, state: { ...session.state, status: 'running', updatedAt: new Date().toISOString() } };
 
   // 4. Run orchestrator (local, always fast)

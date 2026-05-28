@@ -74,7 +74,7 @@ export function getAIErrorMessage(error: unknown): string {
       case 'json_parse':
         return '模型已响应，但没有返回有效 JSON。建议换更稳定模型或降低输出长度。';
       case 'validation':
-        return `模型已响应，但输出与当前产品想法关联不足：${error.message}。可以重新生成，或使用本地规则版。`;
+        return `模型已响应，但输出与当前产品想法关联不足：${error.message}。请调整 prompt 或换更合适的模型后重新生成。`;
       case 'unknown':
       default:
         return `未知错误：${error.message}`;
