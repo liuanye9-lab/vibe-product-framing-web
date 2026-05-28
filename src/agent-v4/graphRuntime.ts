@@ -90,8 +90,13 @@ function parseIntent(message: string): UserIntentV4 {
 export async function runAgentGraphTurn(input: {
   brief: ProductBrief;
   userMessage: string;
+  onProgress?: (event: {
+    phase: string;
+    message: string;
+  }) => void;
 }): Promise<AgentGraphRunResult> {
   const { brief, userMessage } = input;
+  const onProgress = input.onProgress ?? (() => {});
   const briefId = brief.id;
   const events: AgentGraphEvent[] = [];
 
@@ -139,6 +144,7 @@ export async function runAgentGraphTurn(input: {
 
   // 3. Parse intent
   const intent = parseIntent(userMessage);
+  onProgress({ phase: 'understanding', message: `意图: ${intent}` });
 
   // 4. Checkpoint
   const ckptResult = createCheckpoint({ session, reason: `用户消息处理前 (${intent})` });
@@ -161,6 +167,7 @@ export async function runAgentGraphTurn(input: {
     const slotState = session.state.slotFilling!;
     const currentNodeId = session.state.currentNodeId;
     let userReply: string;
+    onProgress({ phase: 'checking_context', message: `节点: ${currentNodeId}` });
 
     if (intent === 'skip') {
       // Mark all missing required slots as skipped
@@ -337,6 +344,7 @@ export async function runAgentGraphTurn(input: {
   session = { ...session, state: { ...session.state, status: 'running', updatedAt: new Date().toISOString() } };
 
   // 4. Run orchestrator
+  onProgress({ phase: 'planning', message: '运行 orchestrator' });
   const orchEventStart = createGraphEvent({
     sessionId: session.id, briefId: session.briefId, type: 'node_started',
     nodeId: 'orchestrator', message: 'Orchestrator 开始路由判断',
@@ -370,6 +378,7 @@ export async function runAgentGraphTurn(input: {
   // 5. Run business node
   const targetNodeId = orchResult.nextNodeId || session.state.currentNodeId;
   if (targetNodeId !== 'orchestrator' && targetNodeId !== 'human_interrupt' && targetNodeId !== 'end' && NODE_RUNNERS[targetNodeId]) {
+    onProgress({ phase: 'running_node', message: `运行节点: ${targetNodeId}` });
     const runner = NODE_RUNNERS[targetNodeId];
 
     events.push(createGraphEvent({

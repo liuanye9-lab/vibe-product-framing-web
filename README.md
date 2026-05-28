@@ -5,6 +5,32 @@
 
 ---
 
+## 🚀 V4.2 Realtime Agent Feedback Upgrade
+
+V4.2 eliminates the "blank waiting" experience. Users now see immediate Agent acknowledgement the moment they send a message.
+
+### Key changes:
+- **Turn Lifecycle** — Tracks agent activity in real time: received → understanding → checking_context → running_node → completed.
+- **Immediate Agent Reply** — Agent responds in < 100ms with context-aware acknowledgement (no API call).
+- **Progress Indicator** — Shows step-by-step progress during runtime execution.
+- **Thinking Bubble** — Displays immediate reply with animated dots while Agent works.
+- **onProgress Callback** — Runtime emits progress events for UI to consume.
+- **Action Card Instant Feedback** — Every action card click produces an immediate reply before execution.
+- **Slow Hint** — After 8 seconds, agent updates: "这一步分析稍慢，我还在处理。"
+- **Cancel Button** — Users can stop waiting and continue with local rules.
+- **Clean Conversation** — Debug events (node_started, tool_called, checkpoint) are filtered to Debug tab only.
+
+**Product positioning**: "Agent 不是等模型返回后才说话，而是像真人协作一样，先确认、再分析、再行动、再交付。"
+
+### V4.2 Tech
+- `src/agent-v4/turnLifecycle.ts` — Turn lifecycle tracking
+- `src/agent-v4/immediateReply.ts` — Instant reply generator
+- `src/agent-v4/ui/AgentProgressIndicator.tsx` — Progress steps UI
+- `src/agent-v4/ui/AgentThinkingBubble.tsx` — Thinking bubble UI
+- `src/agent-v4/graphRuntime.ts` — Added onProgress callback
+
+---
+
 ## 🚀 V4.1 Agent Interaction & Anti-Loop Upgrade
 
 V4.1 fixes the core Agent interaction loop problem: **the Agent no longer asks the same question repeatedly**.

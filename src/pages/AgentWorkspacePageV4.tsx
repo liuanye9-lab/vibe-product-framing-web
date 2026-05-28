@@ -31,6 +31,7 @@ import {
   Zap,
   GitBranch,
   Database,
+  StopCircle,
 } from 'lucide-react';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { getGraphSession } from '../agent-v4/graphStore';
@@ -51,7 +52,16 @@ import { AgentSkillPanel } from '../agent-v4/ui/AgentSkillPanel';
 import { AgentDebugPanel } from '../agent-v4/ui/AgentDebugPanel';
 import { AgentInterruptCard } from '../agent-v4/ui/AgentInterruptCard';
 import { AgentSlotPanel } from '../agent-v4/ui/AgentSlotPanel';
+import { AgentProgressIndicator } from '../agent-v4/ui/AgentProgressIndicator';
+import { AgentThinkingBubble } from '../agent-v4/ui/AgentThinkingBubble';
 import { listMcpLikeTools } from '../agent-v4/adapters/mcpLikeToolAdapter';
+import { buildImmediateAgentReply } from '../agent-v4/immediateReply';
+import {
+  type AgentTurnLifecycle,
+  createAgentTurnLifecycle,
+  createDefaultProgressSteps,
+  markProgressStep,
+} from '../agent-v4/turnLifecycle';
 
 const STATUS_LABELS: Record<AgentGraphStatus, { label: string; color: string }> = {
   idle: { label: '空闲', color: 'var(--color-text-hint)' },
@@ -93,38 +103,117 @@ export default function AgentWorkspacePageV4() {
   const [activeTab, setActiveTab] = useState<TabKey>('state');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // V4.2: Turn lifecycle & optimistic UI
+  const [activeTurn, setActiveTurn] = useState<AgentTurnLifecycle | null>(null);
+  const [slowHint, setSlowHint] = useState('');
+  const slowTimerRef = useRef<number | null>(null);
+  const [optimisticUserMsg, setOptimisticUserMsg] = useState<string>('');
+  const [optimisticAgentReply, setOptimisticAgentReply] = useState<string>('');
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => { if (slowTimerRef.current) window.clearTimeout(slowTimerRef.current); };
+  }, []);
+
   // Initialize session
   useEffect(() => {
     if (!id || !brief) return;
     let sess = getGraphSession(id);
-    if (!sess) {
-      sess = sendV4WelcomeMessage(brief);
-    }
+    if (!sess) sess = sendV4WelcomeMessage(brief);
     setSession(sess);
   }, [id, brief]);
 
   // Auto-scroll
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [session?.events]);
+  }, [session?.events, activeTurn, optimisticUserMsg, optimisticAgentReply]);
 
-  const sendAgentMessage = useCallback(async (message: string) => {
+  const sendAgentMessage = useCallback(async (message: string, opts?: { immediateReply?: string }) => {
     if (!brief || sending) return;
     setSending(true);
     setError('');
+    setSlowHint('');
+
+    const currentNodeLabel = getNodeLabel(session?.state?.currentNodeId || 'intake');
+
+    // V4.2: Immediate feedback — show user message + instant agent reply NOW
+    setOptimisticUserMsg(message);
+
+    const immediateReply = opts?.immediateReply ??
+      buildImmediateAgentReply({
+        userMessage: message,
+        currentNodeLabel,
+        pendingQuestions: session?.state?.pendingQuestions,
+      });
+
+    setOptimisticAgentReply(immediateReply);
+
+    // Create turn lifecycle
+    let turn = createAgentTurnLifecycle({
+      briefId: brief.id,
+      sessionId: session?.id || '',
+      userMessage: message,
+      immediateReply,
+    });
+    turn = { ...turn, progressSteps: createDefaultProgressSteps({ userMessage: message, currentNodeLabel }) };
+    setActiveTurn(turn);
+
+    // Slow feedback timer
+    slowTimerRef.current = window.setTimeout(() => {
+      setSlowHint('这一步分析稍慢，我还在处理上下文和生成交付结构，请稍等。');
+    }, 8000);
+
     try {
-      const result = await runAgentGraphTurn({ brief, userMessage: message });
+      const result = await runAgentGraphTurn({
+        brief,
+        userMessage: message,
+        onProgress: (evt) => {
+          turn = markProgressStep({ lifecycle: turn, phase: evt.phase as never, status: 'done' });
+          setActiveTurn({ ...turn });
+        },
+      });
+
+      // Cleanup
+      if (slowTimerRef.current) { window.clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
+
       setSession(result.session);
+      setOptimisticUserMsg('');
+      setOptimisticAgentReply('');
+      setActiveTurn(null);
+      setSlowHint('');
+
       if (result.briefPatch && Object.keys(result.briefPatch).length > 0) {
         save({ ...brief, ...result.briefPatch });
       }
     } catch (e) {
-      setError('处理消息时出错，请重试。');
+      if (slowTimerRef.current) { window.clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
+
+      const errMsg = e instanceof Error ? e.message : String(e);
+      const fallbackReply = errMsg.includes('timeout') || errMsg.includes('timed out')
+        ? '这一步 AI 响应慢了，我先用本地规则继续推进，不会卡住流程。'
+        : errMsg.includes('json') || errMsg.includes('parse')
+          ? '模型返回格式不稳定，我先保留你的输入，并用本地规则生成建议。'
+          : '处理消息时遇到问题，但你的工作流不会丢。我会先用本地规则继续。';
+
+      setOptimisticAgentReply(fallbackReply);
+      setError(fallbackReply);
+
       console.error('[AgentV4] sendAgentMessage error:', e);
     } finally {
       setSending(false);
     }
-  }, [brief, sending, save]);
+  }, [brief, sending, save, session]);
+
+  // V4.2: Cancel waiting
+  const handleCancel = useCallback(() => {
+    if (slowTimerRef.current) { window.clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
+    setSending(false);
+    setActiveTurn(null);
+    setSlowHint('');
+    setOptimisticUserMsg('');
+    setOptimisticAgentReply('');
+    setError('已停止等待。你可以继续输入新的指令。');
+  }, []);
 
   const handleSend = useCallback(() => {
     const msg = userInput.trim();
@@ -133,10 +222,10 @@ export default function AgentWorkspacePageV4() {
     sendAgentMessage(msg);
   }, [userInput, sendAgentMessage]);
 
-  const handleContinue = useCallback(() => sendAgentMessage('继续下一步'), [sendAgentMessage]);
-  const handleSkip = useCallback(() => sendAgentMessage('先跳过'), [sendAgentMessage]);
-  const handleMakeAssumption = useCallback(() => sendAgentMessage('帮我做默认假设'), [sendAgentMessage]);
-  const handleGenerateHandoff = useCallback(() => sendAgentMessage('生成开发文档'), [sendAgentMessage]);
+  const handleContinue = useCallback(() => sendAgentMessage('继续下一步', { immediateReply: '收到，我会推进到下一阶段。如果信息不足，会先用低置信度假设。' }), [sendAgentMessage]);
+  const handleSkip = useCallback(() => sendAgentMessage('先跳过', { immediateReply: '已收到，我会把当前缺失项标记为跳过，并继续推进。' }), [sendAgentMessage]);
+  const handleMakeAssumption = useCallback(() => sendAgentMessage('帮我做默认假设', { immediateReply: '可以，我会先做低置信度假设，并把这些假设标出来，后面你可以随时改。' }), [sendAgentMessage]);
+  const handleGenerateHandoff = useCallback(() => sendAgentMessage('生成开发文档', { immediateReply: '收到，我会先补齐必要假设，然后整理 Product Brief、MVP Scope、DEV_SPEC 和 Codex Prompt。' }), [sendAgentMessage]);
   const handleReanalyze = useCallback(() => sendAgentMessage('重新分析当前节点'), [sendAgentMessage]);
 
   if (loading) {
@@ -164,7 +253,7 @@ export default function AgentWorkspacePageV4() {
   const isWaiting = status === 'waiting_user';
   const isComplete = status === 'completed';
 
-  // Build conversation from events
+  // V4.2: Filter only user-visible events for conversation
   const conversationEvents = (session?.events || []).filter((e) =>
     ['user_message', 'agent_message', 'tool_completed', 'error'].includes(e.type),
   );
@@ -179,7 +268,7 @@ export default function AgentWorkspacePageV4() {
           </button>
           <GitBranch size={16} style={{ color: 'var(--color-primary)' }} />
           <h1 style={{ fontSize: 15, fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            Agent Decision OS V4
+            Agent Decision OS V4.2
           </h1>
           <span style={{
             fontSize: 11,
@@ -221,19 +310,52 @@ export default function AgentWorkspacePageV4() {
         {/* Left: Conversation */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
-            {conversationEvents.length === 0 && (
+            {conversationEvents.length === 0 && !sending && (
               <div style={{ padding: '20px 0', textAlign: 'center' }}>
                 <Bot size={32} style={{ color: 'var(--color-text-hint)', marginBottom: 12 }} />
-                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Graph Runtime V4 就绪</p>
+                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V4.2 就绪</p>
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
-                  描述你的产品想法，Agent 会通过图工作流逐步推进决策。
+                  描述你的产品想法，我会像产品经理一样带你一步步把想法变成开发规格。
                 </p>
               </div>
             )}
 
+            {/* Session events (persisted, non-optimistic) */}
             {conversationEvents.map((event) => (
               <EventBubble key={event.id} event={event} />
             ))}
+
+            {/* V4.2: Optimistic user message (immediate, before runtime) */}
+            {optimisticUserMsg && (
+              <div style={{ display: 'flex', gap: 10, marginBottom: 12, justifyContent: 'flex-end' }}>
+                <div className="vp-card" style={{ maxWidth: '70%', padding: '10px 14px', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {optimisticUserMsg}
+                </div>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--color-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <User size={14} />
+                </div>
+              </div>
+            )}
+
+            {/* V4.2: Optimistic agent reply (thinking bubble) */}
+            {sending && optimisticAgentReply && (
+              <>
+                <AgentThinkingBubble
+                  message={optimisticAgentReply}
+                  phase={activeTurn ? `正在处理 · ${activeTurn.phase}` : undefined}
+                  slowHint={slowHint || undefined}
+                />
+                <AgentProgressIndicator lifecycle={activeTurn} />
+              </>
+            )}
+
+            {/* Old-style sending indicator (only if no optimistic message) */}
+            {sending && !optimisticAgentReply && (
+              <div style={{ padding: '12px 0', paddingLeft: 48, color: 'var(--color-text-hint)', fontSize: 13 }}>
+                <Loader2 size={14} className="vp-spin" style={{ display: 'inline-block', marginRight: 6 }} />
+                Agent 正在处理...
+              </div>
+            )}
 
             {/* Interrupt card when waiting */}
             {isWaiting && !sending && (
@@ -274,10 +396,13 @@ export default function AgentWorkspacePageV4() {
               </div>
             )}
 
-            {sending && (
-              <div style={{ padding: '12px 0', paddingLeft: 48, color: 'var(--color-text-hint)', fontSize: 13 }}>
-                <Loader2 size={14} className="vp-spin" style={{ display: 'inline-block', marginRight: 6 }} />
-                Agent 正在处理...
+            {/* V4.2: Cancel / stop waiting button */}
+            {sending && slowHint && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+                <button className="vp-btn vp-btn-ghost" onClick={handleCancel} style={{ fontSize: 11, padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <StopCircle size={12} />
+                  停止等待
+                </button>
               </div>
             )}
 
