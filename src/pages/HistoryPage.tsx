@@ -1,11 +1,11 @@
 /**
- * HistoryPage — V2.1
+ * HistoryPage — V4.0
  *
- * Now detects Agent workflows and shows proper entry points:
- * - Continue Agent → /agent/:id
- * - Continue Legacy → /discovery/:id
+ * Now detects all Agent workflows (V2, V3, V4) and shows proper entry points:
+ * - Continue Agent → /agent/:id (V4)
+ * - Four-step → /discovery/:id
  * - View Handoff → /handoff/:id
- * - Delete removes both brief and agent workflow
+ * - Delete removes brief and all agent workflows
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -22,12 +22,15 @@ import {
   Inbox,
   Home,
   Brain,
+  GitBranch,
 } from 'lucide-react';
 import type { ProductBrief } from '../types';
 import { getAgentWorkflowSummary, deleteAgentWorkflow } from '../agent/workflowStore';
 import { getAgentSessionSummary, deleteAgentSession } from '../agent-v3/sessionStore';
 import { getAgentPhaseLabel } from '../agent-v3/phaseMachine';
 import { getPhaseLabel } from '../agent/phaseUtils';
+import { getGraphSessionSummary, deleteGraphSession } from '../agent-v4/graphStore';
+import { getNodeLabel } from '../agent-v4/graph';
 
 const STORAGE_KEY = 'vibepilot_briefs';
 
@@ -81,6 +84,7 @@ export default function HistoryPage() {
     deleteBrief(id);
     deleteAgentWorkflow(id);
     deleteAgentSession(id);
+    deleteGraphSession(id);
     setDeleteConfirm(null);
     refresh();
   };
@@ -141,9 +145,11 @@ export default function HistoryPage() {
         <div style={{ maxWidth: 800, margin: '0 auto' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {briefs.map((brief) => {
+              const v4Summary = getGraphSessionSummary(brief.id);
               const v3Summary = getAgentSessionSummary(brief.id);
               const v2Summary = getAgentWorkflowSummary(brief.id);
-              const hasAgent = v3Summary.exists || v2Summary.exists;
+              const hasV4 = v4Summary.exists;
+              const hasAgent = hasV4 || v3Summary.exists || v2Summary.exists;
               const isPending = deleteConfirm === brief.id;
 
               return (
@@ -156,13 +162,15 @@ export default function HistoryPage() {
                     ...(isPending ? { borderColor: 'var(--color-danger)', background: 'var(--color-background-danger)' } : {}),
                   }}
                   onClick={() => {
-                    if (!isPending) navigate(hasAgent ? `/agent/${brief.id}` : `/discovery/${brief.id}`);
+                    if (!isPending) navigate(hasV4 ? `/agent/${brief.id}` : (hasAgent ? `/agent/${brief.id}` : `/discovery/${brief.id}`));
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        {hasAgent ? (
+                        {hasV4 ? (
+                          <GitBranch size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                        ) : hasAgent ? (
                           <Bot size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
                         ) : (
                           <CheckCircle2 size={14} style={{ color: 'var(--color-text-hint)', flexShrink: 0 }} />
@@ -170,7 +178,12 @@ export default function HistoryPage() {
                         <h3 style={{ fontSize: 15, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {brief.rawIdea || '未命名项目'}
                         </h3>
-                        {hasAgent && (
+                        {hasV4 && (
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'var(--color-primary)', color: '#fff', flexShrink: 0 }}>
+                            V4
+                          </span>
+                        )}
+                        {hasAgent && !hasV4 && (
                           <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'var(--color-primary)', color: '#fff', flexShrink: 0 }}>
                             Agent
                           </span>
@@ -180,7 +193,20 @@ export default function HistoryPage() {
                         <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-hint)' }}>
                           <Clock size={12} /> {formatDate(brief.createdAt)}
                         </span>
-                        {hasAgent && (
+                        {hasV4 && (
+                          <>
+                            <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
+                              {v4Summary.currentNodeId ? getNodeLabel(v4Summary.currentNodeId as never) : 'intake'}
+                            </span>
+                            <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
+                              {v4Summary.eventCount} 个事件
+                            </span>
+                            <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
+                              {v4Summary.taskCount} 个任务
+                            </span>
+                          </>
+                        )}
+                        {!hasV4 && hasAgent && (
                           <>
                             <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
                               {v3Summary.exists ? getAgentPhaseLabel(v3Summary.currentPhase || 'intake') : getPhaseLabel(v2Summary.currentPhase || 'intake')}

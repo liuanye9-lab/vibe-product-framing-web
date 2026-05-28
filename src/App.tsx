@@ -9,7 +9,7 @@ import TechnicalPlanningPage from './pages/TechnicalPlanningPage';
 import MvpScopePage from './pages/MvpScopePage';
 import BlindSpotReviewPage from './pages/BlindSpotReviewPage';
 import DeveloperHandoffPage from './pages/DeveloperHandoffPage';
-import AgentWorkspacePage from './pages/AgentWorkspacePage';
+import AgentWorkspacePageV4 from './pages/AgentWorkspacePageV4';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -112,7 +112,7 @@ export default function App() {
           <Route path="/scope/:id" element={<MvpScopePage />} />
           <Route path="/blind-spot/:id" element={<BlindSpotReviewPage />} />
           <Route path="/handoff/:id" element={<DeveloperHandoffPage />} />
-          <Route path="/agent/:id" element={<AgentWorkspacePage />} />
+          <Route path="/agent/:id" element={<AgentWorkspacePageV4 />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/guide/:id" element={<LegacyRedirect to="product" />} />

@@ -1,28 +1,45 @@
-# Vibe Copilot — Product Thinking Copilot for Vibe Coding
+# Vibe Copilot — Agentic Product Decision OS
 
 > **面向面试的产品级 React 全栈项目**  
-> 把模糊产品想法转化为结构化、可复盘的 Codex Development Prompt，让 AI Coding 从"能不能写"变成"该不该写"。
+> 通过多 Agent 图工作流，把模糊产品想法转化为可开发、可评分、可修复、可交给 Codex / Claude Code / Cursor 执行的 DEV_SPEC。
 
 ---
 
-## 🚀 V3.0 Real Agent Workflow System
+## 🚀 V4.0 Agent Graph Runtime & Decision OS
 
-Vibe Copilot V3.0 已将 Agent 工作流从 demo 升级为真正的 **Agent Runtime + Multi-Agent Workflow**：
+Vibe Copilot V4.0 将 Agent Workspace 从"对话页面 + Agent 状态"升级为真正的 **Agent Graph Runtime**：
 
-- **Agent Runtime** (`src/agent-v3/runtime.ts`) — 核心 Runtime，替代单轮 AI 调用
-- **Multi-Agent System** — 9 个专职 Agent（Orchestrator/Intake/Demand/Product/MVP/Tech/Risk/Handoff/Reviewer）
-- **AgentSession** — 完整 session 持久化（messages, tasks, findings, commands, toolResults）
-- **Tool Registry** — 11 种 Agent Command 通过 Tool Registry 执行
-- **Action Cards** — 结构化交互卡片替代文本解析
-- **Phase State Machine** — Phase 是一等状态，不依赖字段扫描
-- **Intent Parser** — continue/skip/make_assumption 优先于缺字段检查
-- **Agent Workspace** — 对话区 + 控制面板 + Debug Panel + Action Cards
-- **历史恢复** — HistoryPage 支持恢复完整 Agent session
-- **双向互通** — 旧四步流程与 Agent 工作流可随时切换
+### 新增核心能力
+
+- **Agent Graph Runtime** (`src/agent-v4/graphRuntime.ts`) — LangGraph-inspired 状态图执行引擎
+- **Graph Nodes** — 10 个专职节点 (orchestrator/intake/demand/product/mvp/tech/risk/handoff/reviewer/reflection)，每个节点输出 commands + findings
+- **AgentGraphSession** — State/Events/Checkpoints 三位一体的持久化 session
+- **Event Log** — 全事件流覆盖（node_started/completed, tool_called/completed, human_interrupt, evaluation, reflection, error）
+- **Checkpoint Store** — 每次节点转换自动创建 checkpoint，支持 Time Travel 恢复
+- **Tool Registry** — 11 个 Agent Tool（updateBriefStage, createFinding, createTask, generateHandoff, evaluateHandoff, createMemory, createSkill, askUser...）
+- **Memory System** — 四层记忆：Working（会话变量）、Episodic（关键事件/反思）、Semantic（知识库引用）、Skill Library（可复用流程模板）
+- **Reflection Node** — 从失败、评分和用户反馈中生成反思记忆和可复用 skill
+- **Human-in-the-Loop** — AgentInterruptCard + pendingQuestions，等待用户确认
+- **Decision OS Panel** — 右侧多 Tab 面板：State/Tasks/Findings/Memory/Skills/Debug
+- **Agent Graph Panel** — 节点流程图，当前节点高亮、已完成/被跳过节点可视化
+- **Event Timeline** — 最近 30 个事件的实时流
+- **Task Board** — 任务管理（todo/doing/blocked/done/skipped）
+- **MCP-like Tool Adapter** — 内部工具格式对齐 MCP 思想，为未来 MCP Server 预留
+- **Regression Cases** — 4 组回归测试用例验证 Agent 工作流
+
+### 参考架构
+
+- **LangGraph**: stateful graph, durable execution, checkpoints, human-in-the-loop
+- **AutoGen**: event-driven multi-agent runtime
+- **CrewAI**: agents, tasks, flows, guardrails
+- **MCP**: tools, resources, prompts for future compatibility
+- **ReAct**: reason + act — 不只是聊天
+- **Reflexion**: 从失败中生成反思记忆
+- **Voyager**: skill library 沉淀
 
 ### Why this is not just a chatbot
 
-普通聊天只返回文本。Vibe Copilot Agent 维护 session、phase、tasks、commands、tool results、findings，并把对话结果转化为 DEV_SPEC 和 Codex Prompt。
+V1 是结构化 AI 生成器，V2/V3 是 Agent Workspace，**V4 升级为 Agent Graph Runtime**。它不是只返回文本，而是维护 state、events、commands、tools、tasks、findings、memory 和 checkpoints，把自然语言交互转化为可观察、可恢复、可评估的产品决策工作流。
 
 ---
 
