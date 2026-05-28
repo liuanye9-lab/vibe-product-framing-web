@@ -4,7 +4,7 @@
  * Uses Aliyun DashScope qwen-plus API.
  */
 const API_URL = 'https://dashscope.aliyuncs.com/compatible-mode';
-const API_KEY = 'sk-219efad867674c3a8575a82aa7b2e175';
+const API_KEY = '__YOUR_ALIYUN_API_KEY__';
 const MODEL = 'qwen-plus';
 const PROXY = 'http://localhost:5174/api/ai-proxy';
 
