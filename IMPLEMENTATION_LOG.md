@@ -1,6 +1,88 @@
-# IMPLEMENTATION_LOG — Vibe Decision Copilot P0 升级
+# IMPLEMENTATION_LOG — Vibe Decision Copilot V4.5
 
-> 记录每一步改了什么、为什么改、是否影响旧功能。
+> Runtime Consistency & Source-of-Truth Patch
+
+## 审计发现 (2026-05-29)
+
+| # | 问题 | 严重度 | 涉及文件 |
+|---|------|--------|---------|
+| 1 | graphRuntime 事件只推 events 数组，不写入 session.events | P0 | graphRuntime.ts |
+| 2 | userVisibleReply 不生成 agent_message event | P0 | graphRuntime.ts |
+| 3 | ai_call events 不在 session.events | P0 | graphRuntime.ts |
+| 4 | executeCommands GENERATE_HANDOFF 调用 generateLocalHandoff | P0 | graphRuntime.ts:652-653 |
+| 5 | toolRegistry 注册 generateLocalHandoff 为默认工具 | P0 | toolRegistry.ts:168-180 |
+| 6 | optimizeHandoffWithAI 描述含 "Falls back to local handoff" | P1 | toolRegistry.ts:184 |
+| 7 | README "API 不可用时优雅降级"与 V4.4 冲突 | P1 | README.md:164 |
+| 8 | AgentWorkspacePageV4 标题显示 "V4.2" | P1 | AgentWorkspacePageV4.tsx:277,322 |
+| 9 | DecisionOutputPage useMemo 中调用 addDecisionLogEntry | P0 | DecisionOutputPage.tsx:43-44 |
+| 10 | DecisionOutput 是派生输出，非 source of truth | P1 | DecisionOutputPage.tsx |
+| 11 | OutputSource 未标注 legacy | P1 | types.ts:3 |
+| 12 | normalizeSource 丢失 legacy 信息 | P1 | useProductBrief.ts:63-64 |
+| 13 | README V4.3/V4.4 版本描述混乱 | P1 | README.md |
+
+### 初始状态
+- `npm install`: ✅ 0 vulnerabilities
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (1.35s, 584KB JS)
+
+---
+
+## V4.5 修复详情 (2026-05-29)
+
+### 修复统计
+| 操作 | 数量 |
+|------|------|
+| 修改文件 | 13 |
+| 新增文件 | 1 (decisionSpecBuilder.ts) |
+| 总修改文件 | 14 |
+
+### Step 2: Event Persistence ✅
+- `graphRuntime.ts`: 新增 `appendRuntimeEvent()` helper
+- 替换所有 `events.push(createGraphEvent(...))` 为 appendRuntimeEvent 模式
+- 覆盖: slot_skipped, slot_assumed, phase_advanced, node_started, node_completed, ai_call_started, ai_call_completed, ai_call_failed, tool_called, error, agent_message, human_interrupt
+
+### Step 3: Agent Reply Fix ✅
+- `graphRuntime.ts`: 新增 `appendAgentReply()` helper
+- 所有 return 分支前确保 userVisibleReply 持久化为 agent_message event
+- 覆盖: continue, skip, make_assumption, generate_handoff success/error, AI success, AI failed, orchestrator error
+
+### Step 4: AI Call Event Visibility ✅
+- `graphRuntime.ts`: attemptAIAgentCall 改为闭包模式
+- `types.ts`: 新增 lastAIStatus, lastAIError, lastAINodeId, lastAICalledAt 字段
+- `AgentWorkspacePageV4.tsx`: StateView 新增 AI Status card
+
+### Step 5: Handoff Fallback Cleanup ✅
+- `graphRuntime.ts`: GENERATE_HANDOFF → optimizeHandoffWithAI
+- `toolRegistry.ts`: generateLocalHandoff → legacyGenerateLocalHandoff, description 更新
+- `handoffTools.ts`: 添加 legacy 注释
+
+### Step 6: OutputSource ✅
+- `types.ts`: 添加 legacy 注释
+- `useProductBrief.ts`: normalizeSource 处理 legacy sources
+
+### Step 7: DecisionOutput Side Effect Fix ✅
+- `DecisionOutputPage.tsx`: useMemo 移除副作用
+- `DecisionOutputPage.tsx`: 新增 useEffect + useRef 一次性记录
+- `DecisionOutputPage.tsx`: downloadAll 添加日志
+
+### Step 8: DecisionOutput 入口增强 ✅
+- `AgentWorkspacePageV4.tsx`: Header 新增"决策输出"按钮
+- `HistoryPage.tsx`: 每条记录新增"决策输出"按钮
+- `DeveloperHandoffPage.tsx`: 已有入口，确认无误
+
+### Step 9: 版本叙事统一 ✅
+- `AgentWorkspacePageV4.tsx`: V4.2 → V4.5 (header + welcome)
+- `graphRuntime.ts`: 注释更新为 V4.5
+- `README.md`: 新增 V4.5 changelog section, 清理冲突叙事
+- `CHANGELOG.md`: 新增 V4.5 条目
+- `ROADMAP.md`: 更新已完成清单
+
+### Step 10: DecisionSpecBundle ✅
+- `decisionSpecBuilder.ts`: 新建文件, buildDecisionSpecBundle() 函数
+
+### 最终验证
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (650ms, 588KB JS)
 
 ---
 

@@ -1,5 +1,8 @@
 /**
  * Handoff Tools — generate, optimize, evaluate, and fix Developer Handoff.
+ *
+ * NOTE: Since V4.5, generateLocalHandoff is legacy/debug only.
+ * The core agent runtime path uses optimizeHandoffWithAI exclusively.
  */
 
 import type { ProductBrief, FinalHandoff, OutputSource } from '../../types';
@@ -7,7 +10,7 @@ import type { AgentGraphState } from '../types';
 import { makeToolResult, type AgentToolResult } from './toolTypes';
 import { buildLocalHandoff } from '../../api/evaluate';
 
-/** Generate local handoff from ProductBrief. */
+/** [Legacy/Debug only] Generate handoff locally. Not used in core agent runtime path since V4.5. */
 export function generateLocalHandoff(input: {
   brief: ProductBrief;
   state: AgentGraphState;

@@ -29,6 +29,15 @@ Raw Idea → Problem Framing → User Scenario → Demand Evidence
 | 11 | 轻量决策记录（localStorage） | ✅ |
 | 12 | 旧数据兼容（normalizeBrief 迁移） | ✅ |
 
+### ✅ V4.5 已完成
+- [x] 事件持久化修复
+- [x] Agent 回复不消失修复
+- [x] AI 调用状态可视化
+- [x] Handoff 本地 fallback 清理
+- [x] 版本叙事统一
+- [x] DecisionOutput 副作用修复
+- [x] DecisionSpecBundle builder |
+
 ### 已产出的文档
 | 文档 | 路径 |
 |------|------|

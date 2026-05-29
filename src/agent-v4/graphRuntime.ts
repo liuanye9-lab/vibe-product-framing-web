@@ -1,10 +1,13 @@
 /**
- * Agent Graph Runtime V4.4 — API Required Runtime Lock.
+ * Agent Graph Runtime V4.5 — Runtime Consistency & Source-of-Truth Patch.
  *
- * V4.4 changes:
- * - assertApiReady() must pass before any AI turn.
- * - No local-rule or mock fallback on AI failure.
- * - AI failure → status='failed', no phase advancement.
+ * V4.5 changes:
+ * - All graph runtime events persist to session.events (appendRuntimeEvent).
+ * - userVisibleReply from action intents now generates durable agent_message events.
+ * - ai_call_started/completed/failed events persist to session, visible in UI.
+ * - New lastAIStatus state field for AI call visibility.
+ * - GENERATE_HANDOFF command routes to optimizeHandoffWithAI (AI-only).
+ * - generateLocalHandoff renamed to legacy/debug tool.
  */
 
 import type { ProductBrief } from '../types';
@@ -53,7 +56,7 @@ import { runHandoffNode } from './nodes/handoffNode';
 import { runReviewerNode } from './nodes/reviewerNode';
 import { runReflectionNode } from './nodes/reflectionNode';
 
-// Node runners (kept for reference; V4.4 local fallback removed)
+// Node runners (kept for reference; V4.5 local fallback removed)
 void (function registerNodeRunners() {
   const runners: Record<string, typeof runOrchestratorNode> = {
   orchestrator: runOrchestratorNode,
@@ -71,6 +74,50 @@ void (function registerNodeRunners() {
 })();
 
 const MAX_COMMANDS_PER_TURN = 5;
+
+// ---- V4.5 Runtime Helpers ----
+
+function appendRuntimeEvent(input: {
+  session: AgentGraphSession;
+  events: AgentGraphEvent[];
+  event: AgentGraphEvent;
+}): {
+  session: AgentGraphSession;
+  events: AgentGraphEvent[];
+} {
+  const updatedSession = {
+    ...input.session,
+    events: [...input.session.events, input.event].slice(-200),
+    updatedAt: new Date().toISOString(),
+  };
+  return {
+    session: updatedSession,
+    events: [...input.events, input.event],
+  };
+}
+
+function appendAgentReply(input: {
+  session: AgentGraphSession;
+  events: AgentGraphEvent[];
+  nodeId: AgentNodeId;
+  message: string;
+  source?: 'ai' | 'system' | 'error';
+  payload?: Record<string, unknown>;
+}): {
+  session: AgentGraphSession;
+  events: AgentGraphEvent[];
+} {
+  if (!input.message) return { session: input.session, events: input.events };
+  const event = createGraphEvent({
+    sessionId: input.session.id,
+    briefId: input.session.briefId,
+    type: 'agent_message',
+    nodeId: input.nodeId,
+    message: input.message.slice(0, 500),
+    payload: { ...(input.payload || {}), source: input.source || 'system' },
+  });
+  return appendRuntimeEvent({ session: input.session, events: input.events, event });
+}
 
 // ---- Intent Parsing (V4.1: action-oriented) ----
 
@@ -92,7 +139,7 @@ function parseIntent(message: string): UserIntentV4 {
   return 'normal';
 }
 
-// ---- Main Runtime (V4.1) ----
+// ---- Main Runtime (V4.5) ----
 
 export async function runAgentGraphTurn(input: {
   brief: ProductBrief;
@@ -105,7 +152,7 @@ export async function runAgentGraphTurn(input: {
   const { brief, userMessage } = input;
   const onProgress = input.onProgress ?? (() => {});
   const briefId = brief.id;
-  const events: AgentGraphEvent[] = [];
+  let events: AgentGraphEvent[] = [];
 
   // 1. Assert API ready (V4.4: no local-rule fallback)
   assertApiReady();
@@ -185,10 +232,12 @@ export async function runAgentGraphTurn(input: {
       let newSlotState = slotState;
       for (const ms of missing) {
         newSlotState = markSlotSkipped({ slotState: newSlotState, key: ms.key });
-        events.push(createGraphEvent({
+        const skipResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
           sessionId: session.id, briefId: session.briefId, type: 'slot_skipped',
           nodeId: currentNodeId, message: `跳过: ${ms.label}`,
-        }));
+        })});
+        session = skipResult.session;
+        events = skipResult.events;
       }
       // Clear pending questions
       const skippedState = markAllQuestionsSkipped({ ...session.state, slotFilling: newSlotState });
@@ -202,11 +251,13 @@ export async function runAgentGraphTurn(input: {
         const assumptions = generateDefaultAssumptions({ brief, phase: currentNodeId, missingSlots: missing });
         for (const a of assumptions) {
           newSlotState = markSlotAssumed({ slotState: newSlotState, key: a.slotKey, value: a.value, confidence: a.confidence });
-          events.push(createGraphEvent({
+          const assumeResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
             sessionId: session.id, briefId: session.briefId, type: 'slot_assumed',
             nodeId: currentNodeId, message: `默认假设: ${a.slotKey}=${a.value.slice(0, 50)}`,
             payload: { slotKey: a.slotKey, value: a.value, confidence: a.confidence },
-          }));
+          })});
+          session = assumeResult.session;
+          events = assumeResult.events;
         }
         // Also mark remaining as assumed
         for (const ms of missing) {
@@ -226,11 +277,13 @@ export async function runAgentGraphTurn(input: {
         const assumptions = generateDefaultAssumptions({ brief, phase: currentNodeId, missingSlots: missing });
         for (const a of assumptions) {
           newSlotState = markSlotAssumed({ slotState: newSlotState, key: a.slotKey, value: a.value, confidence: a.confidence });
-          events.push(createGraphEvent({
+          const assumeResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
             sessionId: session.id, briefId: session.briefId, type: 'slot_assumed',
             nodeId: currentNodeId, message: `自动假设: ${a.slotKey}=${a.value.slice(0, 50)}`,
             payload: { slotKey: a.slotKey, confidence: a.confidence, reason: '用户点击继续，自动假设缺失信息' },
-          }));
+          })});
+          session = assumeResult.session;
+          events = assumeResult.events;
         }
         for (const ms of missing) {
           if (!assumptions.find((a) => a.slotKey === ms.key)) {
@@ -247,10 +300,12 @@ export async function runAgentGraphTurn(input: {
     const nextId = getDefaultNextNode(currentNodeId);
     if (canTransition(currentNodeId, nextId)) {
       // Create phase_advanced event
-      events.push(createGraphEvent({
+      const phaseResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
         sessionId: session.id, briefId: session.briefId, type: 'phase_advanced',
         nodeId: currentNodeId, message: `阶段推进: ${currentNodeId} → ${nextId}`,
-      }));
+      })});
+      session = phaseResult.session;
+      events = phaseResult.events;
 
       session = {
         ...session,
@@ -264,12 +319,28 @@ export async function runAgentGraphTurn(input: {
         },
       };
 
+      // V4.5: Persist agent_message for userVisibleReply
+      const replyResult = appendAgentReply({
+        session, events, nodeId: session.state.currentNodeId,
+        message: userReply, source: 'system',
+      });
+      session = replyResult.session;
+      events = replyResult.events;
+
       saveGraphSession(session);
 
       return {
         session, briefPatch, events, userVisibleReply: userReply, interrupted: false,
       };
     }
+
+    // V4.5: Persist agent_message for userVisibleReply
+    const replyResult = appendAgentReply({
+      session, events, nodeId: session.state.currentNodeId,
+      message: userReply, source: 'system',
+    });
+    session = replyResult.session;
+    events = replyResult.events;
 
     session = { ...session, state: { ...session.state, status: 'idle' } };
     saveGraphSession(session);
@@ -307,7 +378,6 @@ export async function runAgentGraphTurn(input: {
       };
     }
 
-    // Execute handoff node
     const nodeStartEvent = createGraphEvent({
       sessionId: session.id, briefId: session.briefId, type: 'node_started',
       nodeId: 'handoff', message: '进入 handoff 节点',
@@ -317,10 +387,12 @@ export async function runAgentGraphTurn(input: {
 
     try {
       const nodeResult = await runHandoffNode({ brief: { ...brief, ...briefPatch }, session, userMessage });
-      events.push(createGraphEvent({
+      const completeResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
         sessionId: session.id, briefId: session.briefId, type: 'node_completed',
         nodeId: 'handoff', message: nodeResult.reply.slice(0, 200),
-      }));
+      })});
+      session = completeResult.session;
+      events = completeResult.events;
 
       const nodeExecResult = await executeCommands({
         session, brief: { ...brief, ...briefPatch }, commands: nodeResult.commands, nodeId: 'handoff',
@@ -338,27 +410,40 @@ export async function runAgentGraphTurn(input: {
         },
       };
 
+      // V4.5: Persist agent_message for userVisibleReply
+      const replyResult2 = appendAgentReply({
+        session, events, nodeId: 'handoff',
+        message: nodeResult.reply, source: 'system',
+      });
+      session = replyResult2.session;
+      events = replyResult2.events;
+
       saveGraphSession(session);
       return { session, briefPatch, events, userVisibleReply: nodeResult.reply, interrupted: false };
     } catch (e) {
-      events.push(createGraphEvent({
+      const errorResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
         sessionId: session.id, briefId: session.briefId, type: 'error',
         nodeId: 'handoff', message: `Handoff 生成失败: ${String(e)}`,
-      }));
+      })});
+      session = errorResult.session;
+      events = errorResult.events;
+
+      // V4.5: Persist error agent_message
+      const replyResult3 = appendAgentReply({
+        session, events, nodeId: 'handoff',
+        message: '生成失败，请重试。', source: 'error',
+      });
+      session = replyResult3.session;
+      events = replyResult3.events;
+
       saveGraphSession(session);
       return { session, briefPatch, events, userVisibleReply: '生成失败，请重试。', interrupted: true };
     }
   }
 
-  // ---- AI Agent Call (V4.3: actually calls the LLM) ----
+  // ---- AI Agent Call (V4.5: closure-based, writes lastAIStatus) ----
 
-  async function attemptAIAgentCall(params: {
-    session: AgentGraphSession;
-    brief: ProductBrief;
-    userMessage: string;
-    intent: string;
-    events: AgentGraphEvent[];
-  }): Promise<{
+  async function attemptAIAgentCall(): Promise<{
     reply: string;
     commands: Array<{ type: string; reason: string; payload: Record<string, unknown> }>;
     questions: string[];
@@ -366,9 +451,8 @@ export async function runAgentGraphTurn(input: {
     usedAI: boolean;
   } | null> {
     const config = getAIConfig();
-    if (!config) return null;
+    if (!config || !session) return null;
 
-    const { session, brief, userMessage, intent, events } = params;
     const currentNodeId = session.state.currentNodeId;
     const nodeLabel = getNodeLabel(currentNodeId);
 
@@ -434,11 +518,17 @@ ${userMessage}
   "actionCards": [{"type": "question|decision|next_step", "title": "...", "description": "...", "actions": [{"id": "1", "label": "继续", "intent": "continue"}]}]
 }`;
 
-    events.push(createGraphEvent({
+    // V4.5: Track AI call start with session persistence
+    const startResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
       sessionId: session.id, briefId: session.briefId, type: 'ai_call_started',
       nodeId: currentNodeId, message: `AI Agent 调用: ${nodeLabel}`,
       payload: { userMessage: userMessage.slice(0, 100) },
-    }));
+    })});
+    session = startResult.session;
+    events = startResult.events;
+
+    // V4.5: Set lastAIStatus
+    session = { ...session, state: { ...session.state, lastAIStatus: 'calling', lastAINodeId: currentNodeId, lastAICalledAt: new Date().toISOString() } };
 
     try {
       const aiResponse = await callCopilotJson<{
@@ -448,11 +538,17 @@ ${userMessage}
         actionCards?: Array<{ type?: string; title?: string; description?: string; actions?: Array<{ id?: string; label?: string; intent?: string }> }>;
       }>(systemPrompt, userPrompt, 1500, 60000);
 
-      events.push(createGraphEvent({
+      // V4.5: Track AI call completion with session persistence
+      const completeResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
         sessionId: session.id, briefId: session.briefId, type: 'ai_call_completed',
         nodeId: currentNodeId, message: `AI Agent 响应成功`,
         payload: { hasCommands: Boolean(aiResponse.commands?.length), hasReply: Boolean(aiResponse.reply) },
-      }));
+      })});
+      session = completeResult.session;
+      events = completeResult.events;
+
+      // V4.5: Set lastAIStatus to success
+      session = { ...session, state: { ...session.state, lastAIStatus: 'success' } };
 
       return {
         reply: aiResponse.reply || '我分析了当前情况，请查看我的判断。',
@@ -479,13 +575,19 @@ ${userMessage}
         ? `${e.type}: ${e.message.slice(0, 100)}`
         : String(e).slice(0, 100);
 
-      events.push(createGraphEvent({
+      // V4.5: Track AI call failure with session persistence
+      const failResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
         sessionId: session.id, briefId: session.briefId, type: 'ai_call_failed',
         nodeId: currentNodeId, message: `AI 调用失败: ${errorMsg}`,
         payload: { errorType: e instanceof VibeAIError ? e.type : 'unknown', error: errorMsg },
-      }));
+      })});
+      session = failResult.session;
+      events = failResult.events;
 
-      return null; // trigger local fallback
+      // V4.5: Set lastAIStatus to failed
+      session = { ...session, state: { ...session.state, lastAIStatus: 'failed', lastAIError: errorMsg } };
+
+      return null; // trigger fallback
     }
   }
 
@@ -505,18 +607,31 @@ ${userMessage}
   try {
     orchResult = await runOrchestratorNode({ brief, session, userMessage });
   } catch (e) {
-    events.push(createGraphEvent({
+    const errResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
       sessionId: session.id, briefId: session.briefId, type: 'error',
       nodeId: 'orchestrator', message: `Orchestrator 执行失败: ${String(e)}`,
-    }));
+    })});
+    session = errResult.session;
+    events = errResult.events;
+
+    // V4.5: Persist error agent_message
+    const replyResult = appendAgentReply({
+      session, events, nodeId: 'orchestrator',
+      message: '系统处理出错，请重试。', source: 'error',
+    });
+    session = replyResult.session;
+    events = replyResult.events;
+
     return { session: { ...session, state: { ...session.state, status: 'failed' } }, events, userVisibleReply: '系统处理出错，请重试。', interrupted: true };
   }
 
-  events.push(createGraphEvent({
+  const orchCompleteResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
     sessionId: session.id, briefId: session.briefId, type: 'node_completed',
     nodeId: 'orchestrator', message: orchResult.reply.slice(0, 200),
     payload: { nextNodeId: orchResult.nextNodeId, shouldInterrupt: orchResult.shouldInterrupt },
-  }));
+  })});
+  session = orchCompleteResult.session;
+  events = orchCompleteResult.events;
 
   // Execute orchestrator commands
   const orchExecResult = await executeCommands({ session, brief, commands: orchResult.commands, nodeId: 'orchestrator' });
@@ -526,9 +641,7 @@ ${userMessage}
 
   // V4.3: Try AI agent call for normal intents
   onProgress({ phase: 'running_node', message: '尝试 AI Agent 调用' });
-  const aiResult = await attemptAIAgentCall({
-    session, brief: { ...brief, ...briefPatch }, userMessage, intent, events,
-  });
+  const aiResult = await attemptAIAgentCall();
 
   if (aiResult && aiResult.usedAI) {
     // AI succeeded — use AI commands and reply
@@ -558,12 +671,13 @@ ${userMessage}
       session = { ...session, state: { ...session.state, pendingQuestions: aiResult.questions } };
     }
 
-    // Add agent message event
-    events.push(createGraphEvent({
-      sessionId: session.id, briefId: session.briefId, type: 'agent_message',
-      nodeId: session.state.currentNodeId,
-      message: aiResult.reply.slice(0, 300),
-    }));
+    // V4.5: Persist agent_message via appendAgentReply
+    const replyResult = appendAgentReply({
+      session, events, nodeId: session.state.currentNodeId,
+      message: aiResult.reply, source: 'ai',
+    });
+    session = replyResult.session;
+    events = replyResult.events;
 
     const interrupted = aiResult.questions.length > 0;
     const newStatus = interrupted ? 'waiting_user' : (session.state.currentNodeId === 'end' ? 'completed' : 'idle');
@@ -588,10 +702,20 @@ ${userMessage}
     state: { ...session.state, status: 'failed', updatedAt: new Date().toISOString() },
   };
 
-  events.push(createGraphEvent({
+  const errorResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
     sessionId: session.id, briefId: session.briefId, type: 'error',
     message: 'API 调用失败，本轮 Agent 未执行。请检查 API 配置后重试。',
-  }));
+  })});
+  session = errorResult.session;
+  events = errorResult.events;
+
+  // V4.5: Persist error agent_message
+  const replyResult2 = appendAgentReply({
+    session, events, nodeId: session.state.currentNodeId,
+    message: 'API 调用失败，本轮 Agent 未执行。请检查 API 配置后重试。', source: 'error',
+  });
+  session = replyResult2.session;
+  events = replyResult2.events;
 
   saveGraphSession(session);
   return {
@@ -608,13 +732,15 @@ async function executeCommands(input: {
 }): Promise<{ session: AgentGraphSession; briefPatch?: Partial<ProductBrief>; events: AgentGraphEvent[] }> {
   let session = input.session;
   let briefPatch: Partial<ProductBrief> | undefined;
-  const events: AgentGraphEvent[] = [];
+  let events: AgentGraphEvent[] = [];
 
   for (const cmd of input.commands.slice(0, MAX_COMMANDS_PER_TURN)) {
-    events.push(createGraphEvent({
+    const toolResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
       sessionId: session.id, briefId: session.briefId, type: 'tool_called',
       nodeId: input.nodeId, message: `命令: ${cmd.type}`, payload: { commandType: cmd.type, reason: cmd.reason },
-    }));
+    })});
+    session = toolResult.session;
+    events = toolResult.events;
 
     try {
       switch (cmd.type) {
@@ -650,7 +776,7 @@ async function executeCommands(input: {
           break;
         }
         case 'GENERATE_HANDOFF': {
-          const r = await executeToolCall({ toolName: 'generateLocalHandoff', brief: { ...input.brief, ...briefPatch }, state: session.state, payload: cmd.payload });
+          const r = await executeToolCall({ toolName: 'optimizeHandoffWithAI', brief: { ...input.brief, ...briefPatch }, state: session.state, payload: cmd.payload });
           if (r.briefPatch) briefPatch = { ...briefPatch, ...r.briefPatch };
           break;
         }
@@ -674,10 +800,12 @@ async function executeCommands(input: {
             ...session,
             state: { ...session.state, status: 'waiting_user' as const, pendingQuestions: [...session.state.pendingQuestions, String(cmd.payload.question || cmd.reason || '等待用户输入')] },
           };
-          events.push(createGraphEvent({
+          const interruptResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
             sessionId: session.id, briefId: session.briefId, type: 'human_interrupt',
             nodeId: input.nodeId, message: cmd.reason || '需要用户确认', payload: cmd.payload,
-          }));
+          })});
+          session = interruptResult.session;
+          events = interruptResult.events;
           break;
         }
         case 'CALL_TOOL': {
@@ -699,10 +827,12 @@ async function executeCommands(input: {
         }
       }
     } catch (e) {
-      events.push(createGraphEvent({
+      const errResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
         sessionId: session.id, briefId: session.briefId, type: 'error',
         nodeId: input.nodeId, message: `命令 ${cmd.type} 失败: ${String(e)}`,
-      }));
+      })});
+      session = errResult.session;
+      events = errResult.events;
     }
   }
   return { session, briefPatch, events };
@@ -719,8 +849,8 @@ export function sendV4WelcomeMessage(brief: ProductBrief): AgentGraphSession {
 
   session = appendGraphEvent(session, createGraphEvent({
     sessionId: session.id, briefId: session.briefId, type: 'agent_message',
-    nodeId: 'orchestrator', message: 'Agent Graph Runtime V4.1 已初始化',
-    payload: { version: '4.1' },
+    nodeId: 'orchestrator', message: 'Agent Graph Runtime V4.5 已初始化',
+    payload: { version: '4.5' },
   }));
 
   const hasTargetUser = Boolean(brief.ideaInput?.targetUser);

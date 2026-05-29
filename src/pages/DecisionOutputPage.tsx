@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Download } from 'lucide-react';
 import { useProductBrief } from '../hooks/useProductBrief';
@@ -39,12 +39,19 @@ export default function DecisionOutputPage() {
     const devSpec = buildDevSpec(brief);
     const codexTaskPack = buildCodexTaskPack({ devSpec });
 
-    // Record decision
-    addDecisionLogEntry(brief.id, 'devSpec', `Generated DEV_SPEC with ${devSpec.p0Features.length} P0 features`);
-    addDecisionLogEntry(brief.id, 'codexTaskPack', `Generated CODEX_TASK_PACK with ${codexTaskPack.tasks.length} tasks`);
-
+    // NOTE: Decision log recording moved to useEffect below (V4.5 fix).
     return { phases, quality, ambiguity, scope, ears, devSpec, codexTaskPack };
   }, [brief]);
+
+  const loggedRef = useRef(false);
+
+  useEffect(() => {
+    if (data && brief?.id && !loggedRef.current) {
+      loggedRef.current = true;
+      addDecisionLogEntry(brief.id, 'devSpec', `Generated DEV_SPEC with ${data.devSpec.p0Features.length} P0 features`);
+      addDecisionLogEntry(brief.id, 'codexTaskPack', `Generated CODEX_TASK_PACK with ${data.codexTaskPack.tasks.length} tasks`);
+    }
+  }, [data, brief?.id]);
 
   if (loading || !brief || !data) {
     return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><p>加载中...</p></div>;
@@ -99,6 +106,7 @@ export default function DecisionOutputPage() {
     a.download = `vibe-decision-output-${brief.id}.md`;
     a.click();
     URL.revokeObjectURL(url);
+    addDecisionLogEntry(brief.id, 'devSpec', 'Downloaded full decision output');
   };
 
   return (

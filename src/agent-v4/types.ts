@@ -185,6 +185,11 @@ export interface AgentGraphState {
   advancementCount?: number;
   /** V4.1: Current blocking reason, if any */
   blockReason?: string;
+  /** V4.5: Last AI call status for UI visibility */
+  lastAIStatus?: 'not_called' | 'calling' | 'success' | 'failed';
+  lastAIError?: string;
+  lastAINodeId?: AgentNodeId;
+  lastAICalledAt?: string;
   createdAt: string;
   updatedAt: string;
   schemaVersion: 'agent-graph-v4';

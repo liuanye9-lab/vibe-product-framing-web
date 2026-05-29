@@ -166,8 +166,8 @@ register({
 });
 
 register({
-  name: 'generateLocalHandoff',
-  description: 'Generate a Developer Handoff document from the ProductBrief.',
+  name: 'legacyGenerateLocalHandoff',
+  description: '[Legacy/Debug] Generate handoff locally from ProductBrief without AI. Not used in core agent path.',
   inputSchema: { type: 'object', properties: {} },
   execute: async (input) => {
     try {
@@ -181,7 +181,7 @@ register({
 
 register({
   name: 'optimizeHandoffWithAI',
-  description: 'Optimize handoff using AI. Falls back to local handoff on failure.',
+  description: 'Optimize handoff using AI. Requires valid API connection. No local fallback on failure.',
   inputSchema: { type: 'object', properties: {} },
   execute: async (input) => {
     try {

@@ -251,6 +251,9 @@ export default function HistoryPage() {
                       <button className="vp-btn-text" onClick={() => navigate(`/handoff/${brief.id}`)} style={{ fontSize: 12, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
                         <FileText size={12} /> 查看交付
                       </button>
+                      <button className="vp-btn-text" onClick={() => navigate(`/output/${brief.id}`)} style={{ fontSize: 12, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <FileText size={12} /> 决策输出
+                      </button>
                       <button className="vp-btn-text" onClick={() => setDeleteConfirm(brief.id)} style={{ fontSize: 12, padding: '6px 10px', color: 'var(--color-danger)' }}>
                         <Trash2 size={12} />
                       </button>

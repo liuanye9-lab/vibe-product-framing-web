@@ -1,5 +1,14 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V4.5 — Runtime Consistency & Source-of-Truth Patch (2026-05-29)
+- 修复 Agent 运行时事件持久化（events → session.events）
+- 修复 action intent 回复不回写 agent_message
+- 确保 AI call events 在 UI 可见
+- 移除 Agent 运行链路中的 generateLocalHandoff
+- 修复 DecisionOutputPage useMemo 副作用
+- 统一版本标签为 V4.5
+- 新增 DecisionSpecBundle builder
+
 ## Vibe Decision Copilot P0 Upgrade (2026-05-28)
 
 ### Added

@@ -61,7 +61,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeSource(value: unknown): AiSuggestion['source'] {
-  return value === 'ai' || value === 'error' ? value : 'error';
+  // V4.5: New messages use only 'ai' or 'error'.
+  // Legacy 'local-rule' and 'mock' are kept for historical data.
+  if (value === 'ai' || value === 'error') return value;
+  if (value === 'local-rule' || value === 'mock') return 'error'; // legacy normalization
+  return 'error';
 }
 
 function normalizeSuggestion(raw: unknown): AiSuggestion | undefined {

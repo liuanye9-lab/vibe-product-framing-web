@@ -1,6 +1,8 @@
 export type SuggestionValue = string | string[] | number | boolean;
 
 export type OutputSource = 'ai' | 'error' | 'local-rule' | 'mock';
+// 'local-rule' and 'mock' are legacy sources only for historical data display.
+// New messages (V4.4+) use only 'ai' or 'error'.
 
 export type ProjectType = 'Web App' | 'AI Agent' | 'SaaS' | 'Portfolio' | 'Other';
 

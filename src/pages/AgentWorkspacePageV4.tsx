@@ -274,7 +274,7 @@ export default function AgentWorkspacePageV4() {
           </button>
           <GitBranch size={16} style={{ color: 'var(--color-primary)' }} />
           <h1 style={{ fontSize: 15, fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            Agent Decision OS V4.2
+            Agent Decision OS V4.5
           </h1>
           <span style={{
             fontSize: 11,
@@ -295,6 +295,9 @@ export default function AgentWorkspacePageV4() {
           </button>
           <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/handoff/${brief.id}`)} style={{ padding: '4px 8px' }} title="查看交付">
             <FileText size={14} />
+          </button>
+          <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/output/${brief.id}`)} style={{ padding: '4px 8px', fontSize: 11 }} title="查看决策输出">
+            决策输出
           </button>
           <button className="vp-btn vp-btn-ghost" onClick={() => navigate('/history')} style={{ padding: '4px 8px' }} title="历史记录">
             <History size={14} />
@@ -319,7 +322,7 @@ export default function AgentWorkspacePageV4() {
             {conversationEvents.length === 0 && !sending && (
               <div style={{ padding: '20px 0', textAlign: 'center' }}>
                 <Bot size={32} style={{ color: 'var(--color-text-hint)', marginBottom: 12 }} />
-                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V4.2 就绪</p>
+                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V4.5 就绪</p>
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
                   描述你的产品想法，我会像产品经理一样带你一步步把想法变成开发规格。
                 </p>
@@ -620,6 +623,19 @@ function StateView({ session }: { session: AgentGraphSession | null }) {
         </p>
         {apiHealth.model && <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginTop: 2 }}>{apiHealth.model}</p>}
       </div>
+
+      {/* V4.5: AI Call Status */}
+      {state.lastAIStatus && state.lastAIStatus !== 'not_called' && (
+        <div className="vp-card" style={{ padding: '10px 12px', borderColor: state.lastAIStatus === 'failed' ? 'rgba(220,38,38,0.15)' : state.lastAIStatus === 'calling' ? 'rgba(59,130,246,0.15)' : 'rgba(0,180,90,0.1)' }}>
+          <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginBottom: 2 }}>Last AI Call</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: state.lastAIStatus === 'failed' ? 'var(--color-danger)' : state.lastAIStatus === 'calling' ? 'var(--color-primary)' : 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: state.lastAIStatus === 'failed' ? 'var(--color-danger)' : state.lastAIStatus === 'calling' ? 'var(--color-primary)' : 'var(--color-success)', display: 'inline-block' }} />
+            {state.lastAIStatus === 'calling' ? 'Calling...' : state.lastAIStatus === 'success' ? 'Success' : 'Failed'}
+          </p>
+          {state.lastAINodeId && <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginTop: 2 }}>Node: {state.lastAINodeId}</p>}
+          {state.lastAIError && <p style={{ fontSize: 10, color: 'var(--color-danger)', marginTop: 2, wordBreak: 'break-word' }}>{state.lastAIError.slice(0, 120)}</p>}
+        </div>
+      )}
 
       <div className="vp-card" style={{ padding: '10px 12px' }}>
         <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginBottom: 2 }}>当前阶段</p>
