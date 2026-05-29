@@ -4,11 +4,18 @@
 
 ---
 
-## 📍 P0：当前版本（2026-05-28）
+## ✅ V4.6 已完成 (2026-05-29)
 
-### 核心闭环
-```
-Raw Idea → Problem Framing → User Scenario → Demand Evidence
+- [x] Liquid Glass 视觉系统升级（iOS-inspired color tokens）
+- [x] Dark mode 支持（prefers-color-scheme: dark）
+- [x] 10 组件 Liquid 库（AuroraBackground, LiquidShell, LiquidCard, LiquidButton, LiquidInput, LiquidBadge, LiquidProgress, LiquidStepRail, LiquidDock, PageReveal）
+- [x] 7 页面视觉重构（LandingPage, NewIdeaPage, AgentWorkspacePageV4, DecisionOutputPage, DeveloperHandoffPage, SettingsPage, HistoryPage）
+- [x] Aurora 壁纸级背景 + ambient orbs
+- [x] 可访问性：prefers-reduced-motion/contrast, backdrop-filter fallback
+- [x] 页面叙事升级（Core Loop, Why Not PRD, Interview section）
+- [x] macOS titlebar + glass conversation + Spotlight input
+
+## ✅ V4.5 已完成 (2026-05-29)Raw Idea → Problem Framing → User Scenario → Demand Evidence
 → MVP Scope → Risk Counterargument → Tech Constraints
 → Acceptance Criteria → DEV_SPEC → CODEX_TASK_PACK
 ```

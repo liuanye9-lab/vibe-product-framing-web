@@ -1,21 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, Bot, ChevronRight, Home, MapPin, Settings, Sparkles, Target, Users, Zap } from 'lucide-react';
-import StageLayout from '../components/StageLayout';
-import { evaluateIdea, isAIReady } from '../api/evaluate';
+import { isAIReady } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
-import type { CopilotMode, EvaluateIdeaResult, IdeaInputState, ProjectType } from '../types';
+import type { CopilotMode, IdeaInputState, ProjectType } from '../types';
+import { PageReveal, LiquidInput, LiquidBadge } from '../components/liquid';
 
 const PROJECT_TYPES: ProjectType[] = ['Web App', 'AI Agent', 'SaaS', 'Portfolio', 'Other'];
 
 export default function NewIdeaPage() {
   const [input, setInput] = useState<IdeaInputState>({ rawIdea: '', projectType: 'Web App' });
   const [mode, setMode] = useState<CopilotMode>('beginner');
-  const [evaluation, setEvaluation] = useState<EvaluateIdeaResult | null>(null);
   const { initBrief } = useProductBrief();
   const navigate = useNavigate();
   const location = useLocation();
-  const isAgentMode = (location.state as { agentMode?: boolean } | null)?.agentMode ?? false;
 
   useEffect(() => {
     const state = location.state as { fromHome?: boolean } | null;
@@ -23,28 +21,6 @@ export default function NewIdeaPage() {
       navigate('/', { replace: true });
     }
   }, [location.state, navigate]);
-
-  useEffect(() => {
-    let alive = true;
-    if (!input.rawIdea.trim()) {
-      setEvaluation(null);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      const result = await evaluateIdea(input);
-      if (alive) setEvaluation(result);
-    }, 300);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
-  }, [input]);
-
-  const handleSubmit = () => {
-    if (!input.rawIdea.trim()) return;
-    const brief = initBrief({ ...input, rawIdea: input.rawIdea.trim() }, mode);
-    navigate(isAgentMode ? `/agent/${brief.id}` : `/discovery/${brief.id}`);
-  };
 
   const handleStartAgent = () => {
     if (!isAIReady()) {
@@ -66,234 +42,207 @@ export default function NewIdeaPage() {
     setInput((prev) => ({ ...prev, [key]: value }));
   };
 
+  const apiReady = isAIReady();
+
   return (
-    <StageLayout
-      title="Idea Input / 产品想法输入"
-      subtitle="只需写下最少信息。目标用户、场景、问题和产品形态可不完整，后续由 AI 做默认假设并补全专业部分。"
-      current={0}
-      nextLabel=""
-      onNext={handleSubmit}
-      nextDisabled={!input.rawIdea.trim()}
-      aside={<IdeaScoreCard evaluation={evaluation} />}
-    >
-      {/* Mode Selector */}
-      <div className="vp-card" style={{ marginBottom: 18 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 10 }}>
-          选择模式
-        </label>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-          <ModeChip
-            active={mode === 'beginner'}
-            icon={<Zap size={14} />}
-            title="Quick"
-            desc="10 分钟出方案"
-            onClick={() => setMode('beginner')}
-          />
-          <ModeChip
-            active={mode === 'builder'}
-            icon={<Target size={14} />}
-            title="Standard"
-            desc="30 分钟认真构思"
-            onClick={() => setMode('builder')}
-          />
-          <ModeChip
-            active={mode === 'review'}
-            icon={<AlertCircle size={14} />}
-            title="Review"
-            desc="审查已有方案"
-            onClick={() => setMode('review')}
-          />
+    <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <header className="vp-header">
+        <div className="vp-header-inner" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回主页">
+            <Home size={18} />
+          </button>
+          <Sparkles size={14} style={{ color: 'var(--color-primary)' }} />
+          <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>VibePilot</span>
+          <span style={{ color: 'var(--color-text-hint)' }}>/</span>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>New Idea</span>
         </div>
-      </div>
+      </header>
 
-      {/* Main Idea Input */}
-      <div className="vp-card" style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-          我想做什么 <span style={{ color: 'var(--vp-coral)' }}>*</span>
-        </label>
-        <textarea
-          className="vp-textarea vp-textarea-lg"
-          value={input.rawIdea}
-          onChange={(e) => setField('rawIdea', e.target.value)}
-          placeholder="比如：我想做一个帮助 vibe coding 新手在写代码前想清楚产品方案的 AI Copilot。"
-          rows={4}
-        />
-      </div>
-
-      {/* Optional Fields Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <FieldCard title="给谁用（可选）" icon={<Users size={14} />}>
-          <input
-            className="vp-input"
-            value={input.targetUser || ''}
-            onChange={(e) => setField('targetUser', e.target.value)}
-            placeholder="准备做第一个 AI 产品的新手"
-          />
-        </FieldCard>
-        <FieldCard title="在什么场景用（可选）" icon={<MapPin size={14} />}>
-          <input
-            className="vp-input"
-            value={input.scenario || ''}
-            onChange={(e) => setField('scenario', e.target.value)}
-            placeholder="准备交给 Cursor 开发前"
-          />
-        </FieldCard>
-        <FieldCard title="想解决什么问题（可选）" icon={<Target size={14} />}>
-          <input
-            className="vp-input"
-            value={input.problem || ''}
-            onChange={(e) => setField('problem', e.target.value)}
-            placeholder="不知道技术方案和数据结构"
-          />
-        </FieldCard>
-        <FieldCard title="产品形态（可选）" icon={<Home size={14} />}>
-          <select
-            className="vp-input"
-            value={input.projectType || 'Web App'}
-            onChange={(e) => setField('projectType', e.target.value as ProjectType)}
-          >
-            {PROJECT_TYPES.map((type) => (
-              <option key={type} value={type}>{type}</option>
-            ))}
-          </select>
-        </FieldCard>
-      </div>
-
-      {/* AI Hint Banner */}
-      <div className="vp-card-dashed" style={{ marginTop: 20 }}>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 'var(--radius-md)',
-            background: 'rgba(224,74,59,0.08)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-          }}>
-            <Sparkles size={16} style={{ color: 'var(--vp-coral)' }} />
-          </div>
-          <div>
-            <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 6 }}>
-              不用一次性想完整
-            </h3>
-            <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
-              技术架构、数据库、数据流、AI API、验收标准等专业内容，会在后面由 AI 根据你的产品上下文主动推荐。
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Flow Selection */}
-      <div style={{ marginTop: 24 }}>
-        <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: 'var(--color-text-secondary)' }}>
-          选择你的工作流
+      <main style={{ flex: 1, padding: '2rem', maxWidth: 760, margin: '0 auto', width: '100%' }}>
+        {/* Top subtitle */}
+        <p style={{ fontSize: 13, color: 'var(--color-text-hint)', marginBottom: 8, fontWeight: 500 }}>
+          Start with a raw idea
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <button
-            className="vp-card"
-            onClick={handleStartAgent}
-            style={{
-              textAlign: 'left', padding: '20px 22px', cursor: 'pointer',
-              background: isAIReady()
-                ? 'linear-gradient(135deg, rgba(224,74,59,0.04), rgba(253,242,239,0.2))'
-                : 'linear-gradient(135deg, rgba(30,58,76,0.04), rgba(224,74,59,0.06))',
-              border: isAIReady()
-                ? '1.5px solid rgba(224,74,59,0.18)'
-                : '1.5px solid rgba(224,74,59,0.12)',
-            }}
-          >
-            <Bot size={20} style={{ color: 'var(--vp-coral)', marginBottom: 8 }} />
-            <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>Agent Decision OS</h3>
-            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-              AI 产品经理多角色对话，图工作流自动推进 + 任务管理 + 记忆沉淀。
-            </p>
-            {isAIReady() ? (
-              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--vp-coral)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-                推荐 <ChevronRight size={14} />
-              </p>
-            ) : (
-              <div style={{ marginTop: 8 }}>
-                <p style={{
-                  fontSize: 11, color: 'var(--color-warning)',
-                  display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6,
-                }}>
-                  <AlertCircle size={12} />
-                  需先配置 AI API
-                </p>
-                <span style={{
-                  fontSize: 11, fontWeight: 600,
-                  padding: '4px 10px', borderRadius: 6,
-                  background: 'rgba(224,74,59,0.08)', color: 'var(--vp-coral)',
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                }}>
-                  <Settings size={11} /> 点击去配置
-                </span>
-              </div>
-            )}
-          </button>
-          <button
-            className="vp-card"
-            onClick={handleStartLegacy}
-            disabled={!input.rawIdea.trim()}
-            style={{
-              textAlign: 'left', padding: '20px 22px', cursor: 'pointer',
-              background: 'rgba(255,255,255,0.34)',
-            }}
-          >
-            <Target size={20} style={{ color: 'var(--vp-navy)', marginBottom: 8 }} />
-            <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>四步流程</h3>
-            <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
-              使用传统四步流程（需求诊断 → 产品定义 → MVP 范围 → 技术 + 交付）。
-            </p>
-            <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 8 }}>
-              适合快速走通流程
-            </p>
-          </button>
-        </div>
-      </div>
-    </StageLayout>
-  );
-}
 
-/* ── Mode Chip ── */
-function ModeChip({
-  active, icon, title, desc, onClick,
-}: {
-  active: boolean;
-  icon: React.ReactNode;
-  title: string;
-  desc: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        textAlign: 'left',
-        padding: '14px',
-        borderRadius: 'var(--radius-lg)',
-        border: active
-          ? '1.5px solid rgba(224,74,59,0.25)'
-          : '1px solid rgba(30,58,76,0.08)',
-        background: active
-          ? 'linear-gradient(135deg, rgba(224,74,59,0.06), rgba(253,242,239,0.30))'
-          : 'rgba(255,255,255,0.34)',
-        cursor: 'pointer',
-        transition: 'all 0.25s ease',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-      }}
-    >
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6,
-        color: active ? 'var(--vp-coral)' : 'var(--color-text-hint)',
-      }}>
-        {icon}
-        <span style={{ fontSize: 13, fontWeight: 650 }}>{title}</span>
-      </div>
-      <span style={{ fontSize: 11, color: 'var(--color-text-hint)', lineHeight: 1.4 }}>
-        {desc}
-      </span>
-    </button>
+        {/* Main input area - LiquidInput */}
+        <div style={{ marginBottom: 18 }}>
+          <LiquidInput
+            value={input.rawIdea}
+            onChange={(e) => setField('rawIdea', e.target.value)}
+            placeholder="例如：我想做一个帮助雅思学生整理生词和错题的小程序…"
+            rows={5}
+            style={{ fontSize: 16, lineHeight: 1.8 }}
+          />
+        </div>
+
+        {/* Mode Selection - iOS Segmented Control Style */}
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 10, color: 'var(--color-text-secondary)' }}>
+            选择模式
+          </label>
+          <div className="vp-segmented">
+            <button
+              className={`vp-segmented__item${mode === 'beginner' ? ' vp-segmented__item--active' : ''}`}
+              onClick={() => setMode('beginner')}
+            >
+              <Zap size={12} style={{ marginRight: 4 }} />
+              Quick
+            </button>
+            <button
+              className={`vp-segmented__item${mode === 'builder' ? ' vp-segmented__item--active' : ''}`}
+              onClick={() => setMode('builder')}
+            >
+              <Target size={12} style={{ marginRight: 4 }} />
+              Standard
+            </button>
+            <button
+              className={`vp-segmented__item${mode === 'review' ? ' vp-segmented__item--active' : ''}`}
+              onClick={() => setMode('review')}
+            >
+              <AlertCircle size={12} style={{ marginRight: 4 }} />
+              Review
+            </button>
+          </div>
+        </div>
+
+        {/* Optional Fields Grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+          <FieldCard title="给谁用（可选）" icon={<Users size={14} />}>
+            <input
+              className="vp-input"
+              value={input.targetUser || ''}
+              onChange={(e) => setField('targetUser', e.target.value)}
+              placeholder="准备做第一个 AI 产品的新手"
+            />
+          </FieldCard>
+          <FieldCard title="在什么场景用（可选）" icon={<MapPin size={14} />}>
+            <input
+              className="vp-input"
+              value={input.scenario || ''}
+              onChange={(e) => setField('scenario', e.target.value)}
+              placeholder="准备交给 Cursor 开发前"
+            />
+          </FieldCard>
+          <FieldCard title="想解决什么问题（可选）" icon={<Target size={14} />}>
+            <input
+              className="vp-input"
+              value={input.problem || ''}
+              onChange={(e) => setField('problem', e.target.value)}
+              placeholder="不知道技术方案和数据结构"
+            />
+          </FieldCard>
+          <FieldCard title="产品形态（可选）" icon={<Home size={14} />}>
+            <select
+              className="vp-input"
+              value={input.projectType || 'Web App'}
+              onChange={(e) => setField('projectType', e.target.value as ProjectType)}
+            >
+              {PROJECT_TYPES.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+          </FieldCard>
+        </div>
+
+        {/* API Status */}
+        <div style={{ marginBottom: 18 }}>
+          <LiquidBadge variant={apiReady ? 'green' : 'orange'}>
+            {apiReady ? 'API Ready' : 'API 未配置'}
+          </LiquidBadge>
+        </div>
+
+        {/* AI Hint Banner */}
+        <div className="vp-card-dashed" style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 'var(--radius-md)',
+              background: 'rgba(0,122,255,0.08)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <Sparkles size={16} style={{ color: 'var(--vp-blue)' }} />
+            </div>
+            <div>
+              <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 6 }}>
+                不用一次性想完整
+              </h3>
+              <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+                技术架构、数据库、数据流、AI API、验收标准等专业内容，会在后面由 AI 根据你的产品上下文主动推荐。
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Flow Selection */}
+        <div>
+          <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 12, color: 'var(--color-text-secondary)' }}>
+            选择你的工作流
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <button
+              className="vp-card"
+              onClick={handleStartAgent}
+              style={{
+                textAlign: 'left', padding: '20px 22px', cursor: 'pointer',
+                background: apiReady
+                  ? 'linear-gradient(135deg, rgba(0,122,255,0.04), rgba(232,242,255,0.3))'
+                  : 'linear-gradient(135deg, rgba(15,23,42,0.02), rgba(0,122,255,0.04))',
+                border: apiReady
+                  ? '1.5px solid rgba(0,122,255,0.18)'
+                  : '1.5px solid rgba(0,122,255,0.10)',
+              }}
+            >
+              <Bot size={20} style={{ color: 'var(--vp-blue)', marginBottom: 8 }} />
+              <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>Agent Decision OS</h3>
+              <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+                AI 产品经理多角色对话，图工作流自动推进 + 任务管理 + 记忆沉淀。
+              </p>
+              {apiReady ? (
+                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--vp-blue)', marginTop: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  推荐 <ChevronRight size={14} />
+                </p>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  <p style={{
+                    fontSize: 11, color: 'var(--vp-orange)',
+                    display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6,
+                  }}>
+                    <AlertCircle size={12} />
+                    需先配置 AI API
+                  </p>
+                  <span style={{
+                    fontSize: 11, fontWeight: 600,
+                    padding: '4px 10px', borderRadius: 6,
+                    background: 'rgba(0,122,255,0.08)', color: 'var(--vp-blue)',
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                  }}>
+                    <Settings size={11} /> 点击去配置
+                  </span>
+                </div>
+              )}
+            </button>
+            <button
+              className="vp-card"
+              onClick={handleStartLegacy}
+              disabled={!input.rawIdea.trim()}
+              style={{
+                textAlign: 'left', padding: '20px 22px', cursor: 'pointer',
+                background: 'rgba(255,255,255,0.34)',
+              }}
+            >
+              <Target size={20} style={{ color: 'var(--vp-indigo)', marginBottom: 8 }} />
+              <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 4 }}>四步流程</h3>
+              <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+                使用传统四步流程（需求诊断 → 产品定义 → MVP 范围 → 技术 + 交付）。
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 8 }}>
+                适合快速走通流程
+              </p>
+            </button>
+          </div>
+        </div>
+      </main>
+    </PageReveal>
   );
 }
 
@@ -317,73 +266,5 @@ function FieldCard({
       </span>
       {children}
     </label>
-  );
-}
-
-/* ── Idea Score Aside Card ── */
-function IdeaScoreCard({ evaluation }: { evaluation: EvaluateIdeaResult | null }) {
-  return (
-    <div className="vp-card" style={{ position: 'sticky', top: 24, padding: '22px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: 'var(--radius-md)',
-          background: 'rgba(30,58,76,0.06)', display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Home size={15} style={{ color: 'var(--vp-navy)' }} />
-        </div>
-        <h3 style={{ fontSize: 14, fontWeight: 650 }}>输入诊断</h3>
-      </div>
-
-      {!evaluation ? (
-        <p style={{ fontSize: 13, color: 'var(--color-text-hint)', lineHeight: 1.7 }}>
-          输入一个产品想法后，这里会显示 AI 的初步诊断。
-        </p>
-      ) : (
-        <>
-          <div style={{
-            fontSize: 42, fontWeight: 700,
-            background: 'linear-gradient(135deg, var(--vp-coral), var(--vp-navy-soft))',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-            marginBottom: 6,
-            lineHeight: 1,
-          }}>
-            {evaluation.score}
-          </div>
-          <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
-            {evaluation.mainIssue}
-          </p>
-          {!!evaluation.missingFields.length && (
-            <div style={{
-              marginTop: 12, padding: '10px 12px',
-              background: 'rgba(30,58,76,0.04)',
-              borderRadius: 'var(--radius-md)',
-            }}>
-              <p style={{ fontSize: 11, color: 'var(--color-text-hint)', marginBottom: 4 }}>
-                可由 AI 假设
-              </p>
-              <p style={{ fontSize: 12, color: 'var(--vp-navy)', fontWeight: 500 }}>
-                {evaluation.missingFields.join('、')}
-              </p>
-            </div>
-          )}
-          {!!evaluation.riskFlags.length && (
-            <div style={{
-              marginTop: 10, padding: '10px 12px',
-              background: 'rgba(224,74,59,0.06)',
-              borderRadius: 'var(--radius-md)',
-            }}>
-              <p style={{ fontSize: 11, color: 'var(--color-text-hint)', marginBottom: 4 }}>
-                范围风险词
-              </p>
-              <p style={{ fontSize: 12, color: 'var(--vp-coral)', fontWeight: 500 }}>
-                {evaluation.riskFlags.join('、')}
-              </p>
-            </div>
-          )}
-        </>
-      )}
-    </div>
   );
 }

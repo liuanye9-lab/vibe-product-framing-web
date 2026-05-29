@@ -1,5 +1,5 @@
 /**
- * HistoryPage — V4.0
+ * HistoryPage — V4.6 Liquid Glass Edition
  *
  * Now detects all Agent workflows (V2, V3, V4) and shows proper entry points:
  * - Continue Agent → /agent/:id (V4)
@@ -31,6 +31,7 @@ import { getAgentPhaseLabel } from '../agent-v3/phaseMachine';
 import { getPhaseLabel } from '../agent/phaseUtils';
 import { getGraphSessionSummary, deleteGraphSession } from '../agent-v4/graphStore';
 import { getNodeLabel } from '../agent-v4/graph';
+import { PageReveal, LiquidCard } from '../components/liquid';
 
 const STORAGE_KEY = 'vibepilot_briefs';
 
@@ -91,7 +92,7 @@ export default function HistoryPage() {
 
   if (briefs.length === 0) {
     return (
-      <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <header className="vp-header">
           <div className="vp-header-inner">
             <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }}>
@@ -117,12 +118,12 @@ export default function HistoryPage() {
             </button>
           </div>
         </main>
-      </div>
+      </PageReveal>
     );
   }
 
   return (
-    <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <header className="vp-header">
         <div style={{ maxWidth: 800, margin: '0 auto', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -132,7 +133,7 @@ export default function HistoryPage() {
             <Brain size={16} style={{ color: 'var(--color-primary)' }} />
             <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>VibePilot</span>
             <span style={{ color: 'var(--color-text-hint)' }}>/</span>
-            <span style={{ fontSize: 13, fontWeight: 500 }}>历史记录</span>
+            <span style={{ fontSize: 13, fontWeight: 500 }}>Recent Decision Specs</span>
             <span style={{ fontSize: 12, color: 'var(--color-text-hint)', marginLeft: 4 }}>({briefs.length})</span>
           </div>
           <button className="vp-btn vp-btn-primary" onClick={() => navigate('/new')} style={{ padding: '8px 16px', fontSize: 13 }}>
@@ -143,6 +144,9 @@ export default function HistoryPage() {
 
       <main style={{ flex: 1, padding: '2rem' }}>
         <div style={{ maxWidth: 800, margin: '0 auto' }}>
+          <h2 style={{ fontSize: 20, fontWeight: 650, marginBottom: 16, letterSpacing: '-0.02em' }}>
+            Recent Decision Specs
+          </h2>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {briefs.map((brief) => {
               const v4Summary = getGraphSessionSummary(brief.id);
@@ -153,38 +157,37 @@ export default function HistoryPage() {
               const isPending = deleteConfirm === brief.id;
 
               return (
-                <div
+                <LiquidCard
                   key={brief.id}
-                  className="vp-card"
-                  style={{
-                    transition: 'all 0.15s ease',
-                    cursor: 'pointer',
-                    ...(isPending ? { borderColor: 'var(--color-danger)', background: 'var(--color-background-danger)' } : {}),
-                  }}
                   onClick={() => {
                     if (!isPending) navigate(hasV4 ? `/agent/${brief.id}` : (hasAgent ? `/agent/${brief.id}` : `/discovery/${brief.id}`));
+                  }}
+                  style={{
+                    cursor: isPending ? 'default' : 'pointer',
+                    padding: '18px 22px',
+                    ...(isPending ? { borderColor: 'var(--color-danger)' } : {}),
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         {hasV4 ? (
-                          <GitBranch size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                          <GitBranch size={14} style={{ color: 'var(--vp-blue)', flexShrink: 0 }} />
                         ) : hasAgent ? (
-                          <Bot size={14} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+                          <Bot size={14} style={{ color: 'var(--vp-blue)', flexShrink: 0 }} />
                         ) : (
                           <CheckCircle2 size={14} style={{ color: 'var(--color-text-hint)', flexShrink: 0 }} />
                         )}
-                        <h3 style={{ fontSize: 15, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <h3 style={{ fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {brief.rawIdea || '未命名项目'}
                         </h3>
                         {hasV4 && (
-                          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'var(--color-primary)', color: '#fff', flexShrink: 0 }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'var(--vp-blue)', color: '#fff', flexShrink: 0 }}>
                             V4
                           </span>
                         )}
                         {hasAgent && !hasV4 && (
-                          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'var(--color-primary)', color: '#fff', flexShrink: 0 }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 8, background: 'var(--vp-indigo)', color: '#fff', flexShrink: 0 }}>
                             Agent
                           </span>
                         )}
@@ -195,14 +198,11 @@ export default function HistoryPage() {
                         </span>
                         {hasV4 && (
                           <>
-                            <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
+                            <span style={{ fontSize: 12, color: 'var(--color-text-hint)', background: 'rgba(0,122,255,0.06)', padding: '1px 8px', borderRadius: 8 }}>
                               {v4Summary.currentNodeId ? getNodeLabel(v4Summary.currentNodeId as never) : 'intake'}
                             </span>
                             <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
-                              {v4Summary.eventCount} 个事件
-                            </span>
-                            <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
-                              {v4Summary.taskCount} 个任务
+                              {v4Summary.eventCount} 事件 · {v4Summary.taskCount} 任务
                             </span>
                           </>
                         )}
@@ -215,14 +215,10 @@ export default function HistoryPage() {
                               {v3Summary.messageCount || v2Summary.messageCount} 条消息
                             </span>
                             {v3Summary.exists && v3Summary.taskCount > 0 && (
-                              <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
-                                {v3Summary.taskCount} 个任务
-                              </span>
+                              <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>{v3Summary.taskCount} 任务</span>
                             )}
                             {v2Summary.findingCount > 0 && (
-                              <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
-                                {v2Summary.findingCount} 个判断
-                              </span>
+                              <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>{v2Summary.findingCount} 判断</span>
                             )}
                           </>
                         )}
@@ -232,39 +228,39 @@ export default function HistoryPage() {
 
                   {/* Actions */}
                   {isPending ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }} onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
                       <AlertTriangle size={14} style={{ color: 'var(--color-danger)' }} />
-                      <span style={{ fontSize: 13, color: 'var(--color-danger)', flex: 1 }}>确定删除这个项目？Agent 工作流也会一并删除。</span>
+                      <span style={{ fontSize: 13, color: 'var(--color-danger)', flex: 1 }}>确定删除？Agent 工作流也会一并删除。</span>
                       <button className="vp-btn vp-btn-ghost" onClick={() => setDeleteConfirm(null)} style={{ padding: '6px 12px', fontSize: 12 }}>取消</button>
                       <button className="vp-btn vp-btn-primary" onClick={() => handleDelete(brief.id)} style={{ padding: '6px 12px', fontSize: 12, background: 'var(--color-danger)' }}>确认删除</button>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
                       {hasAgent && (
-                        <button className="vp-btn vp-btn-primary" onClick={() => navigate(`/agent/${brief.id}`)} style={{ fontSize: 12, padding: '6px 10px' }}>
+                        <button className="vp-btn vp-btn-primary" onClick={() => navigate(`/agent/${brief.id}`)} style={{ fontSize: 12, padding: '6px 12px' }}>
                           <Bot size={12} /> 继续 Agent
                         </button>
                       )}
-                      <button className="vp-btn-text" onClick={() => navigate(`/discovery/${brief.id}`)} style={{ fontSize: 12, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/discovery/${brief.id}`)} style={{ fontSize: 12, padding: '6px 12px' }}>
                         <RotateCcw size={12} /> {hasAgent ? '四步流程' : '继续编辑'}
                       </button>
-                      <button className="vp-btn-text" onClick={() => navigate(`/handoff/${brief.id}`)} style={{ fontSize: 12, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/handoff/${brief.id}`)} style={{ fontSize: 12, padding: '6px 12px' }}>
                         <FileText size={12} /> 查看交付
                       </button>
-                      <button className="vp-btn-text" onClick={() => navigate(`/output/${brief.id}`)} style={{ fontSize: 12, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/output/${brief.id}`)} style={{ fontSize: 12, padding: '6px 12px' }}>
                         <FileText size={12} /> 决策输出
                       </button>
-                      <button className="vp-btn-text" onClick={() => setDeleteConfirm(brief.id)} style={{ fontSize: 12, padding: '6px 10px', color: 'var(--color-danger)' }}>
+                      <button className="vp-btn vp-btn-ghost" onClick={() => setDeleteConfirm(brief.id)} style={{ fontSize: 12, padding: '6px 12px', color: 'var(--color-danger)' }}>
                         <Trash2 size={12} />
                       </button>
                     </div>
                   )}
-                </div>
+                </LiquidCard>
               );
             })}
           </div>
         </div>
       </main>
-    </div>
+    </PageReveal>
   );
 }

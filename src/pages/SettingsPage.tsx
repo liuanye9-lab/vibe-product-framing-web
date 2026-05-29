@@ -27,6 +27,7 @@ import {
   type AIConnectionStatus,
 } from '../api/evaluate';
 import { clearApiHealth, getApiHealth, markApiFailed, markApiReady, type ApiHealthStatus } from '../api/apiHealth';
+import { PageReveal, LiquidCard, LiquidBadge } from '../components/liquid';
 
 const PRESETS = [
   {
@@ -136,7 +137,7 @@ export default function SettingsPage() {
     setApiUrl(normalizedApiUrl);
     saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
     clearAICache();
-    clearApiHealth(); // V4.4: Reset health when config changes
+    clearApiHealth();
     setStatus('failed');
     setSaved(true);
     setTestResult(null);
@@ -185,7 +186,6 @@ export default function SettingsPage() {
       });
 
       const rawText = await response.text();
-      console.log('[VibePilot] Test connection raw response:', rawText.slice(0, 500));
 
       if (!response.ok) {
         let errMsg = `请求失败 (${response.status})`;
@@ -225,7 +225,6 @@ export default function SettingsPage() {
         setStatus('connected');
         setTestResult({ ok: true, msg: `连接成功！模型可正常返回生成内容：${content.slice(0, 80)}` });
       } else {
-        console.log('[VibePilot] Test connection - no content found in:', data);
         saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
         setStatus('failed');
         setTestResult({ ok: false, msg: '模型返回为空，请检查模型名称是否正确。响应结构：' + Object.keys(data).join(', ') });
@@ -316,7 +315,6 @@ export default function SettingsPage() {
         }),
       });
 
-      // Layer 1: API Connection
       result.apiConnection = response.ok;
 
       if (!response.ok) {
@@ -352,9 +350,6 @@ export default function SettingsPage() {
         return;
       }
 
-      console.log('[VibePilot] Long JSON test content:', content.slice(0, 800));
-
-      // Layer 2: JSON Parse — reuse extractJson from evaluate.ts
       const parsed = extractJson<Record<string, unknown>>(content);
       if (!parsed) {
         setLongTestResult({
@@ -367,9 +362,7 @@ export default function SettingsPage() {
       }
 
       result.jsonGeneration = true;
-      console.log('[VibePilot] Long JSON parsed:', JSON.stringify(parsed).slice(0, 500));
 
-      // Layer 3: Required Fields check
       const fieldChecks = {
         referenceEvidence: parsed.referenceEvidence && typeof parsed.referenceEvidence === 'object',
         productBrief: isUsefulString(parsed.productBrief, 20),
@@ -377,8 +370,6 @@ export default function SettingsPage() {
         devSpec: isUsefulString(parsed.devSpec, 20),
         developmentPrompt: isUsefulString(parsed.developmentPrompt, 20),
       };
-
-      console.log('[VibePilot] Long JSON fieldChecks:', fieldChecks);
 
       const missingFields = Object.entries(fieldChecks)
         .filter(([, ok]) => !ok)
@@ -409,9 +400,7 @@ export default function SettingsPage() {
 
       result.requiredFields = { passed: true, missingFields: [], msg: '全部关键字段可用。' };
 
-      // Layer 4: Reference Validation — reuse validateAIOutputReferencesInput
       const validation = validateAIOutputReferencesInput(LONG_TEST_BRIEF, parsed);
-      console.log('[VibePilot] Long JSON validation:', validation);
 
       result.refValidation = {
         passed: validation.passed,
@@ -422,7 +411,6 @@ export default function SettingsPage() {
       saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
       setStatus('connected');
 
-      // V4.4: All 4 layers passed → API is ready
       const allPassed = result.apiConnection && result.jsonGeneration && result.requiredFields.passed && result.refValidation.passed;
       if (allPassed) {
         markApiReady({ model: model.trim(), apiUrl: normalizeApiUrl(apiUrl) });
@@ -446,7 +434,7 @@ export default function SettingsPage() {
 
   const handleClear = () => {
     clearAIConfig();
-    clearApiHealth(); // V4.4: Reset health when config cleared
+    clearApiHealth();
     setStatus('unconfigured');
     setApiUrl('');
     setApiKey('');
@@ -461,7 +449,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <header className="vp-header">
         <div style={{ maxWidth: 640, margin: '0 auto', width: '100%', display: 'flex', alignItems: 'center', gap: 8 }}>
           <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '4px 6px' }} title="返回主页">
@@ -476,7 +464,7 @@ export default function SettingsPage() {
 
       <main style={{ flex: 1, padding: '2rem' }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
-          {/* V4.4: API Runtime Status Card */}
+          {/* V4.6: API Runtime Status Card with glow */}
           {(() => {
             const health = getApiHealth();
             const statusColors: Record<ApiHealthStatus, string> = {
@@ -497,27 +485,40 @@ export default function SettingsPage() {
             };
             const color = statusColors[health.status] || 'var(--color-text-hint)';
             const label = statusLabels[health.status] || '未知';
+            const isReady = health.status === 'ready';
             return (
-              <div className="vp-card" style={{ marginBottom: 16, borderColor: `${color}30`, background: `${color}08` }}>
+              <LiquidCard
+                style={{
+                  marginBottom: 16,
+                  borderColor: isReady ? 'rgba(52,199,89,0.25)' : `${color}30`,
+                  boxShadow: isReady ? '0 0 24px rgba(52,199,89,0.10), var(--vp-shadow-inner)' : undefined,
+                }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                  <div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color }}>API Runtime: {label}</span>
-                    {health.checkedAt && <span style={{ fontSize: 10, color: 'var(--color-text-hint)', marginLeft: 8 }}>{new Date(health.checkedAt).toLocaleString()}</span>}
-                    {health.model && <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginLeft: 8 }}>{health.model}</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: color,
+                      display: 'inline-block',
+                      boxShadow: isReady ? `0 0 8px ${color}` : undefined,
+                    }} />
+                    <span style={{ fontSize: 14, fontWeight: 600, color }}>API Runtime: {label}</span>
+                    {health.model && <LiquidBadge variant="blue">{health.model}</LiquidBadge>}
                   </div>
-                  {health.status !== 'ready' && (
+                  {!isReady && (
                     <span style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
                       只有 API 状态为 Ready，Agent 工作流和生成流程才能运行
                     </span>
                   )}
                 </div>
+                {health.checkedAt && <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginTop: 8 }}>上次检查: {new Date(health.checkedAt).toLocaleString()}</p>}
                 {health.message && <p style={{ fontSize: 11, color: 'var(--color-text-hint)', marginTop: 4 }}>{health.message}</p>}
-              </div>
+              </LiquidCard>
             );
           })()}
 
           {/* Intro */}
-          <div style={{ marginBottom: 32 }}>
+          <div style={{ marginBottom: 28 }}>
             <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
               <Settings size={22} style={{ color: 'var(--color-primary)' }} />
               AI 模型配置
@@ -533,12 +534,10 @@ export default function SettingsPage() {
 
           {/* Current status */}
           {storedConfig ? (
-            <div
-              className="vp-card"
+            <LiquidCard
               style={{
                 marginBottom: 24,
-                borderColor: 'rgba(18,18,18,0.14)',
-                background: 'var(--color-success-light)',
+                borderColor: 'rgba(52,199,89,0.15)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -554,17 +553,15 @@ export default function SettingsPage() {
               </p>
               {connectionStatus !== 'connected' && (
                 <p style={{ fontSize: 12, color: 'var(--color-warning)', lineHeight: 1.6, marginTop: 6 }}>
-                  保存配置不等于连接成功。请点击“测试连接”，成功后才能生成 AI 分析。
+                  保存配置不等于连接成功。请点击"测试连接"，成功后才能生成 AI 分析。
                 </p>
               )}
-            </div>
+            </LiquidCard>
           ) : (
-            <div
-              className="vp-card"
+            <LiquidCard
               style={{
                 marginBottom: 24,
-                borderColor: 'rgba(18,18,18,0.14)',
-                background: 'var(--color-warning-light)',
+                borderColor: 'rgba(255,149,0,0.20)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -576,11 +573,11 @@ export default function SettingsPage() {
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 生产环境必须连接并测试 AI 模型成功后，才能生成有效分析。
               </p>
-            </div>
+            </LiquidCard>
           )}
 
-          {/* Presets */}
-          <div className="vp-card" style={{ marginBottom: 16 }}>
+          {/* Presets — LiquidBadge style */}
+          <LiquidCard style={{ marginBottom: 16 }}>
             <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>快速配置</h3>
             <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginBottom: 12 }}>
               选择一个平台，自动填入 API 地址和模型名称。你只需填入 API Key。
@@ -598,10 +595,10 @@ export default function SettingsPage() {
                 </button>
               ))}
             </div>
-          </div>
+          </LiquidCard>
 
           {/* Config form */}
-          <div className="vp-card" style={{ marginBottom: 16 }}>
+          <LiquidCard style={{ marginBottom: 16 }}>
             <div style={{ marginBottom: 20 }}>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
                 API 地址
@@ -617,7 +614,7 @@ export default function SettingsPage() {
                 placeholder="https://api.openai.com"
               />
               <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
-                如果你的服务商不是 OpenAI-compatible，请填写完整 endpoint，例如以 /chat/completions 结尾。支持如 https://api.openai.com/v1/chat/completions
+                如果你的服务商不是 OpenAI-compatible，请填写完整 endpoint，例如以 /chat/completions 结尾。
               </p>
             </div>
 
@@ -713,58 +710,47 @@ export default function SettingsPage() {
                 </button>
               )}
             </div>
-          </div>
+          </LiquidCard>
 
           {/* Long JSON test result */}
           {longTestResult && (
-            <div className="vp-card" style={{ marginBottom: 16 }}>
+            <LiquidCard style={{ marginBottom: 16 }}>
               <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>长 JSON 生成测试</h3>
               <div style={{ display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                  <span>{longTestResult.apiConnection ? '✅' : '❌'}</span>
-                  <span><strong>1. API Connection:</strong> {longTestResult.apiConnection ? '通过' : '失败'}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                  <span>{longTestResult.jsonGeneration ? '✅' : '❌'}</span>
-                  <span><strong>2. JSON Parse:</strong> {longTestResult.jsonGeneration ? '通过' : '不通过'}</span>
-                </div>
-                {longTestResult.requiredFields && (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13 }}>
-                    <span>{longTestResult.requiredFields.passed ? '✅' : '❌'}</span>
+                {[
+                  { label: '1. API Connection', passed: longTestResult.apiConnection },
+                  { label: '2. JSON Parse', passed: longTestResult.jsonGeneration },
+                  { label: '3. Required Fields', passed: longTestResult.requiredFields?.passed, msg: longTestResult.requiredFields?.msg, missing: longTestResult.requiredFields?.missingFields },
+                  { label: '4. Reference Validation', passed: longTestResult.refValidation?.passed, msg: longTestResult.refValidation?.msg },
+                ].map((item) => (
+                  <div key={item.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13 }}>
+                    <span>{item.passed ? '✅' : '❌'}</span>
                     <div>
-                      <span><strong>3. Required Fields:</strong> {longTestResult.requiredFields.passed ? '通过' : `不通过 — ${longTestResult.requiredFields.msg}`}</span>
-                      {longTestResult.requiredFields.missingFields.length > 0 && (
+                      <span><strong>{item.label}:</strong> {item.passed ? '通过' : item.msg || '不通过'}</span>
+                      {item.missing && item.missing.length > 0 && (
                         <div style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
-                          缺失/不足: {longTestResult.requiredFields.missingFields.join(', ')}
+                          缺失/不足: {item.missing.join(', ')}
                         </div>
                       )}
                     </div>
                   </div>
-                )}
-                {longTestResult.refValidation && (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13 }}>
-                    <span>{longTestResult.refValidation.passed ? '✅' : '⚠️'}</span>
-                    <span><strong>4. Reference Validation:</strong> {longTestResult.refValidation.msg}</span>
-                  </div>
-                )}
+                ))}
               </div>
-            </div>
+            </LiquidCard>
           )}
 
           {/* Short test result */}
           {testResult && (
-            <div
-              className="vp-card"
+            <LiquidCard
               style={{
                 marginBottom: 16,
-                borderColor: testResult.ok ? 'rgba(18,18,18,0.14)' : 'rgba(18,18,18,0.18)',
-                background: testResult.ok ? 'var(--color-success-light)' : 'var(--color-danger-light)',
+                borderColor: testResult.ok ? 'rgba(52,199,89,0.15)' : 'rgba(255,59,48,0.15)',
               }}
             >
               <p style={{ fontSize: 13, color: testResult.ok ? 'var(--color-success)' : 'var(--color-danger)', lineHeight: 1.6 }}>
                 {testResult.ok ? '✅ ' : '❌ '}{testResult.msg}
               </p>
-            </div>
+            </LiquidCard>
           )}
 
           {/* Help */}
@@ -787,6 +773,6 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
-    </div>
+    </PageReveal>
   );
 }

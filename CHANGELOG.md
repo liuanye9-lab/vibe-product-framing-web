@@ -1,5 +1,41 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V4.6 — Liquid Glass Visual System Upgrade (2026-05-29)
+
+### Added
+- Liquid component system (10 components: AuroraBackground, LiquidShell, LiquidCard, LiquidButton, LiquidInput, LiquidBadge, LiquidProgress, LiquidStepRail, LiquidDock, PageReveal)
+- iOS-inspired color tokens (blue/indigo/purple/cyan/mint/green/orange/red)
+- Dark mode support (prefers-color-scheme: dark)
+- Aurora wallpaper background with ambient orbs
+- Glass card system with saturate(180%) backdrop-filter
+- Accessibility: prefers-reduced-motion, prefers-contrast, backdrop-filter fallback
+- Motion primitives: page reveal, card hover lift, button scale
+
+### Changed
+- Color palette: Coral/Navy/Sage → iOS Blue/Indigo/Purple
+- LandingPage: added Core Loop timeline, "Why Not PRD" comparison, Interview section
+- NewIdeaPage: iOS onboarding style with segmented control
+- AgentWorkspacePageV4: macOS titlebar, glass conversation bubbles, AI status chips, Spotlight input
+- DecisionOutputPage: 8-dimension quality score grid, document-style cards
+- DeveloperHandoffPage: LiquidCard sections, macOS code blocks
+- SettingsPage: centered glass panel, glow API status
+- HistoryPage: "Recent Decision Specs" gallery layout
+- Button colors: coral → iOS blue (#007aff)
+
+### Fixed
+- Inconsistent visual hierarchy across pages
+- Low product portfolio feel (demo → AI product)
+- Weak page narrative (hero-only → full story)
+- Missing dark mode support
+- Missing accessibility media queries
+
+### Not Changed
+- Agent Runtime, API calls, localStorage schema — zero business logic changes
+- Old four-step workflow pages (DemandDiscovery, ProductFraming, etc.)
+- No new UI library, no Framer Motion
+
+---
+
 ## V4.5 — Runtime Consistency & Source-of-Truth Patch (2026-05-29)
 - 修复 Agent 运行时事件持久化（events → session.events）
 - 修复 action intent 回复不回写 agent_message

@@ -10,9 +10,9 @@ import { generateEarsAcceptanceCriteria, formatEarsMarkdown } from '../lib/ears'
 import { buildDevSpec, formatDevSpecMarkdown } from '../lib/devSpecBuilder';
 import { buildCodexTaskPack, formatCodexTaskPackMarkdown } from '../lib/codexTaskPackBuilder';
 import { addDecisionLogEntry } from '../lib/decisionLog';
-import ProgressBar from '../components/ProgressBar';
 import DevSpecPreview from '../components/DevSpecPreview';
 import CodexTaskPackPreview from '../components/CodexTaskPackPreview';
+import { PageReveal, LiquidCard, LiquidProgress } from '../components/liquid';
 
 export default function DecisionOutputPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,7 +39,6 @@ export default function DecisionOutputPage() {
     const devSpec = buildDevSpec(brief);
     const codexTaskPack = buildCodexTaskPack({ devSpec });
 
-    // NOTE: Decision log recording moved to useEffect below (V4.5 fix).
     return { phases, quality, ambiguity, scope, ears, devSpec, codexTaskPack };
   }, [brief]);
 
@@ -59,6 +58,7 @@ export default function DecisionOutputPage() {
 
   const { phases, quality, ambiguity, scope, ears, devSpec, codexTaskPack } = data;
   const allConfirmed = phases.every((p) => p.status !== 'empty');
+  const totalProgress = phases.length ? Math.round(phases.reduce((sum, p) => sum + p.progressPercent, 0) / phases.length) : 0;
 
   const downloadAll = () => {
     const content = [
@@ -110,47 +110,59 @@ export default function DecisionOutputPage() {
   };
 
   return (
-    <div className="vp-page" style={{ minHeight: '100vh', padding: '2.5rem 2rem', background: 'var(--color-bg)' }}>
-      <div style={{ maxWidth: 880, margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-          <div>
-            <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/handoff/${brief.id}`)} style={{ marginBottom: 8 }}>
+    <PageReveal style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
+      <div style={{ maxWidth: 880, margin: '0 auto', padding: '2.5rem 2rem' }}>
+        {/* Header Hero */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <h1 style={{
+            fontSize: 'clamp(28px, 4vw, 44px)',
+            fontWeight: 700,
+            letterSpacing: '-0.04em',
+            color: '#0f172a',
+            marginBottom: 8,
+          }}>
+            Decision Output
+          </h1>
+          <p style={{ fontSize: 15, color: 'var(--color-text-secondary)', lineHeight: 1.7, maxWidth: 560, margin: '0 auto 16px' }}>
+            从模糊想法到 Codex Task Pack — 每个决策都有痕迹，每一步都可回溯
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/handoff/${brief.id}`)}>
               <ArrowLeft size={14} /> 返回交付页
             </button>
-            <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: '-0.03em', color: 'var(--vp-navy)' }}>
-              Vibe Decision Copilot
-            </h1>
-            <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', marginTop: 6 }}>
-              把模糊产品想法转化为 Codex 可执行任务包
-            </p>
+            <button className="vp-btn vp-btn-primary" onClick={downloadAll}>
+              <Download size={14} /> 下载全部
+            </button>
           </div>
-          <button className="vp-btn vp-btn-primary" onClick={downloadAll}>
-            <Download size={14} /> 下载全部
-          </button>
         </div>
 
-        {/* Progress Bar */}
-        <ProgressBar phases={phases} />
+        {/* Progress Card */}
+        <LiquidCard style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 650 }}>整体进度</h2>
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--vp-blue)' }}>{totalProgress}%</span>
+          </div>
+          <LiquidProgress percent={totalProgress} />
+        </LiquidCard>
 
         {/* Warning if not all confirmed */}
         {!allConfirmed && (
-          <div className="vp-card" style={{ marginBottom: 16, border: '1px solid #F59E0B' }}>
-            <p style={{ fontSize: 13, color: '#92400E', margin: 0 }}>
+          <div className="vp-card" style={{ marginBottom: 16, border: '1px solid rgba(255,149,0,0.3)' }}>
+            <p style={{ fontSize: 13, color: 'var(--vp-orange)', margin: 0 }}>
               ⚠️ 以下任务包基于未完全确认的需求生成，Codex 执行前建议人工复核。
             </p>
           </div>
         )}
 
-        {/* Quality Score */}
-        <div className="vp-card" style={{ marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        {/* Quality Score — 8 dimension grid */}
+        <LiquidCard style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h2 style={{ fontSize: 16, fontWeight: 650 }}>需求质量评分</h2>
-            <span style={{ fontSize: 24, fontWeight: 700, color: quality.total >= 30 ? 'var(--color-success)' : quality.total >= 20 ? '#F59E0B' : '#EF4444' }}>
+            <span style={{ fontSize: 24, fontWeight: 700, color: quality.total >= 30 ? 'var(--vp-green)' : quality.total >= 20 ? 'var(--vp-orange)' : 'var(--vp-red)' }}>
               {quality.total}/40
             </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
             {[
               { label: '清晰度', score: quality.clarity },
               { label: '具体性', score: quality.specificity },
@@ -161,31 +173,39 @@ export default function DecisionOutputPage() {
               { label: '风险意识', score: quality.riskAwareness },
               { label: 'Codex 可执行', score: quality.codexExecutability },
             ].map((dim) => (
-              <div key={dim.label} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 10, textAlign: 'center' }}>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{dim.score}/5</div>
+              <div key={dim.label} style={{
+                border: '1px solid var(--color-border)',
+                borderRadius: 'var(--vp-radius-sm)',
+                padding: 12,
+                textAlign: 'center',
+                background: 'rgba(255,255,255,0.32)',
+              }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: dim.score >= 4 ? 'var(--vp-green)' : dim.score >= 3 ? 'var(--vp-orange)' : 'var(--vp-red)' }}>
+                  {dim.score}/5
+                </div>
                 <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginTop: 2 }}>{dim.label}</div>
               </div>
             ))}
           </div>
           {quality.issues.length > 0 && (
             <div style={{ marginTop: 12 }}>
-              <h3 style={{ fontSize: 12, fontWeight: 650, color: '#EF4444' }}>问题</h3>
+              <h3 style={{ fontSize: 12, fontWeight: 650, color: 'var(--color-danger)' }}>问题</h3>
               <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
                 {quality.issues.map((issue, i) => <li key={i}>{issue}</li>)}
               </ul>
             </div>
           )}
-        </div>
+        </LiquidCard>
 
         {/* Ambiguity Issues */}
         {ambiguity.length > 0 && (
-          <div className="vp-card" style={{ marginBottom: 16 }}>
+          <LiquidCard style={{ marginBottom: 16 }}>
             <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>歧义检测 ({ambiguity.length})</h2>
             <div style={{ display: 'grid', gap: 8 }}>
               {ambiguity.slice(0, 5).map((issue) => (
                 <div key={issue.id} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: issue.severity === 'high' ? '#EF4444' : issue.severity === 'medium' ? '#F59E0B' : 'var(--color-text-secondary)' }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: issue.severity === 'high' ? 'var(--color-danger)' : issue.severity === 'medium' ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>
                       [{issue.severity}] {issue.message}
                     </span>
                   </div>
@@ -193,52 +213,58 @@ export default function DecisionOutputPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </LiquidCard>
         )}
 
         {/* Scope Control */}
-        <div className="vp-card" style={{ marginBottom: 16 }}>
+        <LiquidCard style={{ marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>MVP 范围控制</h2>
           <div style={{ display: 'grid', gap: 10 }}>
             <div>
-              <span style={{ fontSize: 11, color: '#EF4444', fontWeight: 600 }}>P0 ({scope.p0.length})</span>
+              <span style={{ fontSize: 11, color: 'var(--color-danger)', fontWeight: 600 }}>P0 ({scope.p0.length})</span>
               <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {scope.p0.map((f, i) => <li key={i}>{f}</li>)}
               </ul>
             </div>
             <div>
-              <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 600 }}>Out of Scope</span>
+              <span style={{ fontSize: 11, color: 'var(--color-text-hint)', fontWeight: 600 }}>Out of Scope</span>
               <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 {scope.outOfScope.slice(0, 8).map((o, i) => <li key={i}>{o}</li>)}
               </ul>
             </div>
             {scope.scopeRisks.length > 0 && (
               <div>
-                <span style={{ fontSize: 11, color: '#F59E0B', fontWeight: 600 }}>范围风险</span>
+                <span style={{ fontSize: 11, color: 'var(--color-warning)', fontWeight: 600 }}>范围风险</span>
                 <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13, color: 'var(--color-text-secondary)' }}>
                   {scope.scopeRisks.map((r, i) => <li key={i}>{r}</li>)}
                 </ul>
               </div>
             )}
           </div>
-        </div>
+        </LiquidCard>
 
         {/* EARS Acceptance Criteria */}
-        <div className="vp-card" style={{ marginBottom: 16 }}>
+        <LiquidCard style={{ marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>EARS 验收标准</h2>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.8 }}>
             {ears.map((r) => <li key={r.id}>[{r.type}] {r.text}</li>)}
           </ul>
-        </div>
+        </LiquidCard>
 
         {/* DEV_SPEC */}
-        <DevSpecPreview devSpec={devSpec} />
+        <LiquidCard style={{ marginBottom: 16 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>DEV_SPEC</h2>
+          <DevSpecPreview devSpec={devSpec} />
+        </LiquidCard>
 
         {/* CODEX_TASK_PACK */}
-        <CodexTaskPackPreview taskPack={codexTaskPack} />
+        <LiquidCard style={{ marginBottom: 16 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>CODEX_TASK_PACK</h2>
+          <CodexTaskPackPreview taskPack={codexTaskPack} />
+        </LiquidCard>
 
         {/* Phase Details */}
-        <div className="vp-card" style={{ marginBottom: 16 }}>
+        <LiquidCard style={{ marginBottom: 16 }}>
           <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 12 }}>10 阶段决策详情</h2>
           <div style={{ display: 'grid', gap: 4 }}>
             {phases.map((phase) => (
@@ -248,27 +274,27 @@ export default function DecisionOutputPage() {
                 gap: 8,
                 padding: '8px 12px',
                 borderRadius: 8,
-                background: phase.status === 'confirmed' ? 'rgba(16,185,129,0.06)' : phase.status === 'draft' ? 'rgba(245,158,11,0.04)' : 'transparent',
+                background: phase.status === 'confirmed' ? 'rgba(52,199,89,0.06)' : phase.status === 'draft' ? 'rgba(255,149,0,0.04)' : 'transparent',
                 border: '1px solid var(--color-border)',
               }}>
                 <span style={{
                   width: 8, height: 8, borderRadius: '50%',
-                  background: phase.status === 'confirmed' ? '#10B981' : phase.status === 'draft' ? '#F59E0B' : 'var(--color-border)',
+                  background: phase.status === 'confirmed' ? 'var(--vp-green)' : phase.status === 'draft' ? 'var(--vp-orange)' : 'var(--color-border)',
                   flexShrink: 0,
                 }} />
                 <span style={{ fontSize: 13, fontWeight: 500, flexShrink: 0, width: 90 }}>{phase.label}</span>
                 <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--color-border)' }}>
-                  <div style={{ height: '100%', borderRadius: 2, background: 'var(--color-primary)', width: `${phase.progressPercent}%` }} />
+                  <div style={{ height: '100%', borderRadius: 2, background: 'var(--vp-blue)', width: `${phase.progressPercent}%` }} />
                 </div>
                 <span style={{ fontSize: 11, color: 'var(--color-text-hint)' }}>{phase.progressPercent}%</span>
                 {phase.missingInfo.length > 0 && (
-                  <span style={{ fontSize: 11, color: '#F59E0B' }}>{phase.missingInfo.length} 缺失</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-warning)' }}>{phase.missingInfo.length} 缺失</span>
                 )}
               </div>
             ))}
           </div>
-        </div>
+        </LiquidCard>
       </div>
-    </div>
+    </PageReveal>
   );
 }

@@ -2,12 +2,28 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, Brain, Clock, Code2, Layers3,
   Settings, Sparkles, Target, Zap, Bot,
-  Shield, Database, FileText
+  Shield, Database, FileText, ArrowRightCircle,
+  Lightbulb, ClipboardCheck,
 } from 'lucide-react';
 import { isAIReady } from '../api/evaluate';
+import { PageReveal, LiquidCard, LiquidStepRail } from '../components/liquid';
+
+const PHASES = [
+  { key: 'intake', label: 'Intake', progressPercent: 100, status: 'confirmed' },
+  { key: 'demand', label: 'Demand', progressPercent: 100, status: 'confirmed' },
+  { key: 'product', label: 'Product', progressPercent: 100, status: 'confirmed' },
+  { key: 'mvp', label: 'MVP', progressPercent: 100, status: 'confirmed' },
+  { key: 'tech', label: 'Tech', progressPercent: 100, status: 'confirmed' },
+  { key: 'data', label: 'Data', progressPercent: 100, status: 'confirmed' },
+  { key: 'risk', label: 'Risk', progressPercent: 100, status: 'confirmed' },
+  { key: 'review', label: 'Review', progressPercent: 100, status: 'confirmed' },
+  { key: 'handoff', label: 'Handoff', progressPercent: 100, status: 'confirmed' },
+  { key: 'output', label: 'Output', progressPercent: 100, status: 'confirmed' },
+];
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const aiReady = isAIReady();
 
   const hasHistory = (() => {
     try {
@@ -18,18 +34,18 @@ export default function LandingPage() {
   })();
 
   return (
-    <div className="vp-page" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* ── Ambient Orbs ── */}
-      <div className="vp-orb vp-orb--coral" />
-      <div className="vp-orb vp-orb--navy" />
-      <div className="vp-orb vp-orb--sage" />
+      <div className="vp-orb vp-orb--indigo" />
+      <div className="vp-orb vp-orb--blue" />
+      <div className="vp-orb vp-orb--purple" />
 
       {/* ── Header ── */}
       <header className="vp-header">
         <div className="vp-header-inner">
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            background: 'linear-gradient(135deg, rgba(224,74,59,0.10), rgba(30,58,76,0.06))',
+            background: 'linear-gradient(135deg, rgba(0,122,255,0.10), rgba(88,86,214,0.06))',
             padding: '6px 14px',
             borderRadius: 'var(--radius-full)',
           }}>
@@ -37,11 +53,11 @@ export default function LandingPage() {
             <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.01em' }}>VibePilot</span>
             <span style={{
               fontSize: 10, fontWeight: 600,
-              color: 'var(--vp-navy)', opacity: 0.5,
-              background: 'rgba(30,58,76,0.08)',
+              color: 'var(--vp-indigo)', opacity: 0.6,
+              background: 'rgba(88,86,214,0.08)',
               padding: '2px 7px', borderRadius: 999,
             }}>
-              COPILOT
+              V4.6
             </span>
           </div>
 
@@ -84,9 +100,9 @@ export default function LandingPage() {
             alignItems: 'center',
             gap: 6,
             padding: '5px 14px',
-            borderRadius: 'var(--radius-full)',
-            background: 'linear-gradient(135deg, rgba(224,74,59,0.10), rgba(30,58,76,0.05))',
-            border: '1px solid rgba(224,74,59,0.12)',
+            borderRadius: 'var(--vp-radius-pill)',
+            background: 'linear-gradient(135deg, rgba(0,122,255,0.10), rgba(88,86,214,0.06))',
+            border: '1px solid rgba(0,122,255,0.12)',
             color: 'var(--color-primary)',
             fontSize: 12,
             fontWeight: 600,
@@ -95,7 +111,7 @@ export default function LandingPage() {
             WebkitBackdropFilter: 'blur(20px)',
           }}>
             <Sparkles size={13} style={{ color: 'var(--color-primary)' }} />
-            AI 辅助 · Vibe Decision Copilot
+            AI 辅助 · Vibe Decision Copilot V4.6
           </div>
 
           {/* Main Heading */}
@@ -103,20 +119,11 @@ export default function LandingPage() {
             fontSize: 'clamp(34px, 5vw, 54px)',
             fontWeight: 700,
             lineHeight: 1.14,
-            marginBottom: 22,
+            marginBottom: 14,
             letterSpacing: '-0.045em',
-            color: 'var(--vp-navy)',
+            color: '#0f172a',
           }}>
-            不要把一句模糊想法
-            <br />
-            <span style={{
-              background: 'linear-gradient(135deg, var(--vp-coral) 0%, #D44236 60%, var(--vp-navy-soft) 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}>
-              直接丢给 AI 写代码
-            </span>
+            Vibe Decision Copilot
           </h1>
 
           {/* Subtitle */}
@@ -124,52 +131,64 @@ export default function LandingPage() {
             fontSize: 17,
             color: 'var(--color-text-secondary)',
             lineHeight: 1.85,
-            margin: '0 auto 40px',
-            maxWidth: 640,
+            margin: '0 auto 28px',
+            maxWidth: 680,
             fontWeight: 400,
           }}>
-            VibePilot 帮你从产品、业务、技术三个维度完成前期构思，
-            AI 主动推断技术架构、数据结构、MVP 范围和验收标准，
-            最后生成可直接交给 Cursor / Claude Code 的 Development Prompt。
+            把模糊产品想法转化为 Codex 可执行任务包的前期决策 Agent
           </p>
+
+          {/* Flow Glass Capsule */}
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '8px 20px',
+            borderRadius: 'var(--vp-radius-pill)',
+            background: 'rgba(255,255,255,0.52)',
+            border: '1px solid rgba(255,255,255,0.65)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            marginBottom: 36,
+            fontSize: 13,
+            fontWeight: 500,
+            color: 'var(--color-text-secondary)',
+            boxShadow: 'var(--vp-shadow-inner), 0 4px 16px rgba(15,23,42,0.06)',
+          }}>
+            <span style={{ color: 'var(--vp-blue)', fontWeight: 600 }}>Raw Idea</span>
+            <ArrowRight size={12} style={{ color: 'var(--color-text-hint)' }} />
+            <span style={{ color: 'var(--vp-indigo)', fontWeight: 600 }}>DEV_SPEC</span>
+            <ArrowRight size={12} style={{ color: 'var(--color-text-hint)' }} />
+            <span style={{ color: 'var(--vp-purple)', fontWeight: 600 }}>CODEX_TASK_PACK</span>
+          </div>
 
           {/* CTA Buttons */}
           <div style={{ marginBottom: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
-            {/* Agent 工作流 — Primary CTA */}
             <button
               className="vp-btn-cta"
               onClick={() => {
-                if (!isAIReady()) {
+                if (!aiReady) {
                   navigate('/settings');
                 } else {
                   navigate('/new', { state: { fromHome: true, agentMode: true } });
                 }
               }}
-              style={{
-                background: isAIReady()
-                  ? 'linear-gradient(135deg, var(--vp-coral) 0%, #D44236 100%)'
-                  : 'linear-gradient(135deg, var(--vp-navy) 0%, #1a3a5c 100%)',
-                boxShadow: isAIReady()
-                  ? 'var(--glass-highlight), 0 12px 36px rgba(224, 74, 59, 0.32), 0 4px 10px rgba(224, 74, 59, 0.18)'
-                  : 'var(--glass-highlight), 0 12px 36px rgba(30, 58, 76, 0.32), 0 4px 10px rgba(30, 58, 76, 0.18)',
-              }}
             >
-              {isAIReady() ? (
+              {aiReady ? (
                 <>
                   <Bot size={18} />
                   Agent Decision OS
-                  <ArrowRight size={18} />
+                  <ArrowRightCircle size={18} />
                 </>
               ) : (
                 <>
                   <Settings size={18} />
-                  配置 AI API 以使用 Agent
-                  <ArrowRight size={18} />
+                  配置 API
+                  <ArrowRightCircle size={18} />
                 </>
               )}
             </button>
 
-            {/* 传统四步流程 — Secondary */}
             <button
               className="vp-btn vp-btn-ghost"
               onClick={() => navigate('/new', { state: { fromHome: true } })}
@@ -178,6 +197,144 @@ export default function LandingPage() {
               <Target size={16} />
               传统四步流程
             </button>
+
+            {hasHistory && (
+              <button
+                className="vp-btn vp-btn-ghost"
+                onClick={() => navigate('/history')}
+                style={{ fontSize: 14, padding: '12px 24px' }}
+              >
+                <Clock size={16} />
+                查看历史
+              </button>
+            )}
+
+            <button
+              className="vp-btn vp-btn-ghost"
+              onClick={() => navigate('/settings')}
+              style={{ fontSize: 14, padding: '12px 24px' }}
+            >
+              <Settings size={16} />
+              配置 API
+            </button>
+          </div>
+
+          {/* ── Core Loop Section ── */}
+          <div style={{ marginBottom: 60 }}>
+            <h2 style={{
+              fontSize: 20,
+              fontWeight: 650,
+              marginBottom: 20,
+              letterSpacing: '-0.02em',
+              color: 'var(--color-text)',
+            }}>
+              10 阶段决策流程
+            </h2>
+            <div style={{
+              background: 'rgba(255,255,255,0.48)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
+              borderRadius: 'var(--vp-radius-lg)',
+              border: '1px solid rgba(255,255,255,0.6)',
+              padding: '20px 24px',
+              boxShadow: 'var(--vp-shadow-inner), 0 4px 16px rgba(15,23,42,0.04)',
+            }}>
+              <LiquidStepRail phases={PHASES} />
+              <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                {PHASES.map((p) => (
+                  <span key={p.key} style={{
+                    fontSize: 11,
+                    color: 'var(--color-text-hint)',
+                    padding: '2px 8px',
+                    background: 'rgba(15,23,42,0.04)',
+                    borderRadius: 'var(--vp-radius-pill)',
+                  }}>
+                    {p.label} 100%
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Why Not PRD Generator ── */}
+          <div style={{ marginBottom: 60 }}>
+            <h2 style={{
+              fontSize: 20,
+              fontWeight: 650,
+              marginBottom: 20,
+              letterSpacing: '-0.02em',
+              color: 'var(--color-text)',
+            }}>
+              Why Not Just a PRD Generator?
+            </h2>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gap: 16,
+              textAlign: 'left',
+            }}>
+              <LiquidCard>
+                <div style={{
+                  width: 36, height: 36,
+                  borderRadius: 'var(--vp-radius-sm)',
+                  background: 'rgba(255,59,48,0.08)',
+                  color: 'var(--vp-red)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: 14,
+                  border: '1px solid rgba(255,59,48,0.12)',
+                }}>
+                  <FileText size={18} />
+                </div>
+                <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 8, letterSpacing: '-0.01em' }}>
+                  普通 PRD 生成器
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+                  直接输出文档，容易空泛，不知道是否值得做。没有决策过程，没有 trade-off 分析。
+                </p>
+              </LiquidCard>
+
+              <LiquidCard style={{
+                borderColor: 'rgba(0,122,255,0.20)',
+              }}>
+                <div style={{
+                  width: 36, height: 36,
+                  borderRadius: 'var(--vp-radius-sm)',
+                  background: 'rgba(0,122,255,0.08)',
+                  color: 'var(--vp-blue)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: 14,
+                  border: '1px solid rgba(0,122,255,0.12)',
+                }}>
+                  <Brain size={18} />
+                </div>
+                <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 8, letterSpacing: '-0.01em', color: 'var(--vp-blue)' }}>
+                  Vibe Decision Copilot
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+                  先判断需求是否真实，强制收敛 MVP，生成可执行任务包。每个决策都有 trace，每步可回溯。
+                </p>
+              </LiquidCard>
+
+              <LiquidCard>
+                <div style={{
+                  width: 36, height: 36,
+                  borderRadius: 'var(--vp-radius-sm)',
+                  background: 'rgba(255,149,0,0.08)',
+                  color: 'var(--vp-orange)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: 14,
+                  border: '1px solid rgba(255,149,0,0.12)',
+                }}>
+                  <Lightbulb size={18} />
+                </div>
+                <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 8, letterSpacing: '-0.01em' }}>
+                  AI Coding 失败原因
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+                  不是 AI 不会写代码，是开发前规格不清楚，验收标准缺失。没有明确 Dev Spec 的 Codex 就是在猜。
+                </p>
+              </LiquidCard>
+            </div>
           </div>
 
           {/* ── Value Cards Grid ── */}
@@ -186,24 +343,25 @@ export default function LandingPage() {
             gridTemplateColumns: 'repeat(3, 1fr)',
             gap: 16,
             textAlign: 'left',
+            marginBottom: 20,
           }}>
             <GlassValueCard
               icon={<Target size={18} />}
               title="先做产品理解"
               desc="从一句话定义、目标用户、场景、痛点、替代方案开始，避免为了功能而功能。"
-              accent="coral"
+              accent="blue"
             />
             <GlassValueCard
               icon={<Layers3 size={18} />}
               title="AI 补全专业判断"
               desc="技术架构、数据库、数据流、AI API、认证方案由 AI 推荐，你只需确认。"
-              accent="navy"
+              accent="indigo"
             />
             <GlassValueCard
               icon={<Code2 size={18} />}
               title="DEV_SPEC + CODEX_TASK_PACK"
               desc="最终输出 DEV_SPEC 开发规格和 CODEX_TASK_PACK 可执行任务包，直接交给 Codex。"
-              accent="sage"
+              accent="purple"
             />
           </div>
 
@@ -220,6 +378,31 @@ export default function LandingPage() {
             <MiniFeature icon={<FileText size={15} />} label="CODEX_TASK_PACK" />
             <MiniFeature icon={<Target size={15} />} label="进度可视化" />
           </div>
+
+          {/* ── Interview-Ready Section ── */}
+          <div style={{ marginTop: 60 }}>
+            <LiquidCard>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+                <ClipboardCheck size={20} style={{ color: 'var(--vp-blue)' }} />
+                <h2 style={{ fontSize: 18, fontWeight: 650, letterSpacing: '-0.02em' }}>
+                  Interview-Ready 讲述
+                </h2>
+              </div>
+              <p style={{
+                fontSize: 14,
+                color: 'var(--color-text-secondary)',
+                lineHeight: 1.85,
+                textAlign: 'left',
+              }}>
+                Vibe Decision Copilot 解决的是 AI 辅助软件开发中最被忽视的一环：<strong>写代码之前的决策质量</strong>。
+                它不是简单的 PRD 生成器，而是通过 10 个阶段的结构化对话 —— 从需求诊断、产品定义、
+                MVP 范围收敛、技术架构、数据结构、AI API 策略到验收标准 —— 确保每个进入开发的
+                task 都有清晰的上下文、明确的边界和可验证的完成标准。最终输出的 DEV_SPEC 和
+                CODEX_TASK_PACK 可以直接交给 Cursor / Claude Code / GitHub Copilot 执行，
+                大幅减少 AI coding 的返工率和"做了但不对"的问题。
+              </p>
+            </LiquidCard>
+          </div>
         </div>
       </main>
 
@@ -230,9 +413,9 @@ export default function LandingPage() {
         fontSize: 12,
         color: 'var(--color-text-hint)',
       }}>
-        Vibe Decision Copilot — 把模糊想法转化为 Codex 可执行任务包
+        Vibe Decision Copilot V4.6 — 把模糊想法转化为 Codex 可执行任务包
       </footer>
-    </div>
+    </PageReveal>
   );
 }
 
@@ -243,12 +426,12 @@ function GlassValueCard({
   icon: React.ReactNode;
   title: string;
   desc: string;
-  accent: 'coral' | 'navy' | 'sage';
+  accent: 'blue' | 'indigo' | 'purple';
 }) {
   const accentColors = {
-    coral: { bg: 'rgba(224,74,59,0.08)', color: 'var(--vp-coral)', border: 'rgba(224,74,59,0.12)' },
-    navy:  { bg: 'rgba(30,58,76,0.08)',  color: 'var(--vp-navy)',  border: 'rgba(30,58,76,0.12)' },
-    sage:  { bg: 'rgba(74,156,129,0.08)', color: 'var(--color-success)', border: 'rgba(74,156,129,0.12)' },
+    blue: { bg: 'rgba(0,122,255,0.08)', color: 'var(--vp-blue)', border: 'rgba(0,122,255,0.12)' },
+    indigo: { bg: 'rgba(88,86,214,0.08)', color: 'var(--vp-indigo)', border: 'rgba(88,86,214,0.12)' },
+    purple: { bg: 'rgba(175,82,222,0.08)', color: 'var(--vp-purple)', border: 'rgba(175,82,222,0.12)' },
   };
   const c = accentColors[accent];
 
@@ -285,7 +468,7 @@ function MiniFeature({ icon, label }: { icon: React.ReactNode; label: string }) 
       alignItems: 'center',
       gap: 7,
       padding: '8px 14px',
-      borderRadius: 'var(--radius-full)',
+      borderRadius: 'var(--vp-radius-pill)',
       background: 'rgba(255,255,255,0.42)',
       border: '1px solid rgba(255,255,255,0.56)',
       backdropFilter: 'blur(16px)',

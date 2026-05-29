@@ -1,5 +1,5 @@
 /**
- * Agent Workspace Page — V4.0 Agent Graph Runtime & Decision OS
+ * Agent Workspace Page — V4.6 Liquid Glass Edition
  *
  * Uses agent-v4 runtime: AgentGraphSession, Graph Nodes, Event Log,
  * Checkpoints, Tool Registry, Memory, Skill Library.
@@ -7,6 +7,9 @@
  * Layout:
  * - Left 65%: Agent Conversation + Event Timeline indicator
  * - Right 35%: Decision OS Panel (State / Tasks / Findings / Memory / Debug tabs)
+ *
+ * V4.6 Visual Changes: macOS titlebar, glass bubbles, spotlight input,
+ * segmented tabs, traffic lights.
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -58,6 +61,7 @@ import { listMcpLikeTools } from '../agent-v4/adapters/mcpLikeToolAdapter';
 import { buildImmediateAgentReply } from '../agent-v4/immediateReply';
 import { ApiRequiredGate } from '../components/ApiRequiredGate';
 import { getApiHealth } from '../api/apiHealth';
+import { LiquidBadge } from '../components/liquid';
 import {
   type AgentTurnLifecycle,
   createAgentTurnLifecycle,
@@ -228,8 +232,6 @@ export default function AgentWorkspacePageV4() {
   const handleSkip = useCallback(() => sendAgentMessage('先跳过', { immediateReply: '已收到，我会把当前缺失项标记为跳过，并继续推进。' }), [sendAgentMessage]);
   const handleMakeAssumption = useCallback(() => sendAgentMessage('帮我做默认假设', { immediateReply: '可以，我会先做低置信度假设，并把这些假设标出来，后面你可以随时改。' }), [sendAgentMessage]);
   const handleGenerateHandoff = useCallback(() => sendAgentMessage('生成开发文档', { immediateReply: '收到，我会先补齐必要假设，然后整理 Product Brief、MVP Scope、DEV_SPEC 和 Codex Prompt。' }), [sendAgentMessage]);
-  const handleReanalyze = useCallback(() => sendAgentMessage('重新分析当前节点'), [sendAgentMessage]);
-
   if (loading) {
     return (
       <div className="vp-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
@@ -254,6 +256,7 @@ export default function AgentWorkspacePageV4() {
   const status = state?.status || 'idle';
   const isWaiting = status === 'waiting_user';
   const isComplete = status === 'completed';
+  const apiHealth = getApiHealth();
 
   // V4.2: Filter only user-visible events for conversation
   const conversationEvents = (session?.events || []).filter((e) =>
@@ -266,43 +269,55 @@ export default function AgentWorkspacePageV4() {
       description="Agent Decision OS 依赖真实大模型 API 进行多阶段产品决策。API 未通过验证前，系统不会使用本地规则或 mock 结果继续生成。"
     >
     <div className="vp-page" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      {/* Header */}
-      <header className="vp-header" style={{ flexShrink: 0 }}>
-        <div className="vp-header-inner" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button className="vp-btn vp-btn-ghost" onClick={() => navigate('/')} style={{ padding: '4px 8px' }} title="首页">
-            <Home size={16} />
-          </button>
-          <GitBranch size={16} style={{ color: 'var(--color-primary)' }} />
-          <h1 style={{ fontSize: 15, fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            Agent Decision OS V4.5
-          </h1>
-          <span style={{
-            fontSize: 11,
-            color: STATUS_LABELS[status]?.color || 'var(--color-text-hint)',
-            fontWeight: 500,
-            whiteSpace: 'nowrap',
-            padding: '2px 8px',
-            borderRadius: 8,
-            background: (STATUS_LABELS[status]?.color || 'var(--color-text-hint)') + '15',
-          }}>
-            {STATUS_LABELS[status]?.label || status}
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--color-text-hint)', whiteSpace: 'nowrap' }}>
-            {getNodeLabel(currentNodeId)}
-          </span>
-          <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/discovery/${brief.id}`)} style={{ padding: '4px 8px' }} title="四步流程">
-            <Layout size={14} />
-          </button>
-          <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/handoff/${brief.id}`)} style={{ padding: '4px 8px' }} title="查看交付">
-            <FileText size={14} />
-          </button>
-          <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/output/${brief.id}`)} style={{ padding: '4px 8px', fontSize: 11 }} title="查看决策输出">
-            决策输出
-          </button>
-          <button className="vp-btn vp-btn-ghost" onClick={() => navigate('/history')} style={{ padding: '4px 8px' }} title="历史记录">
-            <History size={14} />
-          </button>
+      {/* Header — macOS titlebar style */}
+      <header className="vp-titlebar" style={{ flexShrink: 0 }}>
+        {/* Traffic lights */}
+        <div className="vp-traffic-lights">
+          <span className="vp-traffic-light vp-traffic-light--red" />
+          <span className="vp-traffic-light vp-traffic-light--yellow" />
+          <span className="vp-traffic-light vp-traffic-light--green" />
         </div>
+
+        <button className="vp-btn-text" onClick={() => navigate('/')} style={{ padding: '2px 6px' }} title="首页">
+          <Home size={14} />
+        </button>
+
+        <GitBranch size={14} style={{ color: 'var(--color-primary)' }} />
+
+        <h1 style={{ fontSize: 13, fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          Agent Decision OS V4.6
+        </h1>
+
+        {/* Current node + API badge */}
+        <span style={{ fontSize: 11, color: 'var(--color-text-hint)', whiteSpace: 'nowrap' }}>
+          {getNodeLabel(currentNodeId)}
+        </span>
+
+        <LiquidBadge variant={apiHealth.status === 'ready' ? 'green' : 'orange'}>
+          {apiHealth.status === 'ready' ? 'Ready' : 'No API'}
+        </LiquidBadge>
+
+        <span style={{
+          fontSize: 11,
+          color: STATUS_LABELS[status]?.color || 'var(--color-text-hint)',
+          fontWeight: 500,
+          whiteSpace: 'nowrap',
+        }}>
+          {STATUS_LABELS[status]?.label || status}
+        </span>
+
+        <button className="vp-btn-text" onClick={() => navigate(`/discovery/${brief.id}`)} style={{ padding: '2px 6px' }} title="四步流程">
+          <Layout size={13} />
+        </button>
+        <button className="vp-btn-text" onClick={() => navigate(`/handoff/${brief.id}`)} style={{ padding: '2px 6px' }} title="查看交付">
+          <FileText size={13} />
+        </button>
+        <button className="vp-btn-text" onClick={() => navigate(`/output/${brief.id}`)} style={{ padding: '2px 6px', fontSize: 11 }} title="查看决策输出">
+          决策输出
+        </button>
+        <button className="vp-btn-text" onClick={() => navigate('/history')} style={{ padding: '2px 6px' }} title="历史记录">
+          <History size={13} />
+        </button>
       </header>
 
       {/* Graph Panel */}
@@ -322,7 +337,7 @@ export default function AgentWorkspacePageV4() {
             {conversationEvents.length === 0 && !sending && (
               <div style={{ padding: '20px 0', textAlign: 'center' }}>
                 <Bot size={32} style={{ color: 'var(--color-text-hint)', marginBottom: 12 }} />
-                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V4.5 就绪</p>
+                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V4.6 就绪</p>
                 <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
                   描述你的产品想法，我会像产品经理一样带你一步步把想法变成开发规格。
                 </p>
@@ -337,10 +352,10 @@ export default function AgentWorkspacePageV4() {
             {/* V4.2: Optimistic user message (immediate, before runtime) */}
             {optimisticUserMsg && (
               <div style={{ display: 'flex', gap: 10, marginBottom: 12, justifyContent: 'flex-end' }}>
-                <div className="vp-card" style={{ maxWidth: '70%', padding: '10px 14px', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                <div className="vp-bubble-user" style={{ maxWidth: '70%', padding: '10px 14px', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                   {optimisticUserMsg}
                 </div>
-                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--color-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--vp-blue)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <User size={14} />
                 </div>
               </div>
@@ -379,28 +394,36 @@ export default function AgentWorkspacePageV4() {
               />
             )}
 
-            {/* Quick actions when pending */}
+            {/* V4.6: Floating quick actions above input */}
             {!isWaiting && !isComplete && !sending && (
-              <div style={{ marginTop: 8, marginLeft: 48 }}>
-                <div className="vp-card" style={{ padding: '10px 14px' }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-hint)', marginBottom: 6 }}>快捷操作</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    <button className="vp-btn vp-btn-ghost" onClick={handleContinue} style={{ fontSize: 11, padding: '4px 10px' }}>
-                      <ChevronRight size={12} /> 继续下一步
-                    </button>
-                    <button className="vp-btn vp-btn-ghost" onClick={handleSkip} style={{ fontSize: 11, padding: '4px 10px' }}>
-                      <SkipForward size={12} /> 先跳过
-                    </button>
-                    <button className="vp-btn vp-btn-ghost" onClick={handleMakeAssumption} style={{ fontSize: 11, padding: '4px 10px' }}>
-                      <MessageSquare size={12} /> 默认假设
-                    </button>
-                    <button className="vp-btn vp-btn-ghost" onClick={handleGenerateHandoff} style={{ fontSize: 11, padding: '4px 10px' }}>
-                      <FileText size={12} /> 生成交付
-                    </button>
-                    <button className="vp-btn vp-btn-ghost" onClick={handleReanalyze} style={{ fontSize: 11, padding: '4px 10px' }}>
-                      重新分析
-                    </button>
-                  </div>
+              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center' }}>
+                <div style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 6,
+                  padding: '8px 14px',
+                  borderRadius: 'var(--vp-radius-pill)',
+                  background: 'rgba(255,255,255,0.52)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(255,255,255,0.62)',
+                  boxShadow: '0 4px 16px rgba(15,23,42,0.05)',
+                }}>
+                  <button className="vp-btn vp-btn-ghost" onClick={handleContinue} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 'var(--vp-radius-pill)' }}>
+                    <ChevronRight size={12} /> 继续下一步
+                  </button>
+                  <button className="vp-btn vp-btn-ghost" onClick={handleMakeAssumption} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 'var(--vp-radius-pill)' }}>
+                    <MessageSquare size={12} /> 默认假设
+                  </button>
+                  <button className="vp-btn vp-btn-ghost" onClick={handleSkip} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 'var(--vp-radius-pill)' }}>
+                    <SkipForward size={12} /> 跳过
+                  </button>
+                  <button className="vp-btn vp-btn-ghost" onClick={handleGenerateHandoff} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 'var(--vp-radius-pill)' }}>
+                    <FileText size={12} /> 生成 Handoff
+                  </button>
+                  <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/output/${brief.id}`)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 'var(--vp-radius-pill)' }}>
+                    查看 Output
+                  </button>
                 </div>
               </div>
             )}
@@ -416,7 +439,7 @@ export default function AgentWorkspacePageV4() {
             )}
 
             {error && (
-              <div style={{ padding: '8px 14px', margin: '8px 0', color: 'var(--color-danger)', fontSize: 13, background: 'var(--color-background-danger)', borderRadius: 8 }}>
+              <div style={{ padding: '8px 14px', margin: '8px 0', color: 'var(--color-danger)', fontSize: 13, background: 'var(--color-danger-light)', borderRadius: 8 }}>
                 {error}
               </div>
             )}
@@ -424,11 +447,10 @@ export default function AgentWorkspacePageV4() {
             <div ref={chatEndRef} />
           </div>
 
-          {/* Input */}
-          <div style={{ padding: '12px 20px 20px', borderTop: '0.5px solid var(--color-border)', background: 'var(--color-surface)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          {/* Input — macOS Spotlight style */}
+          <div style={{ padding: '12px 20px 20px', flexShrink: 0 }}>
+            <div className="vp-spotlight-input">
               <textarea
-                className="vp-textarea"
                 value={userInput}
                 onChange={(e) => setUserInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -436,37 +458,54 @@ export default function AgentWorkspacePageV4() {
                 }}
                 placeholder={'描述你的想法，或说：继续下一步 / 帮我做默认假设 / 生成开发文档'}
                 rows={2}
-                style={{ flex: 1, resize: 'none' }}
+                style={{
+                  flex: 1,
+                  resize: 'none',
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  color: 'var(--color-text)',
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                  padding: '8px 0',
+                  fontFamily: 'inherit',
+                }}
                 disabled={sending}
               />
-              <button className="vp-btn vp-btn-primary" onClick={handleSend} disabled={!userInput.trim() || sending} style={{ flexShrink: 0 }}>
-                <Send size={16} />
+              <button
+                className="vp-btn vp-btn-primary"
+                onClick={handleSend}
+                disabled={!userInput.trim() || sending}
+                style={{ borderRadius: '50%', width: 34, height: 34, padding: 0, flexShrink: 0 }}
+              >
+                <Send size={14} />
               </button>
             </div>
           </div>
         </div>
 
-        {/* Right: Decision OS Panel */}
-        <div style={{ width: 340, flexShrink: 0, borderLeft: '0.5px solid var(--color-border)', overflowY: 'auto', background: 'var(--color-bg)' }}>
-          {/* Tabs */}
-          <div style={{ display: 'flex', borderBottom: '0.5px solid var(--color-border)', padding: '4px 8px', gap: 2 }}>
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                className={activeTab === tab.key ? 'vp-btn vp-btn-primary' : 'vp-btn-text'}
-                onClick={() => setActiveTab(tab.key)}
-                style={{
-                  padding: '4px 8px',
-                  fontSize: 11,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 3,
-                }}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
+        {/* Right: Decision OS Panel — glass sidebar */}
+        <div style={{ width: 340, flexShrink: 0, borderLeft: '0.5px solid var(--color-border)', overflowY: 'auto', background: 'rgba(245,247,251,0.48)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+          {/* Tabs — segmented style */}
+          <div style={{
+            display: 'flex',
+            padding: '8px',
+            gap: 2,
+            borderBottom: '0.5px solid var(--color-border)',
+          }}>
+            <div className="vp-segmented" style={{ width: '100%', display: 'flex' }}>
+              {TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  className={`vp-segmented__item${activeTab === tab.key ? ' vp-segmented__item--active' : ''}`}
+                  onClick={() => setActiveTab(tab.key)}
+                  style={{ flex: 1, fontSize: 10, padding: '5px 4px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2 }}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div style={{ padding: '10px 12px' }}>
@@ -524,7 +563,7 @@ export default function AgentWorkspacePageV4() {
   );
 }
 
-// ---- Event Bubble ----
+// ---- Event Bubble (V4.6: glass bubbles) ----
 function EventBubble({ event }: { event: AgentGraphEvent }) {
   const isUser = event.type === 'user_message';
   const isAgent = event.type === 'agent_message';
@@ -538,10 +577,10 @@ function EventBubble({ event }: { event: AgentGraphEvent }) {
   if (isUser) {
     return (
       <div style={{ display: 'flex', gap: 10, marginBottom: 12, justifyContent: 'flex-end' }}>
-        <div className="vp-card" style={{ maxWidth: '70%', padding: '10px 14px', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        <div className="vp-bubble-user" style={{ maxWidth: '70%', padding: '10px 14px', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {fmtVal(event.message)}
         </div>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--color-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--vp-blue)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <User size={14} />
         </div>
       </div>
@@ -557,18 +596,20 @@ function EventBubble({ event }: { event: AgentGraphEvent }) {
   }
 
   if (isAIStart || isAIDone || isAIFail) {
-    const color = isAIFail ? 'var(--color-danger)' : isAIDone ? 'var(--color-success)' : 'var(--color-primary)';
     const label = isAIFail ? 'AI ✗' : isAIDone ? 'AI ✓' : 'AI →';
     return (
-      <div style={{ marginBottom: 4, marginLeft: 48, fontSize: 10, color, opacity: 0.8, display: 'flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ fontWeight: 600 }}>{label}</span> {fmtVal(event.message)}
+      <div style={{ marginBottom: 4, marginLeft: 48, fontSize: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span className={`vp-status-chip vp-status-chip--ai-${isAIFail ? 'fail' : isAIDone ? 'done' : 'calling'}`}>
+          {label}
+        </span>
+        <span style={{ color: 'var(--color-text-hint)', fontSize: 10 }}>{fmtVal(event.message)}</span>
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div style={{ marginBottom: 8, marginLeft: 48, fontSize: 11, color: 'var(--color-danger)', background: 'var(--color-background-danger)', padding: '6px 10px', borderRadius: 6 }}>
+      <div style={{ marginBottom: 8, marginLeft: 48, fontSize: 11, color: 'var(--color-danger)', background: 'var(--color-danger-light)', padding: '6px 10px', borderRadius: 6 }}>
         {fmtVal(event.message)}
       </div>
     );
@@ -587,11 +628,11 @@ function EventBubble({ event }: { event: AgentGraphEvent }) {
                 {nodeLabel}
               </p>
             )}
-            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 6, background: 'var(--color-primary)', color: '#fff', lineHeight: '16px' }}>
+            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 6, background: 'var(--vp-blue)', color: '#fff', lineHeight: '16px' }}>
               AI
             </span>
           </div>
-          <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <div className="vp-bubble-agent" style={{ padding: '10px 14px', fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
             {fmtVal(event.message)}
           </div>
         </div>
@@ -602,20 +643,23 @@ function EventBubble({ event }: { event: AgentGraphEvent }) {
   return null;
 }
 
-// ---- State View ----
+// ---- State View (V4.6: glass card updates) ----
 function StateView({ session }: { session: AgentGraphSession | null }) {
   const state = session?.state;
   if (!state) return <p style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>无状态数据</p>;
 
-  // V4.4: API Health
   const apiHealth = getApiHealth();
   const apiReady = apiHealth.status === 'ready';
   const apiColors: Record<string, string> = { ready: 'var(--color-success)', connection_failed: 'var(--color-danger)', json_failed: 'var(--color-danger)', validation_failed: 'var(--color-warning)', unknown: 'var(--color-text-hint)', not_configured: 'var(--color-text-hint)' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
-      {/* API Status */}
-      <div className="vp-card" style={{ padding: '10px 12px', borderColor: apiReady ? 'rgba(0,180,90,0.2)' : 'rgba(220,38,38,0.15)' }}>
+      {/* API Status Card — glow when ready */}
+      <div className="vp-card" style={{
+        padding: '10px 12px',
+        borderColor: apiReady ? 'rgba(52,199,89,0.25)' : 'rgba(255,59,48,0.15)',
+        boxShadow: apiReady ? '0 0 20px rgba(52,199,89,0.08)' : undefined,
+      }}>
         <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginBottom: 2 }}>API Runtime</p>
         <p style={{ fontSize: 13, fontWeight: 600, color: apiColors[apiHealth.status] || 'var(--color-text-hint)', display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: apiColors[apiHealth.status] || 'var(--color-text-hint)', display: 'inline-block' }} />
@@ -624,9 +668,9 @@ function StateView({ session }: { session: AgentGraphSession | null }) {
         {apiHealth.model && <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginTop: 2 }}>{apiHealth.model}</p>}
       </div>
 
-      {/* V4.5: AI Call Status */}
+      {/* Last AI Call */}
       {state.lastAIStatus && state.lastAIStatus !== 'not_called' && (
-        <div className="vp-card" style={{ padding: '10px 12px', borderColor: state.lastAIStatus === 'failed' ? 'rgba(220,38,38,0.15)' : state.lastAIStatus === 'calling' ? 'rgba(59,130,246,0.15)' : 'rgba(0,180,90,0.1)' }}>
+        <div className="vp-card" style={{ padding: '10px 12px', borderColor: state.lastAIStatus === 'failed' ? 'rgba(255,59,48,0.15)' : state.lastAIStatus === 'calling' ? 'rgba(0,122,255,0.15)' : 'rgba(52,199,89,0.15)' }}>
           <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginBottom: 2 }}>Last AI Call</p>
           <p style={{ fontSize: 13, fontWeight: 600, color: state.lastAIStatus === 'failed' ? 'var(--color-danger)' : state.lastAIStatus === 'calling' ? 'var(--color-primary)' : 'var(--color-success)', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: state.lastAIStatus === 'failed' ? 'var(--color-danger)' : state.lastAIStatus === 'calling' ? 'var(--color-primary)' : 'var(--color-success)', display: 'inline-block' }} />
@@ -637,6 +681,7 @@ function StateView({ session }: { session: AgentGraphSession | null }) {
         </div>
       )}
 
+      {/* Current Phase */}
       <div className="vp-card" style={{ padding: '10px 12px' }}>
         <p style={{ fontSize: 10, color: 'var(--color-text-hint)', marginBottom: 2 }}>当前阶段</p>
         <p style={{ fontSize: 14, fontWeight: 600 }}>{getNodeLabel(state.currentNodeId)}</p>
@@ -671,8 +716,9 @@ function StateView({ session }: { session: AgentGraphSession | null }) {
         );
       })()}
 
+      {/* Pending Questions */}
       {state.pendingQuestions.length > 0 && (
-        <div className="vp-card" style={{ padding: '10px 12px', borderColor: 'var(--color-warning)' }}>
+        <div className="vp-card" style={{ padding: '10px 12px', borderColor: 'rgba(255,149,0,0.25)' }}>
           <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-warning)', marginBottom: 4 }}>待回答问题 ({state.pendingQuestions.length})</p>
           {state.pendingQuestions.map((q, i) => (
             <p key={i} style={{ fontSize: 11, color: 'var(--color-text-secondary)', margin: '2px 0' }}>· {q}</p>

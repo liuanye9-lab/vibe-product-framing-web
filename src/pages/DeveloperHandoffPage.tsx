@@ -23,6 +23,7 @@ import { buildCodexTaskPack } from '../lib/codexTaskPackBuilder';
 import DevSpecPreview from '../components/DevSpecPreview';
 import CodexTaskPackPreview from '../components/CodexTaskPackPreview';
 import { calculatePhaseProgress } from '../lib/progressCalculator';
+import { LiquidCard } from '../components/liquid';
 
 type TextHandoffSectionKey =
   | 'productBrief'
@@ -127,7 +128,6 @@ export default function DeveloperHandoffPage() {
     setGenerating(true);
     setError('');
     try {
-      // V4.4: Only AI-generated handoff. No local-rule fallback.
       const handoff = await optimizeHandoff(brief);
       saveFinalHandoff(handoff);
       writeTrace(handoff, true);
@@ -247,9 +247,9 @@ export default function DeveloperHandoffPage() {
       )}
 
       {view === 'focus' && handoff?.knowledgeReferences && (
-        <div className="vp-card" style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+        <LiquidCard style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
           已基于 {handoff.knowledgeReferences.length} 份知识文档增强生成。
-        </div>
+        </LiquidCard>
       )}
 
       {generating && !handoff && (
@@ -288,7 +288,7 @@ export default function DeveloperHandoffPage() {
 function TextSectionCard({ section, handoff, copied, onCopy }: { section: { key: TextHandoffSectionKey; title: string }; handoff: FinalHandoff; copied: string; onCopy: (key: string, text: string) => void }) {
   const text = toDisplayText(handoff[section.key]) || '暂无';
   return (
-    <div className="vp-card" style={{ marginBottom: 16 }}>
+    <LiquidCard style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
         <div>
           <h2 style={{ fontSize: 16, fontWeight: 650 }}>{section.title}</h2>
@@ -303,10 +303,18 @@ function TextSectionCard({ section, handoff, copied, onCopy }: { section: { key:
           {copied === section.key ? '已复制' : '复制'}
         </button>
       </div>
-      <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 13, lineHeight: 1.75, color: 'var(--color-text)', fontFamily: 'inherit' }}>
-        {text}
-      </pre>
-    </div>
+      <div className="vp-mac-code">
+        <div className="vp-mac-code__titlebar">
+          <span className="vp-traffic-light vp-traffic-light--red" />
+          <span className="vp-traffic-light vp-traffic-light--yellow" />
+          <span className="vp-traffic-light vp-traffic-light--green" />
+          <span style={{ fontSize: 10, color: 'var(--color-text-hint)', marginLeft: 6 }}>{section.title}.md</span>
+        </div>
+        <div className="vp-mac-code__content">
+          {text}
+        </div>
+      </div>
+    </LiquidCard>
   );
 }
 
@@ -314,7 +322,7 @@ function KnowledgeReferencesCard({ references, copied, onCopy }: { references?: 
   const items = references || [];
   const copyValue = items.length ? items.map(formatKnowledgeReference).join('\n\n') : '暂无';
   return (
-    <div className="vp-card" style={{ marginBottom: 16 }}>
+    <LiquidCard style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
         <h2 style={{ fontSize: 16, fontWeight: 650 }}>0. Knowledge References</h2>
         <button className="vp-btn vp-btn-ghost" onClick={() => onCopy('knowledgeReferences', copyValue)}>
@@ -342,7 +350,7 @@ function KnowledgeReferencesCard({ references, copied, onCopy }: { references?: 
       ) : (
         <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>暂无</p>
       )}
-    </div>
+    </LiquidCard>
   );
 }
 
@@ -365,7 +373,7 @@ function EvaluationReportCard({ evaluation, copied, onCopy, onApplyFixes }: { ev
   const legacyDimensions = evaluation ? Object.entries(evaluation.dimensionScores) : [];
   const explainableDimensions = evaluation?.dimensions ? Object.entries(evaluation.dimensions) : [];
   return (
-    <div className="vp-card" style={{ marginBottom: 16 }}>
+    <LiquidCard style={{ marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
         <h2 style={{ fontSize: 16, fontWeight: 650 }}>8. Evaluation Report</h2>
         <button className="vp-btn vp-btn-ghost" onClick={() => onCopy('evaluation', text)}>
@@ -416,7 +424,7 @@ function EvaluationReportCard({ evaluation, copied, onCopy, onApplyFixes }: { ev
       ) : (
         <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>暂无</p>
       )}
-    </div>
+    </LiquidCard>
   );
 }
 
@@ -469,7 +477,7 @@ function EvaluationList({ title, items }: { title: string; items: string[] }) {
 
 function GenerationTraceCard({ traces }: { traces: HandoffTrace[] }) {
   return (
-    <div className="vp-card" style={{ marginBottom: 16 }}>
+    <LiquidCard style={{ marginBottom: 16 }}>
       <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 12 }}>Generation Trace</h2>
       {traces.length ? (
         <div style={{ display: 'grid', gap: 10 }}>
@@ -499,13 +507,13 @@ function GenerationTraceCard({ traces }: { traces: HandoffTrace[] }) {
       ) : (
         <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>暂无</p>
       )}
-    </div>
+    </LiquidCard>
   );
 }
 
 function RetrievalSelfCheckCard({ results }: { results: RetrievalSelfCheckResult[] }) {
   return (
-    <div className="vp-card" style={{ marginBottom: 16 }}>
+    <LiquidCard style={{ marginBottom: 16 }}>
       <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 12 }}>Retrieval Self Check</h2>
       <div style={{ display: 'grid', gap: 10 }}>
         {results.map((result) => (
@@ -528,7 +536,7 @@ function RetrievalSelfCheckCard({ results }: { results: RetrievalSelfCheckResult
           </div>
         ))}
       </div>
-    </div>
+    </LiquidCard>
   );
 }
 
@@ -555,7 +563,7 @@ function StructuredSpecPreviewCard({ devSpec }: { devSpec: string }) {
     ['Risks', extractMarkdownSection(devSpec, 'Risks')],
   ];
   return (
-    <div className="vp-card" style={{ marginBottom: 16 }}>
+    <LiquidCard style={{ marginBottom: 16 }}>
       <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 12 }}>Structured Spec Preview</h2>
       <div style={{ display: 'grid', gap: 12 }}>
         {sections.map(([title, items]) => (
@@ -567,7 +575,7 @@ function StructuredSpecPreviewCard({ devSpec }: { devSpec: string }) {
           </div>
         ))}
       </div>
-    </div>
+    </LiquidCard>
   );
 }
 
@@ -575,14 +583,14 @@ function QualityCompareCard({ snapshots }: { snapshots: HandoffSnapshot[] }) {
   const compare = compareLatestSnapshots(snapshots);
   if (snapshots.length < 2 || !compare.from || !compare.to) {
     return (
-      <div className="vp-card" style={{ marginBottom: 16 }}>
+      <LiquidCard style={{ marginBottom: 16 }}>
         <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>Quality Compare</h2>
         <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>至少生成两次后可查看质量对比。</p>
-      </div>
+      </LiquidCard>
     );
   }
   return (
-    <div className="vp-card" style={{ marginBottom: 16 }}>
+    <LiquidCard style={{ marginBottom: 16 }}>
       <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 12 }}>Quality Compare</h2>
       <div style={{ display: 'grid', gap: 8, fontSize: 13, color: 'var(--color-text-secondary)' }}>
         <p>Score: {compare.from.score} → {compare.to.score}</p>
@@ -591,13 +599,13 @@ function QualityCompareCard({ snapshots }: { snapshots: HandoffSnapshot[] }) {
         <EvaluationList title="Changed Sections" items={compare.changedSections.length ? compare.changedSections : ['暂无变化']} />
         <EvaluationList title="Applied Fixes" items={compare.appliedFixIds.length ? compare.appliedFixIds : ['暂无']} />
       </div>
-    </div>
+    </LiquidCard>
   );
 }
 
 function DemoSamplesCard() {
   return (
-    <div className="vp-card" style={{ marginBottom: 16 }}>
+    <LiquidCard style={{ marginBottom: 16 }}>
       <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 12 }}>Demo Samples</h2>
       <div style={{ display: 'grid', gap: 8 }}>
         {DEMO_IDEAS.map((demo) => (
@@ -607,7 +615,7 @@ function DemoSamplesCard() {
           </div>
         ))}
       </div>
-    </div>
+    </LiquidCard>
   );
 }
 
