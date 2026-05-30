@@ -11,8 +11,8 @@ interface LiquidButtonProps {
 }
 
 /**
- * iOS-style pill button with glass effect.
- * Variants: primary (blue gradient), secondary (glass), ghost (transparent).
+ * Pill button with unified styling (V4.8 monochrome).
+ * Variants: primary (solid dark), secondary (ghost with border), ghost (text-only).
  */
 const LiquidButton: React.FC<LiquidButtonProps> = ({
   children,
@@ -23,8 +23,11 @@ const LiquidButton: React.FC<LiquidButtonProps> = ({
   style,
   type = 'button',
 }) => {
-  const variantClass = `vp-liquid-button--${variant}`;
-  const cls = `vp-liquid-button ${variantClass} ${className}`.trim();
+  const variantClass =
+    variant === 'primary' ? 'vp-btn-primary' :
+    variant === 'secondary' ? 'vp-btn-ghost' :
+    'vp-btn-text';
+  const cls = `vp-btn ${variantClass} ${className}`.trim();
 
   return (
     <button

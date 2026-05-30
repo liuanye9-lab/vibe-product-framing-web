@@ -8,7 +8,7 @@ interface LiquidProgressProps {
 }
 
 /**
- * Progress bar with gradient fill and percentage display.
+ * Progress bar with accent fill and percentage display (V4.8 monochrome).
  */
 const LiquidProgress: React.FC<LiquidProgressProps> = ({
   percent,

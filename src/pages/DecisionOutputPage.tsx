@@ -13,6 +13,7 @@ import { addDecisionLogEntry } from '../lib/decisionLog';
 import DevSpecPreview from '../components/DevSpecPreview';
 import CodexTaskPackPreview from '../components/CodexTaskPackPreview';
 import { PageReveal, LiquidCard, LiquidProgress } from '../components/liquid';
+import ThemeToggle from '../components/ThemeToggle';
 
 export default function DecisionOutputPage() {
   const { id } = useParams<{ id: string }>();
@@ -118,7 +119,7 @@ export default function DecisionOutputPage() {
             fontSize: 'clamp(28px, 4vw, 44px)',
             fontWeight: 700,
             letterSpacing: '-0.04em',
-            color: '#0f172a',
+            color: 'var(--vp-text)',
             marginBottom: 8,
           }}>
             Decision Output
@@ -127,6 +128,7 @@ export default function DecisionOutputPage() {
             从模糊想法到 Codex Task Pack — 每个决策都有痕迹，每一步都可回溯
           </p>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <ThemeToggle />
             <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/handoff/${brief.id}`)}>
               <ArrowLeft size={14} /> 返回交付页
             </button>

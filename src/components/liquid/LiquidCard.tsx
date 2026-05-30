@@ -9,8 +9,8 @@ interface LiquidCardProps {
 }
 
 /**
- * Glass card with hover effect.
- * Uses CSS: .vp-liquid-card for glassmorphism styling.
+ * Glass card with hover effect (V4.8 monochrome).
+ * Uses CSS: .vp-card for unified card styling.
  */
 const LiquidCard: React.FC<LiquidCardProps> = ({
   children,
@@ -21,7 +21,7 @@ const LiquidCard: React.FC<LiquidCardProps> = ({
 }) => {
   return (
     <div
-      className={`vp-liquid-card ${className}`.trim()}
+      className={`vp-card ${className}`.trim()}
       style={{
         padding: padding ?? '20px',
         cursor: onClick ? 'pointer' : undefined,

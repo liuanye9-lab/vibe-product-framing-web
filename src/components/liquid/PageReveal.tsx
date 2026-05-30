@@ -7,7 +7,7 @@ interface PageRevealProps {
 }
 
 /**
- * Page entrance animation wrapper.
+ * Page entrance animation wrapper (V4.8 monochrome).
  * Applies CSS animation: pageReveal (fade-in + slide-up).
  */
 const PageReveal: React.FC<PageRevealProps> = ({

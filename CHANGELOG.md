@@ -1,5 +1,33 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V4.8 — Minimal Apple Monochrome UI Cleanup (2026-05-30)
+
+### Added
+- Theme system: system/light/dark (src/lib/theme.ts)
+- ThemeToggle component (src/components/ThemeToggle.tsx)
+- Unified Apple-style design tokens (--vp-bg, --vp-surface, --vp-text, --vp-border, --vp-accent)
+
+### Changed
+- CSS complete rewrite: multi-color system → black/white/gray + accent blue only
+- Old tokens mapped to new tokens for backward compatibility
+- Cards/buttons/inputs unified to single system (removed duplicate variants)
+- Aurora background simplified (colored orbs → display:none)
+- Traffic lights: colored → monochrome gray
+- Gradient titles and progress bars → solid colors
+- All color glow effects removed
+
+### Fixed
+- Visual inconsistency across pages (3 color systems coexisting)
+- Over-designed gradient and glass effects competing for attention
+- Missing theme persistence (system/light/dark)
+- CSS file size reduced by 15% (-5KB)
+
+### Not Changed
+- Agent Runtime, API calls, localStorage schema
+- No new UI library, no Framer Motion
+
+---
+
 ## V4.6 — Liquid Glass Visual System Upgrade (2026-05-29)
 
 ### Added

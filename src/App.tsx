@@ -45,13 +45,13 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
             alignItems: 'center',
             justifyContent: 'center',
             padding: '2rem',
-            background: 'var(--color-bg)',
-            color: 'var(--color-text)',
+            background: 'var(--vp-bg)',
+            color: 'var(--vp-text)',
           }}
         >
           <div className="vp-card" style={{ maxWidth: 520, width: '100%', textAlign: 'center' }}>
             <h1 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>页面加载出错</h1>
-            <p style={{ fontSize: 14, color: 'var(--color-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
+            <p style={{ fontSize: 14, color: 'var(--vp-text-secondary)', lineHeight: 1.7, marginBottom: 16 }}>
               页面没有白屏，说明我们捕获到了运行时错误。你可以先返回首页继续使用。
             </p>
             <pre
@@ -61,10 +61,10 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error
                 wordBreak: 'break-word',
                 padding: 12,
                 borderRadius: 8,
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
+                background: 'var(--vp-surface)',
+                border: '1px solid var(--vp-border)',
                 fontSize: 12,
-                color: 'var(--color-text-secondary)',
+                color: 'var(--vp-text-secondary)',
                 marginBottom: 16,
               }}
             >

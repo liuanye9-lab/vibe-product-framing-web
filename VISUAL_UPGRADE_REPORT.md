@@ -1,3 +1,51 @@
+# V4.6 → V4.8 视觉系统升级报告
+
+> **当前版本**: Vibe Decision Copilot V4.8 — Minimal Apple Monochrome UI Cleanup  
+> **日期**: 2026-05-30
+
+## V4.8 问题诊断：原 UI 为什么乱
+
+V4.6 做了大量视觉加法（10 组件、7 页面、aurora 背景、彩色光球、Blue/Indigo/Purple 渐变）。结果三套颜色体系共存（Coral/Navy/Sage + V4.6 iOS 色 + liquid glass tokens），CSS 膨胀到 1491 行，卡片/按钮有多套重复系统。
+
+## V4.8 设计理念：少即是多
+
+好的设计是看不出设计痕迹的。本轮反向收敛——把一切不必要的光影、渐变、彩色光球、glow 效果全部移除，只保留：
+- **黑/白/灰** 三色系统
+- **accent blue** (#007aff) 仅用于交互强调
+- 统一卡片、按钮、输入框系统
+- 系统级 light/dark 主题切换
+
+## 黑白灰系统
+
+```
+Light: bg=#f5f5f7, surface=rgba(255,255,255,0.76), text=#111111
+Dark:  bg=#000000, surface=rgba(28,28,30,0.74), text=#f5f5f7
+```
+
+## 磨砂玻璃使用边界
+
+- 仅卡片和面板使用 backdrop-filter
+- 不叠加多余的 ::before 渐变层
+- 暗色模式下自动降低透明度
+- 提供 prefers-contrast + backdrop-filter fallback
+
+## 不变的业务逻辑
+
+- Agent Runtime
+- API 调用
+- localStorage 数据结构
+- ProductBrief 类型
+- 路由结构
+- Handoff 生成逻辑
+
+## 后续优化建议
+
+- 逐步将页面中的内联 style 迁移到 CSS class
+- 考虑 CSS containment 优化 backdrop-filter 性能
+- 移动端 Agent 双栏转单栏
+
+---
+
 # V4.6 Liquid Glass Visual System Upgrade Report
 
 > **版本**: Vibe Decision Copilot V4.6  

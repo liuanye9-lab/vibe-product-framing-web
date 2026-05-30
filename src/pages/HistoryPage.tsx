@@ -1,5 +1,5 @@
 /**
- * HistoryPage — V4.6 Liquid Glass Edition
+ * HistoryPage — V4.8 Minimal Monochrome Edition
  *
  * Now detects all Agent workflows (V2, V3, V4) and shows proper entry points:
  * - Continue Agent → /agent/:id (V4)

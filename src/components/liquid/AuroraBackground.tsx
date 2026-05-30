@@ -8,8 +8,8 @@ interface AuroraBackgroundProps {
 }
 
 /**
- * Full-screen aurora gradient background with optional noise layer.
- * Uses CSS class vp-aurora-bg for the gradient effect.
+ * Simple background wrapper (V4.8 monochrome — no gradient orbs).
+ * Uses CSS class vp-aurora-bg for solid background.
  */
 const AuroraBackground: React.FC<AuroraBackgroundProps> = ({
   children,

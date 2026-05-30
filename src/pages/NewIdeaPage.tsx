@@ -5,6 +5,7 @@ import { isAIReady } from '../api/evaluate';
 import { useProductBrief } from '../hooks/useProductBrief';
 import type { CopilotMode, IdeaInputState, ProjectType } from '../types';
 import { PageReveal, LiquidInput, LiquidBadge } from '../components/liquid';
+import ThemeToggle from '../components/ThemeToggle';
 
 const PROJECT_TYPES: ProjectType[] = ['Web App', 'AI Agent', 'SaaS', 'Portfolio', 'Other'];
 
@@ -55,6 +56,9 @@ export default function NewIdeaPage() {
           <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>VibePilot</span>
           <span style={{ color: 'var(--color-text-hint)' }}>/</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>New Idea</span>
+          <div style={{ marginLeft: 'auto' }}>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 

@@ -24,6 +24,7 @@ import DevSpecPreview from '../components/DevSpecPreview';
 import CodexTaskPackPreview from '../components/CodexTaskPackPreview';
 import { calculatePhaseProgress } from '../lib/progressCalculator';
 import { LiquidCard } from '../components/liquid';
+import ThemeToggle from '../components/ThemeToggle';
 
 type TextHandoffSectionKey =
   | 'productBrief'
@@ -733,7 +734,10 @@ function buildMarkdownDownload(handoff: FinalHandoff): string {
 function Aside({ view, onViewChange, generating, onGenerate, onDownload, onExportCaseStudy, hasHandoff, error, onSettings, onSwitchAgent, onViewDecisionOutput }: { view: 'focus' | 'detail'; onViewChange: (view: 'focus' | 'detail') => void; generating: boolean; onGenerate: () => void; onDownload: () => void; onExportCaseStudy: () => void; hasHandoff: boolean; error: string; onSettings: () => void; onSwitchAgent: () => void; onViewDecisionOutput: () => void }) {
   return (
     <div className="vp-card" style={{ position: 'sticky', top: 24 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 650, marginBottom: 8 }}>第四关：开发交付</h3>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 650 }}>第四关：开发交付</h3>
+        <ThemeToggle />
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
         <button className={view === 'focus' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('focus')}>Focus</button>
         <button className={view === 'detail' ? 'vp-btn vp-btn-primary' : 'vp-btn vp-btn-ghost'} onClick={() => onViewChange('detail')}>Detail</button>

@@ -8,7 +8,8 @@ interface LiquidBadgeProps {
 }
 
 /**
- * Small pill badge for status indicators.
+ * Small pill badge for status indicators (V4.8 monochrome).
+ * Uses CSS: .vp-badge for unified badge styling.
  */
 const LiquidBadge: React.FC<LiquidBadgeProps> = ({
   children,
@@ -16,7 +17,7 @@ const LiquidBadge: React.FC<LiquidBadgeProps> = ({
   className = '',
   style,
 }) => {
-  const cls = `vp-liquid-badge vp-liquid-badge--${variant} ${className}`.trim();
+  const cls = `vp-badge vp-badge--${variant} ${className}`.trim();
 
   return (
     <span className={cls} style={style}>

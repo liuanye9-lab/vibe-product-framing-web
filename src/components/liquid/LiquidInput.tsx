@@ -12,8 +12,8 @@ interface LiquidInputProps {
 }
 
 /**
- * Glass textarea with focus glow effect.
- * Uses CSS: .vp-liquid-input for styling.
+ * Glass textarea with focus glow (V4.8 monochrome).
+ * Uses CSS: .vp-textarea for unified input styling.
  */
 const LiquidInput: React.FC<LiquidInputProps> = ({
   value,
@@ -27,7 +27,7 @@ const LiquidInput: React.FC<LiquidInputProps> = ({
 }) => {
   return (
     <textarea
-      className={`vp-liquid-input ${className}`.trim()}
+      className={`vp-textarea ${className}`.trim()}
       value={value}
       onChange={onChange}
       onKeyDown={onKeyDown}

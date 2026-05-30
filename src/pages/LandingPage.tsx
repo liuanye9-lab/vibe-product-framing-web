@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { isAIReady } from '../api/evaluate';
 import { PageReveal, LiquidCard, LiquidStepRail } from '../components/liquid';
+import ThemeToggle from '../components/ThemeToggle';
 
 const PHASES = [
   { key: 'intake', label: 'Intake', progressPercent: 100, status: 'confirmed' },
@@ -35,33 +36,29 @@ export default function LandingPage() {
 
   return (
     <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* ── Ambient Orbs ── */}
-      <div className="vp-orb vp-orb--indigo" />
-      <div className="vp-orb vp-orb--blue" />
-      <div className="vp-orb vp-orb--purple" />
-
       {/* ── Header ── */}
       <header className="vp-header">
         <div className="vp-header-inner">
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            background: 'linear-gradient(135deg, rgba(0,122,255,0.10), rgba(88,86,214,0.06))',
+            background: 'var(--vp-surface-inset)',
             padding: '6px 14px',
-            borderRadius: 'var(--radius-full)',
+            borderRadius: 'var(--vp-radius-pill)',
           }}>
-            <Brain size={18} style={{ color: 'var(--color-primary)' }} />
-            <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.01em' }}>VibePilot</span>
+            <Brain size={18} style={{ color: 'var(--vp-accent)' }} />
+            <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.01em', color: 'var(--vp-text)' }}>VibePilot</span>
             <span style={{
               fontSize: 10, fontWeight: 600,
-              color: 'var(--vp-indigo)', opacity: 0.6,
-              background: 'rgba(88,86,214,0.08)',
+              color: 'var(--vp-text-tertiary)',
+              background: 'var(--vp-surface-inset)',
               padding: '2px 7px', borderRadius: 999,
             }}>
-              V4.6
+              V4.8
             </span>
           </div>
 
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ThemeToggle />
             <button
               className="vp-btn-text"
               onClick={() => navigate('/settings')}
@@ -101,17 +98,15 @@ export default function LandingPage() {
             gap: 6,
             padding: '5px 14px',
             borderRadius: 'var(--vp-radius-pill)',
-            background: 'linear-gradient(135deg, rgba(0,122,255,0.10), rgba(88,86,214,0.06))',
-            border: '1px solid rgba(0,122,255,0.12)',
-            color: 'var(--color-primary)',
+            background: 'var(--vp-surface)',
+            border: '1px solid var(--vp-border)',
+            color: 'var(--vp-text-secondary)',
             fontSize: 12,
             fontWeight: 600,
             marginBottom: 28,
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
           }}>
-            <Sparkles size={13} style={{ color: 'var(--color-primary)' }} />
-            AI 辅助 · Vibe Decision Copilot V4.6
+            <Sparkles size={13} style={{ color: 'var(--vp-accent)' }} />
+            AI 辅助 · Vibe Decision Copilot V4.8
           </div>
 
           {/* Main Heading */}
@@ -121,7 +116,7 @@ export default function LandingPage() {
             lineHeight: 1.14,
             marginBottom: 14,
             letterSpacing: '-0.045em',
-            color: '#0f172a',
+            color: 'var(--vp-text)',
           }}>
             Vibe Decision Copilot
           </h1>
@@ -129,7 +124,7 @@ export default function LandingPage() {
           {/* Subtitle */}
           <p style={{
             fontSize: 17,
-            color: 'var(--color-text-secondary)',
+            color: 'var(--vp-text-secondary)',
             lineHeight: 1.85,
             margin: '0 auto 28px',
             maxWidth: 680,
@@ -145,21 +140,19 @@ export default function LandingPage() {
             gap: 10,
             padding: '8px 20px',
             borderRadius: 'var(--vp-radius-pill)',
-            background: 'rgba(255,255,255,0.52)',
-            border: '1px solid rgba(255,255,255,0.65)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+            background: 'var(--vp-surface)',
+            border: '1px solid var(--vp-border)',
             marginBottom: 36,
             fontSize: 13,
             fontWeight: 500,
-            color: 'var(--color-text-secondary)',
-            boxShadow: 'var(--vp-shadow-inner), 0 4px 16px rgba(15,23,42,0.06)',
+            color: 'var(--vp-text-secondary)',
+            boxShadow: 'var(--vp-shadow-sm)',
           }}>
-            <span style={{ color: 'var(--vp-blue)', fontWeight: 600 }}>Raw Idea</span>
-            <ArrowRight size={12} style={{ color: 'var(--color-text-hint)' }} />
-            <span style={{ color: 'var(--vp-indigo)', fontWeight: 600 }}>DEV_SPEC</span>
-            <ArrowRight size={12} style={{ color: 'var(--color-text-hint)' }} />
-            <span style={{ color: 'var(--vp-purple)', fontWeight: 600 }}>CODEX_TASK_PACK</span>
+            <span style={{ color: 'var(--vp-text)', fontWeight: 600 }}>Raw Idea</span>
+            <ArrowRight size={12} style={{ color: 'var(--vp-text-tertiary)' }} />
+            <span style={{ color: 'var(--vp-accent)', fontWeight: 600 }}>DEV_SPEC</span>
+            <ArrowRight size={12} style={{ color: 'var(--vp-text-tertiary)' }} />
+            <span style={{ color: 'var(--vp-text)', fontWeight: 600 }}>CODEX_TASK_PACK</span>
           </div>
 
           {/* CTA Buttons */}
@@ -226,27 +219,25 @@ export default function LandingPage() {
               fontWeight: 650,
               marginBottom: 20,
               letterSpacing: '-0.02em',
-              color: 'var(--color-text)',
+              color: 'var(--vp-text)',
             }}>
               10 阶段决策流程
             </h2>
             <div style={{
-              background: 'rgba(255,255,255,0.48)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
+              background: 'var(--vp-surface)',
               borderRadius: 'var(--vp-radius-lg)',
-              border: '1px solid rgba(255,255,255,0.6)',
+              border: '1px solid var(--vp-border)',
               padding: '20px 24px',
-              boxShadow: 'var(--vp-shadow-inner), 0 4px 16px rgba(15,23,42,0.04)',
+              boxShadow: 'var(--vp-shadow-sm)',
             }}>
               <LiquidStepRail phases={PHASES} />
               <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
                 {PHASES.map((p) => (
                   <span key={p.key} style={{
                     fontSize: 11,
-                    color: 'var(--color-text-hint)',
+                    color: 'var(--vp-text-tertiary)',
                     padding: '2px 8px',
-                    background: 'rgba(15,23,42,0.04)',
+                    background: 'var(--vp-surface-inset)',
                     borderRadius: 'var(--vp-radius-pill)',
                   }}>
                     {p.label} 100%
@@ -263,7 +254,7 @@ export default function LandingPage() {
               fontWeight: 650,
               marginBottom: 20,
               letterSpacing: '-0.02em',
-              color: 'var(--color-text)',
+              color: 'var(--vp-text)',
             }}>
               Why Not Just a PRD Generator?
             </h2>
@@ -277,40 +268,40 @@ export default function LandingPage() {
                 <div style={{
                   width: 36, height: 36,
                   borderRadius: 'var(--vp-radius-sm)',
-                  background: 'rgba(255,59,48,0.08)',
-                  color: 'var(--vp-red)',
+                  background: 'var(--vp-surface-inset)',
+                  color: 'var(--vp-text-secondary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: 14,
-                  border: '1px solid rgba(255,59,48,0.12)',
+                  border: '1px solid var(--vp-border)',
                 }}>
                   <FileText size={18} />
                 </div>
                 <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 8, letterSpacing: '-0.01em' }}>
                   普通 PRD 生成器
                 </h3>
-                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+                <p style={{ fontSize: 13, color: 'var(--vp-text-secondary)', lineHeight: 1.7 }}>
                   直接输出文档，容易空泛，不知道是否值得做。没有决策过程，没有 trade-off 分析。
                 </p>
               </LiquidCard>
 
               <LiquidCard style={{
-                borderColor: 'rgba(0,122,255,0.20)',
+                borderColor: 'var(--vp-accent-soft)',
               }}>
                 <div style={{
                   width: 36, height: 36,
                   borderRadius: 'var(--vp-radius-sm)',
-                  background: 'rgba(0,122,255,0.08)',
-                  color: 'var(--vp-blue)',
+                  background: 'var(--vp-accent-soft)',
+                  color: 'var(--vp-accent)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: 14,
-                  border: '1px solid rgba(0,122,255,0.12)',
+                  border: '1px solid var(--vp-accent-soft)',
                 }}>
                   <Brain size={18} />
                 </div>
-                <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 8, letterSpacing: '-0.01em', color: 'var(--vp-blue)' }}>
+                <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 8, letterSpacing: '-0.01em', color: 'var(--vp-accent)' }}>
                   Vibe Decision Copilot
                 </h3>
-                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+                <p style={{ fontSize: 13, color: 'var(--vp-text-secondary)', lineHeight: 1.7 }}>
                   先判断需求是否真实，强制收敛 MVP，生成可执行任务包。每个决策都有 trace，每步可回溯。
                 </p>
               </LiquidCard>
@@ -319,18 +310,18 @@ export default function LandingPage() {
                 <div style={{
                   width: 36, height: 36,
                   borderRadius: 'var(--vp-radius-sm)',
-                  background: 'rgba(255,149,0,0.08)',
-                  color: 'var(--vp-orange)',
+                  background: 'var(--vp-surface-inset)',
+                  color: 'var(--vp-text-secondary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: 14,
-                  border: '1px solid rgba(255,149,0,0.12)',
+                  border: '1px solid var(--vp-border)',
                 }}>
                   <Lightbulb size={18} />
                 </div>
                 <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 8, letterSpacing: '-0.01em' }}>
                   AI Coding 失败原因
                 </h3>
-                <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+                <p style={{ fontSize: 13, color: 'var(--vp-text-secondary)', lineHeight: 1.7 }}>
                   不是 AI 不会写代码，是开发前规格不清楚，验收标准缺失。没有明确 Dev Spec 的 Codex 就是在猜。
                 </p>
               </LiquidCard>
@@ -349,19 +340,16 @@ export default function LandingPage() {
               icon={<Target size={18} />}
               title="先做产品理解"
               desc="从一句话定义、目标用户、场景、痛点、替代方案开始，避免为了功能而功能。"
-              accent="blue"
             />
             <GlassValueCard
               icon={<Layers3 size={18} />}
               title="AI 补全专业判断"
               desc="技术架构、数据库、数据流、AI API、认证方案由 AI 推荐，你只需确认。"
-              accent="indigo"
             />
             <GlassValueCard
               icon={<Code2 size={18} />}
               title="DEV_SPEC + CODEX_TASK_PACK"
               desc="最终输出 DEV_SPEC 开发规格和 CODEX_TASK_PACK 可执行任务包，直接交给 Codex。"
-              accent="purple"
             />
           </div>
 
@@ -383,14 +371,14 @@ export default function LandingPage() {
           <div style={{ marginTop: 60 }}>
             <LiquidCard>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-                <ClipboardCheck size={20} style={{ color: 'var(--vp-blue)' }} />
+                <ClipboardCheck size={20} style={{ color: 'var(--vp-accent)' }} />
                 <h2 style={{ fontSize: 18, fontWeight: 650, letterSpacing: '-0.02em' }}>
                   Interview-Ready 讲述
                 </h2>
               </div>
               <p style={{
                 fontSize: 14,
-                color: 'var(--color-text-secondary)',
+                color: 'var(--vp-text-secondary)',
                 lineHeight: 1.85,
                 textAlign: 'left',
               }}>
@@ -411,9 +399,9 @@ export default function LandingPage() {
         textAlign: 'center',
         padding: '1.5rem',
         fontSize: 12,
-        color: 'var(--color-text-hint)',
+        color: 'var(--vp-text-tertiary)',
       }}>
-        Vibe Decision Copilot V4.6 — 把模糊想法转化为 Codex 可执行任务包
+        Vibe Decision Copilot V4.8 — 把模糊想法转化为 Codex 可执行任务包
       </footer>
     </PageReveal>
   );
@@ -421,39 +409,31 @@ export default function LandingPage() {
 
 /* ── Glass Value Card Component ── */
 function GlassValueCard({
-  icon, title, desc, accent,
+  icon, title, desc,
 }: {
   icon: React.ReactNode;
   title: string;
   desc: string;
-  accent: 'blue' | 'indigo' | 'purple';
 }) {
-  const accentColors = {
-    blue: { bg: 'rgba(0,122,255,0.08)', color: 'var(--vp-blue)', border: 'rgba(0,122,255,0.12)' },
-    indigo: { bg: 'rgba(88,86,214,0.08)', color: 'var(--vp-indigo)', border: 'rgba(88,86,214,0.12)' },
-    purple: { bg: 'rgba(175,82,222,0.08)', color: 'var(--vp-purple)', border: 'rgba(175,82,222,0.12)' },
-  };
-  const c = accentColors[accent];
-
   return (
     <div className="vp-card" style={{ padding: '22px' }}>
       <div style={{
         width: 36, height: 36,
-        borderRadius: 'var(--radius-md)',
-        background: c.bg,
-        color: c.color,
+        borderRadius: 'var(--vp-radius-md)',
+        background: 'var(--vp-surface-inset)',
+        color: 'var(--vp-text-secondary)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 14,
-        border: `1px solid ${c.border}`,
+        border: '1px solid var(--vp-border)',
       }}>
         {icon}
       </div>
       <h3 style={{ fontSize: 15, fontWeight: 650, marginBottom: 6, letterSpacing: '-0.01em' }}>
         {title}
       </h3>
-      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.7 }}>
+      <p style={{ fontSize: 13, color: 'var(--vp-text-secondary)', lineHeight: 1.7 }}>
         {desc}
       </p>
     </div>
@@ -469,13 +449,11 @@ function MiniFeature({ icon, label }: { icon: React.ReactNode; label: string }) 
       gap: 7,
       padding: '8px 14px',
       borderRadius: 'var(--vp-radius-pill)',
-      background: 'rgba(255,255,255,0.42)',
-      border: '1px solid rgba(255,255,255,0.56)',
-      backdropFilter: 'blur(16px)',
-      WebkitBackdropFilter: 'blur(16px)',
+      background: 'var(--vp-surface)',
+      border: '1px solid var(--vp-border)',
       fontSize: 12,
       fontWeight: 500,
-      color: 'var(--color-text-secondary)',
+      color: 'var(--vp-text-secondary)',
     }}>
       {icon}
       {label}

@@ -28,6 +28,7 @@ import {
 } from '../api/evaluate';
 import { clearApiHealth, getApiHealth, markApiFailed, markApiReady, type ApiHealthStatus } from '../api/apiHealth';
 import { PageReveal, LiquidCard, LiquidBadge } from '../components/liquid';
+import ThemeToggle from '../components/ThemeToggle';
 
 const PRESETS = [
   {
@@ -459,12 +460,15 @@ export default function SettingsPage() {
           <span style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>VibePilot</span>
           <span style={{ color: 'var(--color-text-hint)' }}>/</span>
           <span style={{ fontSize: 13, fontWeight: 500 }}>AI 设置</span>
+          <div style={{ marginLeft: 'auto' }}>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
       <main style={{ flex: 1, padding: '2rem' }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
-          {/* V4.6: API Runtime Status Card with glow */}
+          {/* V4.8: API Runtime Status Card */}
           {(() => {
             const health = getApiHealth();
             const statusColors: Record<ApiHealthStatus, string> = {

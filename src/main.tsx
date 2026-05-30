@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
+import { applyTheme, getTheme } from './lib/theme'
+
+// Initialize theme before first render
+applyTheme(getTheme())
 
 const root = document.getElementById('root')
 
