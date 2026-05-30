@@ -231,12 +231,12 @@ export function extractAIContent(data: Record<string, unknown>): string {
   return content.trim();
 }
 
-// V4.4: Timeouts capped to 50s for Vercel serverless (max 55s on Hobby plan).
-// If deployed to Vercel Pro (300s+) or self-hosted, increase these.
-const DEFAULT_AI_TIMEOUT_MS = 50000;
-const SUGGEST_AI_TIMEOUT_MS = 50000;
-const EXPLAIN_AI_TIMEOUT_MS = 40000;
-const HANDOFF_AI_TIMEOUT_MS = 50000;
+// V4.9: Timeouts now controlled by timeoutProfile.ts.
+// Legacy constants kept for backward compat — prefer getTimeoutProfile().
+const DEFAULT_AI_TIMEOUT_MS = 90000;
+const SUGGEST_AI_TIMEOUT_MS = 90000;
+const EXPLAIN_AI_TIMEOUT_MS = 30000;
+const HANDOFF_AI_TIMEOUT_MS = 120000;
 
 /** Max retry attempts for transient network failures */
 const MAX_FETCH_RETRIES = 3;
@@ -310,10 +310,10 @@ function classifyNetworkError(err: unknown): { category: string; retryable: bool
 }
 
 /**
- * Check if the AI proxy endpoint is reachable by sending a lightweight preflight.
- * Returns true if the proxy seems available.
+ * V4.9: Check if the AI proxy endpoint is reachable via lightweight preflight.
+ * Only exposed for Settings diagnostics. Not used in normal AI call path.
  */
-async function checkProxyReachable(attempt = 1): Promise<boolean> {
+export async function checkAIProxyReachable(): Promise<boolean> {
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5000);
@@ -326,10 +326,6 @@ async function checkProxyReachable(attempt = 1): Promise<boolean> {
     // 405 is fine — means endpoint exists (OPTIONS not allowed, POST works)
     return res.status === 405 || res.status < 500;
   } catch {
-    if (attempt < 2) {
-      await new Promise((r) => setTimeout(r, 1000));
-      return checkProxyReachable(attempt + 1);
-    }
     return false;
   }
 }
@@ -361,23 +357,21 @@ function abortSignalTimeout(timeoutMs: number): AbortSignal {
   return controller.signal;
 }
 
+/**
+ * V4.9: Main AI proxy call. No preflight check on normal path (removed for speed).
+ * Uses task-appropriate timeout profile via timeoutMs parameter.
+ * Records timing diagnostics to localStorage for debugging.
+ */
 async function callAIProxy(config: AIConfig, body: Record<string, unknown>, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<Record<string, unknown>> {
   const startedAt = performance.now();
-  console.log('[VibePilot] AI Proxy Request:', { apiUrl: config.apiUrl, model: body.model, timeoutMs });
+  const model = String(body.model || config.model || 'unknown');
+  console.log('[VibePilot] AI Proxy Request:', { apiUrl: config.apiUrl, model, timeoutMs });
   const clientTimeoutMs = timeoutMs + 15000;
 
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_FETCH_RETRIES; attempt++) {
     try {
-      // Before first attempt, do a quick proxy reachability check
-      if (attempt === 1) {
-        const reachable = await checkProxyReachable();
-        if (!reachable) {
-          console.warn('[VibePilot] Proxy preflight check failed — proceeding with request anyway');
-        }
-      }
-
       const response = await fetch('/api/ai-proxy', {
         method: 'POST',
         headers: {
@@ -394,15 +388,47 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
 
       const rawText = await response.text();
       const durationMs = Math.round(performance.now() - startedAt);
+
+      // V4.9: Extract proxy timing headers
+      let proxyTiming: { proxyDurationMs: number; upstreamDurationMs: number; endpoint: string; timeoutMs: number } | null = null;
+      try {
+        const pd = Number(response.headers.get('X-Vibe-Proxy-Duration-Ms'));
+        if (Number.isFinite(pd)) {
+          proxyTiming = {
+            proxyDurationMs: pd,
+            upstreamDurationMs: Number(response.headers.get('X-Vibe-Upstream-Duration-Ms')) || 0,
+            endpoint: response.headers.get('X-Vibe-Upstream-Endpoint') || 'unknown',
+            timeoutMs: Number(response.headers.get('X-Vibe-Timeout-Ms')) || timeoutMs,
+          };
+        }
+      } catch { /* headers unavailable */ }
+
       console.log('[VibePilot] AI Proxy Response:', {
-        model: body.model,
-        timeoutMs,
-        durationMs,
+        model, timeoutMs, durationMs,
+        proxyDurationMs: proxyTiming?.proxyDurationMs,
+        upstreamDurationMs: proxyTiming?.upstreamDurationMs,
         status: response.status,
         responseChars: rawText.length,
         attempt,
       });
       console.log('[VibePilot] AI Proxy Raw Response:', rawText.slice(0, 500));
+
+      // V4.9: Save timing diagnostic
+      try {
+        const { saveLastAITiming } = await import('./aiDiagnostics');
+        saveLastAITiming({
+          durationMs,
+          proxyDurationMs: proxyTiming?.proxyDurationMs || 0,
+          upstreamDurationMs: proxyTiming?.upstreamDurationMs || 0,
+          timeoutMs: proxyTiming?.timeoutMs || timeoutMs,
+          model,
+          endpoint: proxyTiming?.endpoint || config.apiUrl,
+          status: response.status,
+          ok: response.ok,
+          responseChars: rawText.length,
+          timestamp: new Date().toISOString(),
+        });
+      } catch { /* diagnostic save non-critical */ }
 
       if (!response.ok) {
         let parsedError: unknown;
@@ -2228,7 +2254,7 @@ export async function optimizeHandoff(brief: ProductBrief): Promise<FinalHandoff
       brief,
       buildOptimizeHandoffPrompt(knowledgeSummary),
       `${context}\n\n## Retrieved Knowledge\n${knowledgeSummary}`,
-      2400,
+      1400,
       HANDOFF_AI_TIMEOUT_MS
     );
     const validation = validateAIOutputReferencesInput(brief, ai);

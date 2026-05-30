@@ -5,7 +5,7 @@
   ],
   "functions": {
     "api/ai-proxy.ts": {
-      "maxDuration": 55
+      "maxDuration": 120
     }
   }
 }

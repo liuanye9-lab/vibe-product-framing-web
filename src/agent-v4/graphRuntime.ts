@@ -42,6 +42,7 @@ import { generateDefaultAssumptions } from './defaultAssumptions';
 // AI integration
 import { callCopilotJson, getAIConfig, VibeAIError } from '../api/evaluate';
 import { assertApiReady } from '../api/apiHealth';
+import { getTimeoutProfile } from '../api/timeoutProfile';
 import { getNodeLabel } from './graph';
 
 // Node runners
@@ -500,9 +501,7 @@ export async function runAgentGraphTurn(input: {
 2. 每轮最多 2 个 commands。
 3. 如果信息不足需要追问，用 ASK_USER + questions。
 4. 如果信息足够推进，用 MOVE_NODE。
-5. reply 要像产品经理协作，简洁有行动感，不超过 3 句话。
-6. 如果用户输入是普通描述（不是继续/跳过等），先 UPDATE_BRIEF 保存关键信息。
-7. 不要返回空 commands。`;
+5. reply 要像产品经理协作，简洁有行动感，不超过 3 句话。`;
 
     const userPrompt = `## 当前产品上下文
 ${context}
@@ -518,11 +517,20 @@ ${userMessage}
   "actionCards": [{"type": "question|decision|next_step", "title": "...", "description": "...", "actions": [{"id": "1", "label": "继续", "intent": "continue"}]}]
 }`;
 
-    // V4.5: Track AI call start with session persistence
+    // V4.9: Use agent_turn timeout profile
+    const profile = getTimeoutProfile('agent_turn');
+
+    // V4.9: Track AI call start with timeout profile
     const startResult = appendRuntimeEvent({ session, events, event: createGraphEvent({
       sessionId: session.id, briefId: session.briefId, type: 'ai_call_started',
       nodeId: currentNodeId, message: `AI Agent 调用: ${nodeLabel}`,
-      payload: { userMessage: userMessage.slice(0, 100) },
+      payload: {
+        userMessage: userMessage.slice(0, 100),
+        timeoutMs: profile.timeoutMs,
+        maxTokens: profile.maxTokens,
+        profile: profile.task,
+        model: config.model,
+      },
     })});
     session = startResult.session;
     events = startResult.events;
@@ -536,7 +544,7 @@ ${userMessage}
         commands?: Array<{ type?: string; reason?: string; payload?: Record<string, unknown> }>;
         questions?: string[];
         actionCards?: Array<{ type?: string; title?: string; description?: string; actions?: Array<{ id?: string; label?: string; intent?: string }> }>;
-      }>(systemPrompt, userPrompt, 1500, 60000);
+      }>(systemPrompt, userPrompt, profile.maxTokens, profile.timeoutMs);
 
       // V4.5: Track AI call completion with session persistence
       const completeResult = appendRuntimeEvent({ session, events, event: createGraphEvent({

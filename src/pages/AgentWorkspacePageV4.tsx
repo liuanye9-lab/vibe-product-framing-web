@@ -288,8 +288,8 @@ export default function AgentWorkspacePageV4() {
           {getNodeLabel(currentNodeId)}
         </span>
 
-        <LiquidBadge variant={apiHealth.status === 'ready' ? 'green' : 'orange'}>
-          {apiHealth.status === 'ready' ? 'Ready' : 'No API'}
+        <LiquidBadge variant={apiHealth.status === 'ready' || apiHealth.status === 'basic_ready' ? 'green' : 'orange'}>
+          {apiHealth.status === 'ready' ? 'Ready' : apiHealth.status === 'basic_ready' ? 'Basic' : 'No API'}
         </LiquidBadge>
 
         <span style={{
@@ -645,7 +645,17 @@ function StateView({ session }: { session: AgentGraphSession | null }) {
 
   const apiHealth = getApiHealth();
   const apiReady = apiHealth.status === 'ready';
-  const apiColors: Record<string, string> = { ready: 'var(--vp-success)', connection_failed: 'var(--vp-danger)', json_failed: 'var(--vp-danger)', validation_failed: 'var(--vp-warning)', unknown: 'var(--vp-text-tertiary)', not_configured: 'var(--vp-text-tertiary)' };
+  const apiColors: Record<string, string> = {
+    ready: 'var(--vp-success)',
+    basic_ready: 'var(--vp-success)',
+    proxy_failed: 'var(--vp-danger)',
+    quick_ping_failed: 'var(--vp-danger)',
+    json_failed: 'var(--vp-danger)',
+    long_json_failed: 'var(--vp-warning)',
+    validation_failed: 'var(--vp-warning)',
+    unknown: 'var(--vp-text-tertiary)',
+    not_configured: 'var(--vp-text-tertiary)',
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>

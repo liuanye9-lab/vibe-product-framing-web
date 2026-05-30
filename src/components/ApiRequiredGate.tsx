@@ -19,9 +19,12 @@ interface ApiRequiredGateProps {
 const STATUS_CONFIG: Record<ApiHealthStatus, { icon: ReactNode; color: string; label: string }> = {
   unknown: { icon: <HelpCircle size={18} />, color: 'var(--color-warning)', label: '状态未知' },
   not_configured: { icon: <SettingsIcon size={18} />, color: 'var(--color-text-hint)', label: '未配置' },
-  connection_failed: { icon: <WifiOff size={18} />, color: 'var(--color-danger)', label: '连接失败' },
+  proxy_failed: { icon: <WifiOff size={18} />, color: 'var(--color-danger)', label: '代理不可达' },
+  quick_ping_failed: { icon: <WifiOff size={18} />, color: 'var(--color-danger)', label: 'Quick Ping 失败' },
   json_failed: { icon: <XCircle size={18} />, color: 'var(--color-danger)', label: 'JSON 失败' },
+  long_json_failed: { icon: <AlertTriangle size={18} />, color: 'var(--color-warning)', label: '长 JSON 失败' },
   validation_failed: { icon: <AlertTriangle size={18} />, color: 'var(--color-warning)', label: '校验失败' },
+  basic_ready: { icon: <CheckCircle size={18} />, color: 'var(--color-success)', label: '基础就绪' },
   ready: { icon: <CheckCircle size={18} />, color: 'var(--color-success)', label: '就绪' },
 };
 

@@ -1,5 +1,43 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V4.9 — API Timeout Diagnosis & Streaming Readiness Patch (2026-05-31)
+
+### Added
+- Timeout profile system (`src/api/timeoutProfile.ts`): 7 task-specific profiles (quick_ping, json_test, long_json_test, agent_turn, stage_suggestion, handoff, explain)
+- `src/api/aiDiagnostics.ts`: AI timing capture + localStorage persistence
+- Quick Ping / JSON Test / Long JSON Test separation on SettingsPage
+- API Diagnostics Card with per-test status + last AI timing panel
+- `X-Vibe-Proxy-Duration-Ms` / `X-Vibe-Upstream-Endpoint` / `X-Vibe-Upstream-Duration-Ms` / `X-Vibe-Timeout-Ms` proxy response headers
+- `basic_ready` API health state (Quick Ping + JSON pass, Agent unlocked)
+- `markApiBasicReady()` / `assertApiFullyReady()` / `updateApiHealthTests()` API health functions
+- `API_TIMEOUT_DIAGNOSIS.md`: full timeout diagnosis documentation
+
+### Changed
+- **Removed 40s hard-coded Settings timeout** — now 12s (Quick Ping), 30s (JSON Test), 90s (Long JSON)
+- **Removed 50s proxy hard limit** — now configurable via `AI_PROXY_MAX_TIMEOUT_MS` env var (default 120s)
+- `api/ai-proxy.ts`: `config.maxDuration` → 120 (was 55)
+- `vercel.json`: `maxDuration` → 120 (was 55)
+- **Removed per-request proxy preflight** from `callAIProxy` — saves ~5s per AI call
+- `callAIProxy` now records timing diagnostics + saves to localStorage
+- Agent Runtime `callCopilotJson` uses `agent_turn` timeout profile (90s, 900 tokens, was 60s/1500t)
+- Handoff `optimizeHandoff` uses handoff timeout (120s, 1400 tokens, was 50s/2400t)
+- `apiHealth.ts`: new states `proxy_failed`, `quick_ping_failed`, `long_json_failed`, `basic_ready`
+- `ApiRequiredGate`: supports all new health states
+- `AgentWorkspacePageV4` header: shows "Basic" badge for `basic_ready`
+
+### Fixed
+- **Official API timing out due to project-side 40s/50s abort** — root cause: browser AbortSignal and proxy cap
+- **Misleading timeout error copy** — now task-specific messages distinguish connection failure vs JSON failure vs long output timeout
+- **Long JSON test blocking basic API diagnosis** — layered test architecture
+- V4.4 incompatible `connection_failed` → removed from type union
+
+### Deployment Notes
+- Vercel Hobby still capped at 60s even with 120s config; set `AI_PROXY_MAX_TIMEOUT_MS=50000` in Vercel env vars for Hobby
+- Vercel Pro users get full 120s support
+- localStorage keys unchanged — no data migration needed
+
+---
+
 ## V4.8 — Minimal Apple Monochrome UI Cleanup (2026-05-30)
 
 ### Added

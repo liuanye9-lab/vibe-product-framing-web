@@ -4,6 +4,17 @@
 
 ---
 
+## ✅ V4.9 已完成 (2026-05-31) — API Timeout Diagnosis & Streaming Readiness
+
+- [x] Timeout profile system (7 task profiles: quick_ping/json_test/long_json_test/agent_turn/stage_suggestion/handoff/explain)
+- [x] API timing diagnostics via proxy response headers
+- [x] Quick Ping (12s) / JSON Test (30s) / Long JSON Test (90s) layered testing
+- [x] 40s/50s hard limits removed; configurable via AI_PROXY_MAX_TIMEOUT_MS env
+- [x] Per-request proxy preflight removed from normal path
+- [x] basic_ready health state: Agent unlocked after Quick Ping + JSON Test
+- [x] Error copy now task-specific (connection vs JSON vs long output)
+- [x] API_TIMEOUT_DIAGNOSIS.md documentation
+
 ## ✅ V4.6 已完成 (2026-05-29)
 
 - [x] Liquid Glass 视觉系统升级（iOS-inspired color tokens）

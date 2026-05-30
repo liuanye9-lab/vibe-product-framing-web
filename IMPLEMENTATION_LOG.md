@@ -1,5 +1,48 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V4.9 API Timeout Diagnosis (2026-05-31)
+
+### 审计发现
+| # | 问题 | 严重度 |
+|---|------|--------|
+| 1 | Settings `AbortSignal.timeout(40000)` 硬编码 40s | P0 |
+| 2 | Settings `timeoutMs: 40000` 传给代理 | P0 |
+| 3 | api-proxy `normalizeTimeoutMs` 强制压到 50s | P0 |
+| 4 | `config.maxDuration` + `vercel.json` `maxDuration` = 55s | P0 |
+| 5 | `evaluate.ts` `DEFAULT_AI_TIMEOUT_MS` = 50000 | P0 |
+| 6 | `callAIProxy` 每请求前 `checkProxyReachable()` = +5s | P1 |
+| 7 | Agent `callCopilotJson(..., 1500, 60000)` 被代理压成 50s | P0 |
+| 8 | 错误文案 "连接超时（>40s）建议换官方 API" 误导用户 | P0 |
+| 9 | 长 JSON 测试阻塞基础诊断 | P1 |
+
+### 初始状态
+- `npm install`: ✅ 0 vulnerabilities
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (1.26s, 594KB JS)
+
+### 修复详情
+| 步骤 | 变更 | 文件 |
+|------|------|------|
+| 2 | 新增 timeoutProfiles | `src/api/timeoutProfile.ts` + |
+| 3 | 移除 50s 代理硬限制 | `api/ai-proxy.ts` ~ |
+| 3b | maxDuration 55→120 | `vercel.json` ~ |
+| 4-5 | Settings 三层测试+新文案 | `src/pages/SettingsPage.tsx` ~ |
+| 6 | 移除 callAIProxy preflight | `src/api/evaluate.ts` ~ |
+| 7 | AI 耗时诊断+headers | `api/ai-proxy.ts`, `src/api/aiDiagnostics.ts`, `src/api/evaluate.ts` |
+| 8-9 | Agent/Handoff timeout profile | `src/agent-v4/graphRuntime.ts`, `src/api/evaluate.ts` |
+| 10-11 | API Health + UI 诊断 | `src/api/apiHealth.ts`, `src/components/ApiRequiredGate.tsx`, `src/pages/AgentWorkspacePageV4.tsx` |
+| 13-14 | 文档更新 | `CHANGELOG.md`, `ROADMAP.md`, `API_TIMEOUT_DIAGNOSIS.md` |
+
+### 最终验证
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (495ms, 605KB JS)
+- 新增文件: 2 (`timeoutProfile.ts`, `aiDiagnostics.ts`, `API_TIMEOUT_DIAGNOSIS.md`)
+- 修改文件: 8
+- 无新增 npm 依赖
+- 无破坏现有数据结构
+
+---
+
 ## V4.8 审计发现 (2026-05-30)
 
 | # | 问题 | 严重度 |
