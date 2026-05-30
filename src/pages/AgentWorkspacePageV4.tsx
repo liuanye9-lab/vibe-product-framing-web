@@ -1,5 +1,5 @@
 /**
- * Agent Workspace Page — V4.8 Minimal Monochrome Edition
+ * Agent Workspace Page — V4.9 Minimal Monochrome Edition
  *
  * Uses agent-v4 runtime: AgentGraphSession, Graph Nodes, Event Log,
  * Checkpoints, Tool Registry, Memory, Skill Library.
@@ -280,7 +280,7 @@ export default function AgentWorkspacePageV4() {
         <GitBranch size={14} style={{ color: 'var(--vp-accent)' }} />
 
         <h1 style={{ fontSize: 13, fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          Agent Decision OS V4.8
+          Agent Decision OS V4.9
         </h1>
 
         {/* Current node + API badge */}
@@ -334,7 +334,7 @@ export default function AgentWorkspacePageV4() {
             {conversationEvents.length === 0 && !sending && (
               <div style={{ padding: '20px 0', textAlign: 'center' }}>
                 <Bot size={32} style={{ color: 'var(--vp-text-tertiary)', marginBottom: 12 }} />
-                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V4.8 就绪</p>
+                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V4.9 就绪</p>
                 <p style={{ fontSize: 12, color: 'var(--vp-text-secondary)', lineHeight: 1.7 }}>
                   描述你的产品想法，我会像产品经理一样带你一步步把想法变成开发规格。
                 </p>
@@ -623,7 +623,7 @@ function EventBubble({ event }: { event: AgentGraphEvent }) {
                 {nodeLabel}
               </p>
             )}
-            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 6, background: 'var(--vp-accent)', color: '#fff', lineHeight: '16px' }}>
+            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 'var(--vp-radius-pill)', background: 'var(--vp-accent)', color: '#fff', lineHeight: '16px' }}>
               AI
             </span>
           </div>

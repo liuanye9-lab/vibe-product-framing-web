@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowRight, Brain, Clock, Code2, Layers3,
-  Settings, Sparkles, Target, Zap, Bot,
-  Shield, Database, FileText, ArrowRightCircle,
+  ArrowRight, ArrowRightCircle, Bot, Brain, Clock, Code2, Layers3,
+  Settings, Sparkles, Target, Zap,
+  Shield, Database, FileText,
   Lightbulb, ClipboardCheck,
 } from 'lucide-react';
 import { isAIReady } from '../api/evaluate';
@@ -53,7 +53,7 @@ export default function LandingPage() {
               background: 'var(--vp-surface-inset)',
               padding: '2px 7px', borderRadius: 999,
             }}>
-              V4.8
+              V4.9
             </span>
           </div>
 
@@ -106,7 +106,7 @@ export default function LandingPage() {
             marginBottom: 28,
           }}>
             <Sparkles size={13} style={{ color: 'var(--vp-accent)' }} />
-            AI 辅助 · Vibe Decision Copilot V4.8
+            AI 辅助 · Vibe Decision Copilot V4.9
           </div>
 
           {/* Main Heading */}
@@ -155,33 +155,57 @@ export default function LandingPage() {
             <span style={{ color: 'var(--vp-text)', fontWeight: 600 }}>CODEX_TASK_PACK</span>
           </div>
 
-          {/* CTA Buttons */}
-          <div style={{ marginBottom: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <button
-              className="vp-btn-cta"
-              onClick={() => {
-                if (!aiReady) {
-                  navigate('/settings');
-                } else {
-                  navigate('/new', { state: { fromHome: true, agentMode: true } });
-                }
-              }}
-            >
-              {aiReady ? (
-                <>
-                  <Bot size={18} />
-                  Agent Decision OS
-                  <ArrowRightCircle size={18} />
-                </>
-              ) : (
-                <>
-                  <Settings size={18} />
-                  配置 API
-                  <ArrowRightCircle size={18} />
-                </>
-              )}
-            </button>
+          {/* Step 1 Guide Button */}
+          <div style={{ marginBottom: 28 }}>
+            {!aiReady ? (
+              <button
+                onClick={() => navigate('/settings')}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '14px 32px',
+                  borderRadius: 'var(--vp-radius-pill)',
+                  background: 'var(--vp-accent)',
+                  color: '#fff',
+                  border: 'none',
+                  fontSize: 16,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all var(--vp-transition)',
+                }}
+              >
+                <Settings size={18} />
+                第一步：开始配置
+                <ArrowRightCircle size={18} />
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/new', { state: { fromHome: true, agentMode: true } })}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '14px 32px',
+                  borderRadius: 'var(--vp-radius-pill)',
+                  background: 'var(--vp-accent)',
+                  color: '#fff',
+                  border: 'none',
+                  fontSize: 16,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all var(--vp-transition)',
+                }}
+              >
+                <Bot size={18} />
+                开始使用
+                <ArrowRightCircle size={18} />
+              </button>
+            )}
+          </div>
 
+          {/* Secondary CTA */}
+          <div style={{ marginBottom: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
             <button
               className="vp-btn vp-btn-ghost"
               onClick={() => navigate('/new', { state: { fromHome: true } })}
@@ -189,26 +213,6 @@ export default function LandingPage() {
             >
               <Target size={16} />
               传统四步流程
-            </button>
-
-            {hasHistory && (
-              <button
-                className="vp-btn vp-btn-ghost"
-                onClick={() => navigate('/history')}
-                style={{ fontSize: 14, padding: '12px 24px' }}
-              >
-                <Clock size={16} />
-                查看历史
-              </button>
-            )}
-
-            <button
-              className="vp-btn vp-btn-ghost"
-              onClick={() => navigate('/settings')}
-              style={{ fontSize: 14, padding: '12px 24px' }}
-            >
-              <Settings size={16} />
-              配置 API
             </button>
           </div>
 
@@ -401,7 +405,7 @@ export default function LandingPage() {
         fontSize: 12,
         color: 'var(--vp-text-tertiary)',
       }}>
-        Vibe Decision Copilot V4.8 — 把模糊想法转化为 Codex 可执行任务包
+        Vibe Decision Copilot V4.9 — 把模糊想法转化为 Codex 可执行任务包
       </footer>
     </PageReveal>
   );

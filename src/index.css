@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ============================================
-   VibePilot Design System v4.8
+   VibePilot Design System v4.9
    Minimal Apple Monochrome UI
    ============================================ */
 
@@ -317,6 +317,19 @@ input, textarea, select, button {
 
 .vp-btn-cta:hover:not(:disabled) {
   background: var(--vp-gray-900);
+  transform: translateY(-1.5px);
+}
+
+.vp-btn-accent {
+  background: var(--vp-accent);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 16px rgba(0,122,255,0.3);
+}
+
+.vp-btn-accent:hover:not(:disabled) {
+  background: #0062cc;
+  box-shadow: 0 6px 20px rgba(0,122,255,0.4);
   transform: translateY(-1.5px);
 }
 

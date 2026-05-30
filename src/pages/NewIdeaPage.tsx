@@ -216,7 +216,7 @@ export default function NewIdeaPage() {
                   </p>
                   <span style={{
                     fontSize: 11, fontWeight: 600,
-                    padding: '4px 10px', borderRadius: 6,
+                    padding: '4px 10px', borderRadius: 'var(--vp-radius-pill)',
                     background: 'rgba(0,122,255,0.08)', color: 'var(--vp-blue)',
                     display: 'inline-flex', alignItems: 'center', gap: 4,
                   }}>
