@@ -1,441 +1,561 @@
-# Vibe Decision Copilot V4.9
+# Vibe Decision Copilot
 
-> **AI 驱动的前置产品决策 Agent** — 把模糊产品想法转化为 Codex 可执行任务包
->
-> 不是 PRD 生成器，而是 10 阶段结构化决策工作流 + Agent Graph Runtime + 真实 LLM API
+> **把模糊产品想法转化为 Codex 可执行任务包的前期决策 Agent**  
+> Think before Codex writes.
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-V4.9-007aff?style=flat-square&logo=apple" alt="V4.9">
-  <img src="https://img.shields.io/badge/react-19-61dafb?style=flat-square&logo=react" alt="React 19">
-  <img src="https://img.shields.io/badge/typescript-5-3178c6?style=flat-square&logo=typescript" alt="TypeScript 5">
-  <img src="https://img.shields.io/badge/build-passing-34c759?style=flat-square" alt="Build Passing">
-  <img src="https://img.shields.io/badge/source_files-157-lightgrey?style=flat-square" alt="157 source files">
+  <img src="https://img.shields.io/badge/Product-Vibe%20Decision%20Copilot-111111?style=flat-square" alt="Product">
+  <img src="https://img.shields.io/badge/Stage-Frontend%20MVP-666666?style=flat-square" alt="Stage">
+  <img src="https://img.shields.io/badge/Stack-React%20%2B%20TypeScript%20%2B%20Vite-333333?style=flat-square" alt="Stack">
+  <img src="https://img.shields.io/badge/Design-iOS%20Monochrome-f5f5f7?style=flat-square" alt="Design">
 </p>
 
 ---
 
-## 🎯 一句话定位
+## 01｜这个项目一句话是什么？
 
-**Vibe Decision Copilot** 解决 AI 辅助软件开发中最被忽视的一环：**写代码之前的决策质量**。它通过 10 个阶段的结构化对话 + 多 Agent 图工作流，把"我想做一个 XX"转化为包含 DEV_SPEC 和 CODEX_TASK_PACK 的可执行任务包，直接交给 Cursor / Claude Code / GitHub Copilot 执行。
+**Vibe Decision Copilot** 是一个面向 vibe coding 新手的前期决策工具。  
+它不直接替用户写代码，而是在 AI 写代码之前，先帮助用户把一句模糊想法整理成：
 
----
+```text
+可判断的问题定义
+→ 可收敛的 MVP 范围
+→ 可验证的验收标准
+→ 可交给 Codex / Claude Code / Cursor 执行的开发任务包
+```
 
-## 🏗️ 系统架构
+如果把 AI 编程比作“让一个很强的施工队开始盖房子”，那这个项目做的不是施工，而是：
 
-```mermaid
-graph TB
-    subgraph "用户层"
-        A[LandingPage<br/>入口 + 引导]
-        B[NewIdeaPage<br/>Raw Idea + 模式选择]
-        C[SettingsPage<br/>API 配置 + 4层诊断]
-    end
-
-    subgraph "Agent Decision OS V4"
-        D[AgentWorkspacePageV4<br/>对话式工作台]
-        D1[AgentGraphSession<br/>State + Events + Checkpoints]
-        D2[Graph Runtime<br/>10 Node Pipeline]
-        D3[Decision OS Panel<br/>状态/任务/记忆/技能]
-    end
-
-    subgraph "传统四步流程 Legacy"
-        E[Demand Discovery<br/>需求诊断]
-        F[Product Framing<br/>产品定义]
-        G[MVP Scope<br/>MVP 收敛]
-        H[Technical Planning<br/>技术决策]
-    end
-
-    subgraph "交付层"
-        I[DeveloperHandoffPage<br/>DEV_SPEC + Codex Prompt]
-        J[DecisionOutputPage<br/>8维质量评分 + EARS]
-        K[HistoryPage<br/>决策记录回溯]
-    end
-
-    subgraph "核心引擎"
-        L[AI API 集成层<br/>evaluate.ts]
-        M[JSON 修复管线<br/>8策略降级]
-        N[引用校验<br/>加权引用验证]
-        O[API Health<br/>6 状态检测]
-    end
-
-    A --> B
-    B -->|Agent 模式| D
-    B -->|传统模式| E
-    D --> D1 --> D2 --> D3
-    E --> F --> G --> H
-    H --> I
-    I --> J
-    D2 --> I
-    D2 --> J
-    K --> D
-    K --> I
-    L --> M --> N
-    O --> L
+```text
+先确认你到底要盖什么房子
+谁住
+为什么要盖
+第一期只盖哪些房间
+哪些暂时不盖
+什么样算验收合格
+最后把图纸交给施工队
 ```
 
 ---
 
-## 🔄 Agent Graph Runtime 工作流
+## 02｜为什么要做它？
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant UI as AgentWorkspacePageV4
-    participant RT as GraphRuntime
-    participant Node as Graph Node
-    participant AI as LLM API
-    participant Store as localStorage
+很多 vibe coding 项目失败，不是因为 AI 不会写代码，而是因为人在开始前没有想清楚：
 
-    User->>UI: 输入产品想法
-    UI->>RT: runAgentGraphTurn(userMessage)
-    RT->>Store: assertApiReady()
-    RT->>Node: executeNode(orchestrator)
-    Node->>AI: callCopilotJson(context + prompt)
-    AI-->>Node: structured JSON response
-    Node-->>RT: commands + findings + events
-    RT->>Store: appendRuntimeEvent()
-    RT->>Store: saveCheckpoint()
+| 常见问题 | 最终结果 |
+|---|---|
+| “我想做一个 AI 工具”太模糊 | AI 只能生成玩具 Demo |
+| 没想清楚目标用户 | 页面有了，但没人真的需要 |
+| 没有 MVP 范围 | 第一版越做越大，最后失控 |
+| 没有反证和风险判断 | 项目看起来完整，但逻辑不成立 |
+| 没有验收标准 | Codex 不知道做到什么程度算完成 |
+| Prompt 太散 | AI 编程工具执行不稳定 |
 
-    alt 信息不足
-        RT->>UI: pendingQuestions + HumanInterrupt
-        UI->>User: "还缺 X 信息，补充或默认假设"
-        User->>UI: 补充信息 / 继续推进
-    else 信息充足
-        RT->>Node: advanceToNextNode()
-        Node->>AI: callCopilotJson(next context)
-        AI-->>Node: structured output
-    end
+**Vibe Decision Copilot 的核心价值：**
 
-    RT->>UI: session.events + agent_message
-    UI->>User: 显示 Agent 回复 + 事件流
-```
+> 在 AI 写代码之前，先把“想法”变成“规格”，再把“规格”变成“任务包”。
 
 ---
 
-## 📋 10 阶段决策管道
+## 03｜项目核心闭环
 
 ```mermaid
 flowchart LR
-    A([Raw Idea]) --> B[Intake<br/>信息收集]
-    B --> C[Demand<br/>需求诊断]
-    C --> D[Product<br/>产品定义]
-    D --> E[MVP<br/>范围收敛]
-    E --> F[Tech<br/>技术决策]
-    F --> G[Data<br/>数据模型]
-    G --> H[Risk<br/>风险评估]
-    H --> I[Review<br/>盲点审查]
-    I --> J[Handoff<br/>开发交付]
-    J --> K([DEV_SPEC +<br/>CODEX_TASK_PACK])
+    A([Raw Idea<br/>模糊想法]) --> B[Problem Framing<br/>问题框定]
+    B --> C[User Scenario<br/>用户场景]
+    C --> D[Demand Evidence<br/>需求证据]
+    D --> E[MVP Scope<br/>范围收敛]
+    E --> F[Risk Counterargument<br/>风险反证]
+    F --> G[Tech Constraints<br/>技术约束]
+    G --> H[Acceptance Criteria<br/>验收标准]
+    H --> I[DEV_SPEC<br/>开发规格]
+    I --> J([CODEX_TASK_PACK<br/>Codex 任务包])
 
-    style A fill:#007aff,color:#fff
-    style K fill:#34c759,color:#fff
-    style B fill:#f5f5f7,color:#111
-    style C fill:#f5f5f7,color:#111
-    style D fill:#f5f5f7,color:#111
-    style E fill:#f5f5f7,color:#111
-    style F fill:#f5f5f7,color:#111
-    style G fill:#f5f5f7,color:#111
-    style H fill:#f5f5f7,color:#111
-    style I fill:#f5f5f7,color:#111
-    style J fill:#f5f5f7,color:#111
+    style A fill:#111,color:#fff,stroke:#111
+    style J fill:#111,color:#fff,stroke:#111
+    style B fill:#f5f5f7,color:#111,stroke:#d2d2d7
+    style C fill:#f5f5f7,color:#111,stroke:#d2d2d7
+    style D fill:#f5f5f7,color:#111,stroke:#d2d2d7
+    style E fill:#f5f5f7,color:#111,stroke:#d2d2d7
+    style F fill:#f5f5f7,color:#111,stroke:#d2d2d7
+    style G fill:#f5f5f7,color:#111,stroke:#d2d2d7
+    style H fill:#f5f5f7,color:#111,stroke:#d2d2d7
+    style I fill:#f5f5f7,color:#111,stroke:#d2d2d7
 ```
 
-| 阶段 | 节点 | 核心问题 | 输出物 |
-|------|------|---------|--------|
-| 0 | Intake | 产品想法是什么？ | rawIdea, projectType, targetUser, scenario |
-| 1 | Demand | 这个需求真实吗？ | 需求证据, 目标用户画像, 痛点分析 |
-| 2 | Product | 怎么一句话定义？ | 产品一句话, 价值假设, AI 介入价值 |
-| 3 | MVP | 第一版只验证哪个闭环？ | Must Have / Should Have / Out of Scope |
-| 4 | Tech | 最低成本技术方案？ | 前后端框架, 数据库, AI API 策略 |
-| 5 | Data | 数据结构怎么设计？ | 实体模型, 数据流, API 设计 |
-| 6 | Risk | 有什么风险？ | 需求/业务/技术/范围风险 |
-| 7 | Review | 有没有遗漏？ | 盲点审查, 边界条件, 竞品盲区 |
-| 8 | Handoff | 可以交给 Codex 了吗？ | DEV_SPEC, CODEX_TASK_PACK, 验收标准 |
+### 从“雾”到“图纸”
+
+```text
+Raw Idea：        一团雾        “我想做一个雅思小程序”
+Problem：         轮廓出现      “雅思学生复盘生词和错题很分散”
+Scenario：        场景落地      “做完剑桥真题后整理词块、同替和错因”
+MVP：             削掉多余      “只做词库 + 错题 + 复盘闭环，不做社区/支付/登录”
+Acceptance：      标尺出现      “用户能新增、分类、导出、复盘，才算完成”
+CODEX_TASK_PACK： 图纸完成      “Codex 可以按步骤改代码”
+```
 
 ---
 
-## 🎨 UI 设计系统 (V4.9 Apple Monochrome)
+## 04｜它不是普通 PRD 生成器
+
+| 对比项 | 普通 PRD 生成器 | Vibe Decision Copilot |
+|---|---|---|
+| 工作方式 | 一次性生成文档 | 分阶段决策 + 人类确认 |
+| 重点 | 文档看起来完整 | 需求是否值得做、能否执行 |
+| 风险处理 | 往往缺失 | 强制加入反证和盲点 |
+| MVP 控制 | 容易大而全 | P0 / P1 / P2 / Out of Scope |
+| 面向对象 | 产品文档阅读者 | AI Coding 执行工具 |
+| 最终交付 | PRD 文本 | DEV_SPEC + CODEX_TASK_PACK |
+
+一句话：
+
+> 普通 PRD 生成器像“帮你写作文”；Vibe Decision Copilot 像“帮你把项目从想法审成施工图”。
+
+---
+
+## 05｜核心功能地图
 
 ```mermaid
-graph TD
-    subgraph "设计原则"
-        P1[Minimal<br/>最小化装饰]
-        P2[Monochrome<br/>黑白灰 + 蓝色]
-        P3[iOS Pill<br/>999px 圆角统一]
-        P4[Theme<br/>system/light/dark]
-    end
-
-    subgraph "组件体系"
-        C1[统一卡片<br/>vp-card / vp-panel]
-        C2[统一按钮<br/>vp-btn / vp-btn-primary / ghost / text]
-        C3[统一输入<br/>vp-input / vp-textarea]
-        C4[Segmented Control<br/>iOS 分段选择器]
-        C5[Liquid 组件<br/>Card / Button / Badge / Progress / Dock]
-        C6[Status 指示<br/>Badge / Chip / Progress]
-    end
-
-    subgraph "Token 体系"
-        T1[--vp-bg: #f5f5f7]
-        T2[--vp-text: #111111]
-        T3[--vp-border: rgba(0,0,0,.08)]
-        T4[--vp-accent: #007aff]
-        T5[--vp-radius-pill: 999px]
-        T6[--vp-blur: 22px]
-    end
-
-    P1 --> C1
-    P2 --> T1
-    P3 --> C2
-    P4 --> C6
+mindmap
+  root((Vibe Decision Copilot))
+    前期决策
+      Raw Idea
+      Problem Framing
+      User Scenario
+      Demand Evidence
+    范围控制
+      MVP Scope
+      P0/P1/P2
+      Out of Scope
+    风险判断
+      Risk Counterargument
+      Blind Spot Review
+      Scope Creep Check
+    开发交付
+      DEV_SPEC
+      Acceptance Criteria
+      CODEX_TASK_PACK
+    Agent Runtime
+      Session
+      Events
+      Checkpoints
+      Tool Commands
+    API 运行时
+      API Required Gate
+      JSON Parse Repair
+      Reference Validation
+      Timeout Diagnostics
+    视觉系统
+      Minimal Monochrome
+      Frosted Glass
+      Light/Dark/System Theme
 ```
-
-| Token | Light | Dark | 用途 |
-|-------|-------|------|------|
-| `--vp-bg` | `#f5f5f7` | `#000` | 页面背景 |
-| `--vp-surface` | `rgba(255,255,255,.76)` | `rgba(28,28,30,.74)` | 卡片/面板 |
-| `--vp-text` | `#111` | `#f5f5f7` | 主文字 |
-| `--vp-accent` | `#007aff` | `#0a84ff` | 强调色 |
-| `--vp-border` | `rgba(0,0,0,.08)` | `rgba(255,255,255,.10)` | 边框 |
-| `--vp-radius-pill` | `999px` | `999px` | iOS 圆角 |
 
 ---
 
-## 📁 项目结构
+## 06｜用户旅程
 
+```mermaid
+journey
+    title 从模糊想法到 Codex 任务包
+    section 输入
+      输入一句模糊想法: 3: User
+      系统识别缺失信息: 4: Agent
+    section 决策
+      明确目标用户和场景: 4: User, Agent
+      收敛 MVP 范围: 5: Agent
+      加入风险反证: 4: Agent
+    section 交付
+      生成验收标准: 5: Agent
+      生成 DEV_SPEC: 5: Agent
+      生成 CODEX_TASK_PACK: 5: Agent
+    section 执行
+      复制给 Codex / Claude Code: 5: User
 ```
+
+---
+
+## 07｜10 阶段决策管道
+
+| 进度 | 阶段 | 它在问什么 | 产出 |
+|---:|---|---|---|
+| 10% | Raw Idea | 你想做什么？ | 原始想法、项目类型 |
+| 20% | Problem Framing | 真正问题是什么？ | 问题定义、痛点边界 |
+| 30% | User Scenario | 谁在什么场景下用？ | 用户画像、使用场景 |
+| 40% | Demand Evidence | 凭什么说它值得做？ | 需求证据、替代方案 |
+| 55% | MVP Scope | 第一版只做什么？ | P0 / P1 / P2 / Out of Scope |
+| 65% | Risk Counterargument | 什么证据能证明你错了？ | 风险、反证、失败条件 |
+| 75% | Tech Constraints | 最低成本怎么实现？ | 技术栈、数据结构、边界 |
+| 85% | Acceptance Criteria | 做到什么算完成？ | 可测试验收标准 |
+| 95% | DEV_SPEC | 代码前的规格是什么？ | 开发规格文档 |
+| 100% | CODEX_TASK_PACK | Codex 怎么执行？ | 文件计划、步骤、测试、禁止项 |
+
+```text
+Raw Idea              [█---------] 10%
+Problem Framing       [██--------] 20%
+User Scenario         [███-------] 30%
+Demand Evidence       [████------] 40%
+MVP Scope             [██████----] 55%
+Risk Counterargument  [███████---] 65%
+Tech Constraints      [████████--] 75%
+Acceptance Criteria   [█████████-] 85%
+DEV_SPEC              [██████████] 95%
+CODEX_TASK_PACK       [██████████] 100%
+```
+
+---
+
+## 08｜Agent Graph Runtime 是什么？
+
+项目中有一个前端 Agent Graph Runtime。它不是“聊天框套 API”，而是维护一套可追踪的决策状态：
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant UI as Agent Workspace
+    participant RT as Graph Runtime
+    participant AI as LLM API
+    participant Tool as Tool Registry
+    participant Store as localStorage
+
+    U->>UI: 输入产品想法 / 补充信息
+    UI->>RT: runAgentGraphTurn()
+    RT->>Store: 读取 Session + Checkpoint
+    RT->>AI: 调用真实 LLM API
+    AI-->>RT: 返回 JSON commands
+    RT->>Tool: 执行 UPDATE_BRIEF / ASK_USER / GENERATE_HANDOFF
+    Tool-->>RT: 返回 patch + tool result
+    RT->>Store: 写入 events / state / checkpoint
+    RT-->>UI: 返回 Agent 回复 + 状态变化
+    UI-->>U: 显示下一步、风险和交付物
+```
+
+### Runtime 里真正保存什么？
+
+| 对象 | 作用 | 为什么重要 |
+|---|---|---|
+| Session | 当前项目的 Agent 工作流状态 | 刷新后能恢复 |
+| Event Log | 每次用户输入、AI 调用、工具执行 | 可观察、可调试 |
+| Checkpoint | 关键节点快照 | 后续可回退 |
+| Command | Agent 产生的动作 | 不是只说话，而是执行 |
+| Tool Result | 工具执行结果 | 能判断成功/失败 |
+| Pending Questions | 等待用户确认的信息 | Human-in-the-loop |
+
+---
+
+## 09｜API Required Runtime：不做假数据
+
+Vibe Decision Copilot 的核心生成依赖真实 LLM API。  
+如果 API 没配置、连接失败、JSON 失败或校验失败，系统不会用 mock 或本地规则冒充结果。
+
+```mermaid
+flowchart TD
+    A[用户配置 API] --> B[Quick Ping]
+    B -->|失败| X[阻断：修复 API]
+    B -->|通过| C[JSON Test]
+    C -->|失败| X
+    C -->|通过| D[Long JSON / Reference Validation]
+    D -->|失败| Y[提示：基础 API 可用，但长输出不稳定]
+    D -->|通过| E[API Ready]
+    E --> F[Agent / Handoff 可运行]
+```
+
+这样做的原因：
+
+> 对 AI 产品来说，最可怕的不是失败，而是假装成功。
+
+---
+
+## 10｜结构化输出：为什么要修 JSON？
+
+LLM 很容易返回：
+
+```text
+好的，下面是 JSON：
+```json
+{ ... }
+```
+```
+
+或者返回半截 JSON、包在 `data/result/output` 里、甚至出现多余解释。  
+项目实现了多层 JSON 解析和修复机制，让 Agent 输出尽量能被程序消费。
+
+```mermaid
+flowchart LR
+    A[Raw LLM Text] --> B[Strip Markdown Fence]
+    B --> C[Balanced Brace Extract]
+    C --> D[Remove Comments / Trailing Commas]
+    D --> E[Truncated JSON Recovery]
+    E --> F[Unwrap result/data/output]
+    F --> G[Typed JSON Object]
+```
+
+---
+
+## 11｜CODEX_TASK_PACK 长什么样？
+
+最终不是一段泛泛的 Prompt，而是一份可执行任务包：
+
+```text
+CODEX_TASK_PACK
+├── Context：当前项目背景
+├── Objective：本轮要实现什么
+├── Constraints：不能改什么
+├── File Plan：预计修改哪些文件
+├── Implementation Steps：分步骤执行
+├── Acceptance Tests：验收测试
+├── Forbidden Changes：禁止事项
+└── Progress Checklist：带百分比的执行清单
+```
+
+示例：
+
+```text
+[10%] Audit current project structure
+[25%] Implement data model
+[45%] Implement UI flow
+[65%] Implement validation
+[85%] Run lint and build
+[100%] Verify acceptance criteria
+```
+
+这就是它和普通“帮我写代码”Prompt 的区别。
+
+---
+
+## 12｜页面结构
+
+```mermaid
+flowchart TB
+    Landing[LandingPage<br/>产品叙事入口]
+    NewIdea[NewIdeaPage<br/>输入 Raw Idea]
+    Agent[AgentWorkspacePageV4<br/>Agent Decision OS]
+    Output[DecisionOutputPage<br/>质量评分 + Codex Task Pack]
+    Handoff[DeveloperHandoffPage<br/>开发交付文档]
+    Settings[SettingsPage<br/>API 配置 + 诊断]
+    History[HistoryPage<br/>历史项目]
+
+    Landing --> NewIdea
+    Landing --> History
+    Landing --> Settings
+    NewIdea --> Agent
+    Agent --> Output
+    Agent --> Handoff
+    History --> Agent
+    History --> Output
+    Handoff --> Output
+```
+
+---
+
+## 13｜技术架构
+
+| 层级 | 技术 | 说明 |
+|---|---|---|
+| 前端 | React + TypeScript + Vite | 单页应用，适合快速迭代 |
+| 路由 | React Router | 多页面流程与工作台 |
+| 样式 | Tailwind + CSS Variables | 黑白灰 / iOS-like / 磨砂玻璃 |
+| 状态 | React State + localStorage | 本地项目历史、Session、API 设置 |
+| Agent | agent-v4 Graph Runtime | Session / Events / Commands / Tools |
+| API | OpenAI-compatible Proxy | 同源代理转发，避免浏览器直连问题 |
+| 输出 | DEV_SPEC / CODEX_TASK_PACK | 面向 AI coding 工具的交付物 |
+| 部署 | Vercel / GitHub Pages 倾向 | 前端静态 + Serverless API Proxy |
+
+---
+
+## 14｜项目目录速览
+
+```text
 vibe-product-framing-web/
 ├── api/
-│   └── ai-proxy.ts                # Vercel Edge / Vite dev proxy
+│   └── ai-proxy.ts                  # OpenAI-compatible API 代理
+│
 ├── src/
-│   ├── agent-v4/                   # 🧠 Agent Graph Runtime
-│   │   ├── graphRuntime.ts         # 图执行引擎 + AI 调用
-│   │   ├── graph.ts                # 图定义 (节点 + 边)
-│   │   ├── graphStore.ts           # Session 持久化 (localStorage)
-│   │   ├── slotFilling.ts          # 信息槽填充状态机
-│   │   ├── questionLedger.ts       # 追问防止重复
-│   │   ├── defaultAssumptions.ts   # 默认假设规则引擎
-│   │   ├── turnLifecycle.ts        # Agent 回合生命周期
-│   │   ├── immediateReply.ts       # 即时确认回复
-│   │   ├── nodes/                  # 10 个 Graph Node
-│   │   ├── tools/                  # 11 个 Agent Tool
-│   │   ├── ui/                     # Agent UI 组件 (10个)
-│   │   ├── adapters/               # MCP-like 工具适配器
-│   │   └── types.ts                # Agent 类型定义
+│   ├── agent-v4/                    # Agent Graph Runtime
+│   │   ├── graphRuntime.ts          # Agent 主运行时
+│   │   ├── graphStore.ts            # Session 持久化
+│   │   ├── eventLog.ts              # Event 记录
+│   │   ├── slotFilling.ts           # 信息槽填充
+│   │   ├── questionLedger.ts        # 追问记录与防重复
+│   │   ├── nodes/                   # Agent 节点
+│   │   ├── tools/                   # Tool Registry
+│   │   └── ui/                      # Agent UI 组件
 │   │
 │   ├── api/
-│   │   ├── evaluate.ts             # AI 集成核心 (~2100行)
-│   │   └── apiHealth.ts            # API 6状态健康检测
+│   │   ├── evaluate.ts              # LLM 调用、JSON 修复、校验
+│   │   ├── apiHealth.ts             # API 健康状态
+│   │   └── timeoutProfile.ts        # API 超时策略
 │   │
-│   ├── pages/                      # 17 页面组件
-│   │   ├── LandingPage.tsx         # 首页 + 引导
-│   │   ├── NewIdeaPage.tsx         # 创建新想法
-│   │   ├── AgentWorkspacePageV4.tsx# Agent 工作台 (核心)
-│   │   ├── DecisionOutputPage.tsx  # 决策输出 + 评分
-│   │   ├── DeveloperHandoffPage.tsx# 开发交付
-│   │   ├── SettingsPage.tsx        # API 配置 + 诊断
-│   │   ├── HistoryPage.tsx         # 历史记录
-│   │   └── *Page.tsx               # 其他流程页面
+│   ├── pages/
+│   │   ├── LandingPage.tsx          # 首页
+│   │   ├── NewIdeaPage.tsx          # 新想法输入
+│   │   ├── AgentWorkspacePageV4.tsx # Agent 工作台
+│   │   ├── DecisionOutputPage.tsx   # 决策输出
+│   │   ├── DeveloperHandoffPage.tsx # 开发交付
+│   │   ├── SettingsPage.tsx         # API 设置
+│   │   └── HistoryPage.tsx          # 历史记录
 │   │
-│   ├── prompts/                    # LLM Prompt 工程
-│   ├── knowledge/                  # 知识库 (Pseudo-RAG)
-│   ├── evaluation/                 # 5维质量评分引擎
-│   ├── spec/                       # DEV_SPEC 结构化
-│   ├── trace/                      # 生成追溯
-│   ├── snapshot/                   # 版本快照对比
-│   ├── export/                     # 案例导出
-│   ├── components/                 # 通用组件
-│   │   ├── liquid/                 # 10 个 Liquid 组件
-│   │   ├── ThemeToggle.tsx         # 主题切换
-│   │   └── ApiRequiredGate.tsx     # API 就绪门禁
-│   ├── hooks/                      # React Hooks
-│   ├── lib/                        # 工具库
-│   ├── index.css                   # 设计系统 (~1000行 CSS)
-│   ├── types.ts                    # 全局类型 (~300行)
-│   ├── main.tsx                    # 入口
-│   └── App.tsx                     # 路由 + ErrorBoundary
+│   ├── lib/                         # 质量评分、歧义检测、EARS、Task Pack
+│   ├── components/                  # 通用组件
+│   ├── components/liquid/           # 磨砂玻璃 UI 组件
+│   ├── hooks/                       # React hooks
+│   ├── types.ts                     # 全局类型
+│   └── index.css                    # 全局设计系统
 │
-├── vercel.json                     # SPA + API 路由
-├── vite.config.ts                  # localAiProxy middleware
+├── vercel.json
+├── vite.config.ts
 └── package.json
 ```
 
 ---
 
-## 🚀 快速开始
+## 15｜快速开始
 
 ```bash
-# 安装依赖
+# 1. 安装依赖
 npm install
 
-# 启动开发服务器
-npm run dev          # → http://localhost:5173
+# 2. 启动开发环境
+npm run dev
 
-# 生产构建
-npm run build        # → dist/
+# 3. 构建
+npm run build
 
-# 类型检查
-npx tsc --noEmit     # 零错误
-
-# Lint
-npm run lint         # 零错误
+# 4. Lint
+npm run lint
 ```
 
-### 配置 AI API
+打开：
 
-1. 打开 `http://localhost:5173/settings`
-2. 选择 Provider（OpenAI / DeepSeek / GLM）
-3. 填入 API URL + Key + Model
-4. 点击 **测试连接（短）** → 通过后 → **测试长 JSON 生成**
-5. 4 层诊断全部通过 → API Ready ✅
-6. 返回首页，点击 **"第一步：开始配置"** 或 **"开始使用"**
-
----
-
-## 🧪 工程亮点
-
-### 1. Agent Graph Runtime (V4.0)
-
-基于 LangGraph 理念的纯前端 Agent 状态图引擎：
-
-- **State/Events/Checkpoints** 三位一体的持久化 session
-- **10 个专职 Node** — 每个独立执行，输出 commands + findings
-- **Human-in-the-Loop** — AgentInterruptCard + pendingQuestions
-- **4 层记忆系统** — Working / Episodic / Semantic / Skill Library
-- **Tool Registry** — 11 个 Agent Tool, MCP-like 适配器
-
-### 2. 8 策略 JSON 修复管线
-
-LLM 输出经常不标准。项目实现 8 层降级策略：
-
-```
-1. 直接 JSON.parse
-2. 剥离 ``` 围栏后 parse
-3. 花括号平衡匹配 + 剥离围栏
-4. 全部修复 (注释+逗号+围栏)
-5. 平衡括号 + 全部修复
-6. 截断恢复 (自动补全未闭合括号)
-7. 平衡匹配 + 截断恢复
-8. 贪婪正则 + 修复 (最终兜底)
-```
-
-配合 `unwrapJsonPayload()` 自动剥离常见包裹模式。
-
-### 3. 加权引用校验
-
-不只是检查关键词出现，而是：
-
-- **权重系统**：rawIdea=3pts, targetUser/scenario/problem=2pts, projectType=1pt
-- **多通道检查**：referenceEvidence + JSON 全文 + 长内容字段
-- **自适应阈值**：根据输入字段数量动态调整
-
-### 4. API 运行时锁定 (V4.4)
-
-- `assertApiReady()` 门禁 — AI 调用前强制检查 API 健康状态
-- `ENABLE_MOCK_FALLBACK = false` — 彻底移除 mock 回退路径
-- `ApiRequiredGate` 组件 — API 未就绪时阻断页面 + 引导配置
-- AI 失败 → `status='failed'`，不做假数据填充
-
-### 5. 运行时一致性修复 (V4.5)
-
-- 事件双重写入：`appendRuntimeEvent()` 确保 `session.events` 持久化
-- Action intent 回复回写：continue/skip/assume → durable `agent_message`
-- AI call 事件可见性：`ai_call_started/completed/failed` 在 UI 展示
-- DecisionOutput 副作用修复：`useMemo` → `useEffect` + `useRef` 守卫
-
-### 6. Liquid Glass 视觉系统 (V4.6)
-
-- 10 个 Liquid 组件（Card / Button / Input / Badge / Progress / StepRail / Dock / Shell / Aurora / PageReveal）
-- `backdrop-filter: saturate(180%) blur()` 玻璃效果
-- 可访问性：`prefers-reduced-motion` / `prefers-contrast` / `@supports` fallback
-
-### 7. Apple Monochrome 设计系统 (V4.8-V4.9)
-
-- 多色 → 黑白灰 + accent blue，CSS 减少 15%
-- Theme 三模式：system / light / dark
-- iOS pill 圆角统一 (999px)
-- 统一卡片/按钮/输入框体系
-
-### 8. SPEC Quality Loop
-
-```
-生成 → 5维加权评分 → 自动修复 → 再评分 → Snapshot 对比 → 案例导出
+```text
+http://localhost:5173
 ```
 
 ---
 
-## 📊 技术栈
+## 16｜配置 API
 
-| 层次 | 技术 | 说明 |
-|------|------|------|
-| Language | TypeScript 5 | 全量类型覆盖 |
-| UI | React 19 + Vite 8 | 最新版本 |
-| Styling | Tailwind CSS v4 + CSS Components | 1000行设计系统 |
-| Routing | React Router v6 | SPA 路由 |
-| State | React Context + localStorage | 纯前端持久化 |
-| AI | OpenAI-compatible API | 同源代理转发 |
-| Proxy | Vite dev middleware + Vercel Edge | 双环境代理 |
-| Icons | lucide-react | 1500+ 图标 |
-| Lint | ESLint | 零错误 |
-| Deploy | Vercel (自动) | push → deploy |
+进入：
 
----
+```text
+/settings
+```
 
-## 📝 版本历史
+推荐按三步测试：
 
-| 版本 | 日期 | 核心变更 |
-|------|------|---------|
-| V1.0 | 2026 Q1 | 结构化 AI 生成器，四步流程 MVP |
-| V1.6 | — | VibeAIError 分类 + 加权引用校验 + 8策略JSON |
-| V1.7 | — | MVP 快速通道 (compact context + light prompt) |
-| V2.0 | — | Agentic Workflow — 从页面驱动到 Agent 状态机 |
-| V2.1 | — | 工作流连续性修复 + 历史恢复 + 双向互通 |
-| V3.0 | — | Agent Workspace V3 + 多 Agent 角色 |
-| V4.0 | 2026-05 | Agent Graph Runtime + 10 Node + Decision OS |
-| V4.1 | 2026-05 | Slot Filling + Ask-Once + Anti-Loop + Question Ledger |
-| V4.2 | 2026-05 | Turn Lifecycle + Immediate Reply + Progress + Cancel |
-| V4.3 | 2026-05 | Real AI Wiring — callCopilotJson 真正调用 LLM |
-| V4.4 | 2026-05 | API Required Runtime Lock — 移除所有 mock 回退 |
-| V4.5 | 2026-05 | Runtime Consistency — 事件持久化 + 回复修复 + Handoff清理 |
-| V4.6 | 2026-05 | Liquid Glass 视觉系统 + 10 组件 + 7 页面重构 |
-| V4.8 | 2026-05 | Minimal Apple Monochrome — 黑白灰 + 主题系统 |
-| **V4.9** | **2026-05** | **iOS Pill 统一 + 导航去重 + "第一步"引导入口** |
+| 测试 | 作用 | 失败说明 |
+|---|---|---|
+| Quick Ping | 检查 API 是否能快速返回 | 网络、Key、模型名或代理问题 |
+| JSON Test | 检查模型能否返回小 JSON | 模型格式遵循能力不足 |
+| Long JSON Test | 检查复杂结构化输出能力 | 长文本生成慢或不稳定 |
+
+> 如果 Quick Ping 通过但 Long JSON 超时，说明 API 不一定坏了，可能只是模型生成长 JSON 太慢。
 
 ---
 
-## 🔮 路线图
+## 17｜视觉设计语言
 
-- [ ] 知识库规模扩大 → 接 Embedding + Rerank (Real RAG)
-- [ ] MCP Server 封装 → 被 Claude/Codex 直接调用
-- [ ] 多模型对比评测 → 自动选择最佳模型
-- [ ] 团队协作 → 数据库 + Auth
-- [ ] E2E 测试 → Playwright
+当前 UI 方向是：
 
----
+```text
+Less, but clearer.
+少即是多，但信息必须清楚。
+```
 
-## 🗣️ 面试 Talking Points
-
-**Q: 这个项目最难的部分是什么？**
-
-A: 让 LLM 输出稳定可靠的结构化决策。我做了四层：
-1. 8 策略 JSON 管线 — 处理截断/注释/嵌套包裹
-2. 6 类 VibeAIError — 精确到 connection/timeout/json_parse/validation
-3. 加权引用校验 — evidence + 长内容 + 片段匹配
-4. API 运行时锁定 — 不做假数据，API 失败就明确失败
-
-**Q: 为什么 agent-v4 用图而不是线性流程？**
-
-A: 产品决策不是线性的 — 可能需要回退（发现新风险 → 回到 Tech），可能需要并行（Risk + Data 同时跑）。Graph 支持条件路由、并发节点和 checkpoint 回滚，比 if-else 状态机更接近真实决策过程。
-
-**Q: localStorage 存储方案的限制和应对？**
-
-A: 限制：5MB 上限、同步阻塞、无跨设备同步。应对：LRU 缓存 + 事件压缩 + Schema Migration 自动升级。当前项目适合单人使用，未来团队版会迁移到 IndexedDB 或后端数据库。
+| 设计层 | 处理方式 |
+|---|---|
+| 色彩 | 黑 / 白 / 灰为主，少量系统蓝强调 |
+| 卡片 | 圆角磨砂玻璃，不堆叠过度透明层 |
+| 动效 | 轻微 hover / fade / progress transition |
+| 主题 | system / light / dark 三模式 |
+| 信息层级 | 大标题、分区、卡片、状态徽章统一 |
+| 可访问性 | 保证对比度，支持 reduced motion |
 
 ---
 
-## 📄 License
+## 18｜一个具体例子
+
+用户输入：
+
+```text
+我想做一个雅思生词和错题管理小程序
+```
+
+系统不会直接说“好的，开始写代码”。
+
+它会先拆：
+
+```text
+目标用户：正在备考雅思、刷剑桥真题的学生
+使用场景：做完阅读/听力后整理生词、同义替换和错题原因
+核心问题：记录分散，复盘没有结构，无法沉淀高频错因
+P0 功能：词库、错题、同替记录、复盘导出
+暂不做：登录、社区、支付、AI 自动批改、复杂后台
+验收标准：用户能新增、分类、搜索、导出，并完成一次复盘闭环
+Codex 任务：创建数据结构、页面、交互、导出逻辑、测试清单
+```
+
+最终交付给 Codex 的不再是一句话，而是一份可执行规格。
+
+---
+
+## 19｜面试讲述方式
+
+可以这样介绍：
+
+> 我做的不是普通 PRD 生成器，而是一个面向 vibe coding 的前期决策 Agent。很多人用 Codex / Claude Code 写代码时失败，不是因为 AI 不会写，而是因为开发前需求不清、范围不收敛、验收标准缺失。这个项目把模糊想法转成 Problem Framing、User Scenario、MVP Scope、Risk Counterargument、Acceptance Criteria、DEV_SPEC 和 CODEX_TASK_PACK，让 AI coding 工具在更明确的规格下执行。
+
+如果面试官追问“技术难点是什么”：
+
+```text
+1. 如何让 LLM 稳定返回结构化 JSON
+2. 如何判断输出是否真的基于用户当前想法
+3. 如何避免 Agent 重复追问同一问题
+4. 如何把聊天结果转成可执行 command / tool result
+5. 如何在 API 失败时不生成假结果
+6. 如何把产品决策转成 Codex 能执行的任务包
+```
+
+---
+
+## 20｜当前版本关键词
+
+```text
+Vibe Decision Copilot
+Spec-driven Development
+Agent Graph Runtime
+Human-in-the-loop
+API Required Runtime
+Requirement Quality Score
+Ambiguity Detection
+MVP Scope Control
+Risk Counterargument
+EARS Acceptance Criteria
+DEV_SPEC
+CODEX_TASK_PACK
+Minimal Apple Monochrome UI
+```
+
+---
+
+## 21｜Roadmap
+
+| 阶段 | 方向 | 目标 |
+|---|---|---|
+| P0 | 前期决策闭环 | Raw Idea → CODEX_TASK_PACK 全流程稳定 |
+| P1 | Agent 交互质量 | 更自然追问、更少重复、更强上下文感知 |
+| P1 | API 诊断 | 更清晰的 timeout / JSON / validation 分层错误 |
+| P2 | Real RAG | 接入产品案例、PRD 模板、架构模板检索 |
+| P2 | MCP Server | 让 Codex / Claude 直接调用 Vibe Decision Copilot 工具 |
+| P2 | 多模型评测 | 对比不同模型生成 DEV_SPEC 的质量 |
+| P3 | 团队协作 | 账号、云端存储、协作评审、版本 diff |
+
+---
+
+## 22｜License
 
 MIT
 
 ---
 
-> *Built with React 19, TypeScript 5, and a lot of debugging of LLM JSON outputs.*
-> *V4.9 — 157 source files, 10-stage pipeline, Agent Graph Runtime.*
+> Built for people who want to vibe code, but refuse to ship toy demos.
