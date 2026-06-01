@@ -1,5 +1,42 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V5.2 — API 500 Deep Diagnosis Patch (2026-06-01)
+
+### Added
+- `GET /api/ai-proxy` health check — verifies proxy function is alive + runs endpoint normalizer self-test
+- Structured upstream error response with `errorCategory`, `upstreamBodyPreview`, `endpointDiagnostics`, `requestDiagnostics`
+- Proxy internal error JSON wrapper — any proxy crash returns JSON, never raw Vercel HTML
+- `src/api/apiErrorParser.ts`: unified error parser (`parseApiProxyError`, `classifyParsedApiErrorToAIErrorType`, `buildUserFacingApiErrorMessage`)
+- API Debug Panel on Settings — shows `inputApiUrl`, `normalizedEndpoint`, `endpointKind`, `model`, `httpStatus`, `errorCategory`, `upstreamBodyPreview`
+- Raw Chat Test — minimal `Say OK` request to verify basic connectivity without JSON requirements
+- Proxy Health button — `GET /api/ai-proxy` health check before running other tests
+- Compatibility options: "Disable system message" checkbox for third-party gateways
+- Error category classification: `auth_error`, `permission_error`, `model_not_found`, `quota_or_rate_limit`, `provider_internal_error`, `bad_request`, `upstream_unavailable`, `proxy_internal_error`
+- Upstream body preview (max 1200 chars) in all test error responses
+- `errorCategory`, `errorMessage`, `upstreamBodyPreview`, `rawResponsePreview` fields in `AITimingDiagnostic`
+
+### Changed
+- **All Settings tests now use `parseApiProxyError`** — no more raw `HTTP 500` display
+- Quick Ping body simplified: single user message, no system message by default
+- `evaluate.ts` `callAIProxy` uses `parseApiProxyError` for structured error handling
+- `api/ai-proxy.ts`: refactored into `handleHealthCheck()` + `handleProxyRequest()` with outer try-catch
+- `vite.config.ts`: local proxy now supports GET health check + structured upstream errors
+- Test order: Proxy Health → Raw Chat → Quick Ping → JSON Test → Long JSON → Reference Validation
+- Tests disabled when Proxy Health fails (with clear error message)
+
+### Fixed
+- **Settings only showing "HTTP 500" without real upstream error reason**
+- **Non-JSON upstream errors being swallowed** — now shows body preview
+- **Inability to distinguish proxy crash from provider 500** — `proxy_internal_error` vs `provider_internal_error`
+- **Proxy crash returning Vercel HTML** — now always returns JSON
+- Weak diagnostics for third-party OpenAI-compatible gateways
+
+### Not Changed
+- Agent runtime business logic
+- ProductBrief schema
+- API required runtime policy
+- localStorage project history
+
 ## V5.1 — OpenAI-Compatible URL Normalization Patch (2026-06-01)
 
 ### Added

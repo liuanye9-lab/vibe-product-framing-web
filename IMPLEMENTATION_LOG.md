@@ -1,5 +1,66 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V5.2 API 500 Deep Diagnosis Patch (2026-06-01)
+
+### 初始状态
+- `npm install`: ✅ 0 vulnerabilities
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (647ms, 615.76KB JS)
+
+### 审计发现
+| # | 问题 | 严重度 |
+|---|------|--------|
+| 1 | `api/ai-proxy.ts:70` 只允许 POST，GET/OPTIONS 返回 405 | P0 |
+| 2 | `api/ai-proxy.ts:146` upstream 非 2xx 时直接透传 rawText，无结构化错误 | P0 |
+| 3 | `api/ai-proxy.ts:67` handler 未包裹 try-catch，自身崩溃会返回 Vercel 500 HTML | P0 |
+| 4 | Settings HTTP 500 只显示 `HTTP 500`，无 upstream body preview | P0 |
+| 5 | `evaluate.ts:462-496` 非 ok 错误解析逻辑分散，未复用 | P1 |
+| 6 | 无 Proxy Health Check，无法区分代理坏了还是上游坏了 | P0 |
+| 7 | 无 Raw Chat Test，无法判断 JSON 能力 vs 基础连通性 | P1 |
+| 8 | `vite.config.ts:36` 本地代理也只有 POST，GET 返回 405 | P1 |
+| 9 | `aiDiagnostics.ts` 缺少 errorCategory、upstreamBodyPreview 等字段 | P1 |
+| 10 | Settings 无 API Debug Panel，诊断信息只在 console | P1 |
+
+### 当前 Quick Ping / JSON Test / Long JSON 请求体
+- Quick Ping: `{model, messages: [system:"Return JSON only.", user:'Return {"ok":true}.'], max_tokens:40, temperature:0}`
+- JSON Test: `{model, messages: [system:"你是 API 连通性测试器。只返回 JSON，不要 Markdown。", user:'请返回 {"ok":true,...}'], max_tokens:160, temperature:0}`
+- Long JSON: `{model, messages: [system:长JSON测试器, user:基于产品想法生成JSON], max_tokens:700, temperature:0}`
+
+### 当前 api-proxy 非 2xx 行为
+- 直接 `return new Response(text, { status: upstream.status, headers })`
+- 前端只能看到 HTTP status code，body 可能是 HTML 或被吞
+
+### 当前 Settings 对 HTTP 500 的展示逻辑
+- `handleQuickPing` line 268: `errMsg = \`HTTP ${response.status}\``
+- 尝试 JSON.parse 提取 error.message，但大部分 500 body 不含结构化 JSON
+- 用户只看到 "HTTP 500"
+
+### 修复详情
+| 步骤 | 变更 | 文件 |
+|------|------|------|
+| 2 | GET health check + normalizer self-test | `api/ai-proxy.ts` ~, `vite.config.ts` ~ |
+| 3 | Structured upstream error response | `api/ai-proxy.ts` ~ |
+| 4 | Proxy internal error JSON wrapper | `api/ai-proxy.ts` ~ |
+| 5 | Proxy Health button on Settings | `src/pages/SettingsPage.tsx` ~ |
+| 6 | API Debug Panel | `src/pages/SettingsPage.tsx` ~ |
+| 7 | Unified error parser | `src/api/apiErrorParser.ts` + |
+| 8 | Simplified Quick Ping body | `src/pages/SettingsPage.tsx` ~ |
+| 9 | Raw Chat Test | `src/pages/SettingsPage.tsx` ~ |
+| 10 | Disable system message option | `src/pages/SettingsPage.tsx` ~ |
+| 11 | evaluate.ts uses parseApiProxyError | `src/api/evaluate.ts` ~ |
+| 12 | aiDiagnostics new fields | `src/api/aiDiagnostics.ts` ~ |
+| 14 | Documentation | `CHANGELOG.md` ~, `API_500_DIAGNOSIS.md` +, `IMPLEMENTATION_LOG.md` ~ |
+
+### 最终验证
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (635ms, 628.94KB JS)
+- 新增文件: 2 (`src/api/apiErrorParser.ts`, `API_500_DIAGNOSIS.md`)
+- 修改文件: 7 (`api/ai-proxy.ts`, `vite.config.ts`, `src/pages/SettingsPage.tsx`, `src/api/evaluate.ts`, `src/api/aiDiagnostics.ts`, `CHANGELOG.md`, `IMPLEMENTATION_LOG.md`)
+- 无新增 npm 依赖
+- 无破坏 Agent Runtime / Handoff / localStorage / ProductBrief
+
+---
+
 ## V5.1 OpenAI-Compatible URL Normalization Patch (2026-06-01)
 
 ### 审计发现

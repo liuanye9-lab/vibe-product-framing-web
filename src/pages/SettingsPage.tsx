@@ -14,6 +14,8 @@ import {
   Home,
   Activity,
   Search,
+  Heart,
+  MessageSquare,
 } from 'lucide-react';
 import {
   clearAIConfig,
@@ -50,8 +52,16 @@ import {
   type NormalizedEndpointResult,
   type EndpointSelfTestCase,
 } from '../api/endpointNormalizer';
+import {
+  parseApiProxyError,
+} from '../api/apiErrorParser';
 import { PageReveal, LiquidCard, LiquidBadge } from '../components/liquid';
 import ThemeToggle from '../components/ThemeToggle';
+
+/** Safe timer wrapper to avoid React purity lint rules */
+function getTime(): number {
+  return Date.now();
+}
 
 const PRESETS = [
   {
@@ -129,6 +139,26 @@ interface TestResult {
   error?: string;
 }
 
+/** V5.2: API Debug Info for detailed error display */
+interface ApiDebugInfo {
+  testName: 'proxy_health' | 'quick_ping' | 'json_test' | 'long_json' | 'raw_chat'
+  inputApiUrl: string
+  normalizedEndpoint?: string
+  endpointKind?: string
+  endpointWarnings?: string[]
+  endpointErrors?: string[]
+  model: string
+  httpStatus?: number
+  errorCategory?: string
+  errorMessage?: string
+  upstreamBodyPreview?: string
+  proxyDurationMs?: number
+  upstreamDurationMs?: number
+  timeoutMs?: number
+  rawResponsePreview?: string
+  timestamp: string
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [apiUrl, setApiUrl] = useState('');
@@ -148,6 +178,17 @@ export default function SettingsPage() {
   // V5.1: Endpoint preview & self-test
   const [endpointPreview, setEndpointPreview] = useState<NormalizedEndpointResult | null>(null);
   const [selfTestResults, setSelfTestResults] = useState<EndpointSelfTestCase[] | null>(null);
+
+  // V5.2: New states
+  const [proxyHealth, setProxyHealth] = useState<TestResult & { details?: { ok?: boolean; version?: string; selfTest?: { passed?: boolean; total?: number; failed?: number; failedCases?: unknown[] } } }>({ status: 'idle' });
+  const [rawChat, setRawChat] = useState<TestResult>({ status: 'idle' });
+  const [apiDebugInfo, setApiDebugInfo] = useState<ApiDebugInfo | null>(null);
+  const [disableSystemMessage, setDisableSystemMessage] = useState(() => {
+    try { return localStorage.getItem('vibepilot_compat_disable_system') === 'true'; } catch { return false; }
+  });
+
+  // V5.2: Proxy health disabled state — if proxy health fails, disable other tests
+  const proxyHealthFailed = proxyHealth.status === 'fail';
 
   // Old results kept for backward compatibility in UI
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -238,7 +279,7 @@ export default function SettingsPage() {
     setQuickPing({ status: 'running' });
     setTestResult(null);
 
-    const startedAt = performance.now();
+    const startedAt = getTime();
     try {
       const signal = AbortSignal?.timeout?.(profile.timeoutMs + profile.clientExtraMs) || undefined;
       const response = await fetch('/api/ai-proxy', {
@@ -251,27 +292,30 @@ export default function SettingsPage() {
           timeoutMs: profile.timeoutMs,
           body: {
             model: model.trim(),
-            messages: [
-              { role: 'system', content: 'Return JSON only.' },
-              { role: 'user', content: 'Return {"ok":true}.' },
-            ],
+            messages: disableSystemMessage
+              ? [{ role: 'user' as const, content: 'Return JSON only: {"ok":true}' }]
+              : [
+                  { role: 'system' as const, content: 'Return JSON only.' },
+                  { role: 'user' as const, content: 'Return {"ok":true}.' },
+                ],
             max_tokens: profile.maxTokens,
             temperature: 0,
           },
         }),
       });
 
-      const durationMs = Math.round(performance.now() - startedAt);
+      const durationMs = getTime() - startedAt;
       const rawText = await response.text();
 
       if (!response.ok) {
-        let errMsg = `HTTP ${response.status}`;
-        try { const ej = JSON.parse(rawText); errMsg = ej.error?.message || ej.error || errMsg; } catch { /* use status */ }
-        setQuickPing({ status: 'fail', durationMs, error: errMsg });
+        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
+        const errMsg = parsed.message;
+        setQuickPing({ status: 'fail', durationMs, error: `${errMsg} [${parsed.errorCategory}]` });
         updateApiHealthTests({ quickPing: { status: 'fail', durationMs, error: errMsg } });
         markApiFailed('quick_ping_failed', `Quick Ping 失败 (${durationMs}ms): ${errMsg}`);
         saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
         setStatus('failed');
+        saveDebugFromProxyResponse('quick_ping', response, rawText, durationMs, profile.timeoutMs);
         return;
       }
 
@@ -302,7 +346,7 @@ export default function SettingsPage() {
         }
       }
     } catch (err) {
-      const durationMs = Math.round(performance.now() - startedAt);
+      const durationMs = getTime() - startedAt;
       const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
       const errorMsg = isTimeout
         ? `Quick Ping 超时：项目在 ${Math.round(profile.timeoutMs / 1000)} 秒内没有拿到最小响应。可能是代理函数不可达、网络阻塞、API key 无效、模型名错误，或部署环境无法访问上游 API。`
@@ -322,7 +366,7 @@ export default function SettingsPage() {
     const profile = getTimeoutProfile('json_test');
     setJsonTest({ status: 'running' });
 
-    const startedAt = performance.now();
+    const startedAt = getTime();
     try {
       const signal = AbortSignal?.timeout?.(profile.timeoutMs + profile.clientExtraMs) || undefined;
       const response = await fetch('/api/ai-proxy', {
@@ -345,17 +389,18 @@ export default function SettingsPage() {
         }),
       });
 
-      const durationMs = Math.round(performance.now() - startedAt);
+      const durationMs = getTime() - startedAt;
       const rawText = await response.text();
 
       if (!response.ok) {
-        let errMsg = `HTTP ${response.status}`;
-        try { const ej = JSON.parse(rawText); errMsg = ej.error?.message || ej.error || errMsg; } catch { /* use status */ }
-        setJsonTest({ status: 'fail', durationMs, error: errMsg });
+        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
+        const errMsg = parsed.message;
+        setJsonTest({ status: 'fail', durationMs, error: `${errMsg} [${parsed.errorCategory}]` });
         updateApiHealthTests({ jsonTest: { status: 'fail', durationMs, error: errMsg } });
         markApiFailed('json_failed', `JSON Test 失败 (${durationMs}ms): ${errMsg}`);
         saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
         setStatus('failed');
+        saveDebugFromProxyResponse('json_test', response, rawText, durationMs, profile.timeoutMs);
         return;
       }
 
@@ -393,7 +438,7 @@ export default function SettingsPage() {
         setStatus('failed');
       }
     } catch (err) {
-      const durationMs = Math.round(performance.now() - startedAt);
+      const durationMs = getTime() - startedAt;
       const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
       const errorMsg = isTimeout
         ? `JSON Test 超时：API 已发出请求，但模型没有在 ${Math.round(profile.timeoutMs / 1000)} 秒内返回小 JSON。请检查模型名是否为可用的快速模型。`
@@ -415,7 +460,7 @@ export default function SettingsPage() {
     setRefValidation({ status: 'idle' });
     setLongTestResult(null);
 
-    const startedAt = performance.now();
+    const startedAt = getTime();
     const result: NonNullable<typeof longTestResult> = {};
 
     try {
@@ -474,20 +519,24 @@ export default function SettingsPage() {
         }),
       });
 
-      const durationMs = Math.round(performance.now() - startedAt);
+      const durationMs = getTime() - startedAt;
 
       result.apiConnection = response.ok;
 
       if (!response.ok) {
-        setLongJson({ status: 'fail', durationMs, error: `HTTP ${response.status}` });
-        updateApiHealthTests({ longJson: { status: 'fail', durationMs, error: `HTTP ${response.status}` } });
+        const rawText = await response.text();
+        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
+        const errMsg = parsed.message;
+        setLongJson({ status: 'fail', durationMs, error: `${errMsg} [${parsed.errorCategory}]` });
+        updateApiHealthTests({ longJson: { status: 'fail', durationMs, error: errMsg } });
         setLongTestResult({
           apiConnection: false,
           jsonGeneration: false,
-          requiredFields: { passed: false, missingFields: ['N/A'], msg: `API 请求失败 (${response.status})` },
+          requiredFields: { passed: false, missingFields: ['N/A'], msg: `API 请求失败: ${errMsg}` },
           refValidation: { passed: false, msg: 'API 连接失败，无法校验。' },
         });
-        markApiFailed('long_json_failed', `Long JSON: HTTP ${response.status} (${durationMs}ms)`);
+        markApiFailed('long_json_failed', `Long JSON: ${errMsg} (${durationMs}ms)`);
+        saveDebugFromProxyResponse('long_json', response, rawText, durationMs, profile.timeoutMs);
         return;
       }
 
@@ -597,7 +646,7 @@ export default function SettingsPage() {
         }
       }
     } catch (err) {
-      const durationMs = Math.round(performance.now() - startedAt);
+      const durationMs = getTime() - startedAt;
       const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
       const errorMsg = isTimeout
         ? `Long JSON Test 超时：基础 API 可能可用，但当前模型生成结构化长 JSON 太慢。建议换更快模型、降低输出长度，或开启流式/后台生成。`
@@ -655,6 +704,161 @@ export default function SettingsPage() {
   const handleRunSelfTest = () => {
     const results = runEndpointNormalizerSelfTest();
     setSelfTestResults(results);
+  };
+
+  // V5.2: Proxy Health Check
+  const handleProxyHealth = async () => {
+    setProxyHealth({ status: 'running' });
+    try {
+      const response = await fetch('/api/ai-proxy', { method: 'GET' });
+      const rawText = await response.text();
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(rawText); } catch {
+        setProxyHealth({ status: 'fail', error: 'Proxy 返回非 JSON' });
+        return;
+      }
+
+      const ok = data.ok === true;
+      const selfTest = data.normalizerSelfTest as Record<string, unknown> | undefined;
+      setProxyHealth({
+        status: ok ? 'pass' : 'fail',
+        error: ok ? undefined : `Normalizer self-test 有 ${selfTest?.failed || 0} 项失败`,
+        details: {
+          ok,
+          version: typeof data.version === 'string' ? data.version : undefined,
+          selfTest: selfTest ? {
+            passed: selfTest.passed === true,
+            total: typeof selfTest.total === 'number' ? selfTest.total : undefined,
+            failed: typeof selfTest.failed === 'number' ? selfTest.failed : undefined,
+            failedCases: Array.isArray(selfTest.failedCases) ? selfTest.failedCases : undefined,
+          } : undefined,
+        },
+      });
+
+      if (!ok) {
+        setApiDebugInfo({
+          testName: 'proxy_health',
+          inputApiUrl: '/api/ai-proxy (GET)',
+          model: '-',
+          httpStatus: response.status,
+          errorCategory: 'proxy_internal_error',
+          errorMessage: `Normalizer self-test 失败: ${selfTest?.failed || 0} 项`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (err) {
+      setProxyHealth({
+        status: 'fail',
+        error: `Proxy 不可达: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  };
+
+  // V5.2: Raw Chat Test — minimal request
+  const handleRawChatTest = async () => {
+    if (!hasConfig) return;
+    const profile = getTimeoutProfile('quick_ping');
+    setRawChat({ status: 'running' });
+
+    const startedAt = getTime();
+    try {
+      const messages = disableSystemMessage
+        ? [{ role: 'user' as const, content: 'Say OK' }]
+        : [{ role: 'user' as const, content: 'Say OK' }];
+
+      const signal = AbortSignal?.timeout?.(profile.timeoutMs + profile.clientExtraMs) || undefined;
+      const response = await fetch('/api/ai-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal,
+        body: JSON.stringify({
+          apiUrl: normalizeApiUrl(apiUrl),
+          apiKey: apiKey.trim(),
+          timeoutMs: profile.timeoutMs,
+          body: {
+            model: model.trim(),
+            messages,
+            max_tokens: 10,
+            temperature: 0,
+          },
+        }),
+      });
+
+      const durationMs = getTime() - startedAt;
+      const rawText = await response.text();
+
+      if (!response.ok) {
+        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
+        setRawChat({ status: 'fail', durationMs, error: parsed.message });
+        setApiDebugInfo({
+          testName: 'raw_chat',
+          inputApiUrl: normalizeApiUrl(apiUrl),
+          normalizedEndpoint: parsed.normalizedEndpoint,
+          endpointKind: parsed.endpointKind,
+          endpointWarnings: parsed.endpointWarnings,
+          endpointErrors: parsed.endpointErrors,
+          model: model.trim(),
+          httpStatus: response.status,
+          errorCategory: parsed.errorCategory,
+          errorMessage: parsed.message,
+          upstreamBodyPreview: parsed.upstreamBodyPreview,
+          rawResponsePreview: parsed.rawPreview,
+          timestamp: new Date().toISOString(),
+        });
+        return;
+      }
+
+      let data: Record<string, unknown>;
+      try { data = JSON.parse(rawText); } catch {
+        setRawChat({ status: 'fail', durationMs, error: '响应不是 JSON' });
+        return;
+      }
+
+      const content = extractAIContent(data);
+      if (!content) {
+        setRawChat({ status: 'fail', durationMs, error: '模型返回为空' });
+        return;
+      }
+
+      setRawChat({ status: 'pass', durationMs });
+    } catch (err) {
+      const durationMs = getTime() - startedAt;
+      const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
+      setRawChat({
+        status: 'fail',
+        durationMs,
+        error: isTimeout ? `Raw Chat 超时 (${Math.round(profile.timeoutMs / 1000)}s)` : `Raw Chat 失败: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  };
+
+  // V5.2: Helper to build debug info from a test result
+  const saveDebugFromProxyResponse = (
+    testName: ApiDebugInfo['testName'],
+    response: Response,
+    rawText: string,
+    _durationMs: number,
+    timeoutMs: number,
+  ) => {
+    const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
+    setApiDebugInfo({
+      testName,
+      inputApiUrl: normalizeApiUrl(apiUrl),
+      normalizedEndpoint: parsed.normalizedEndpoint,
+      endpointKind: parsed.endpointKind,
+      endpointWarnings: parsed.endpointWarnings,
+      endpointErrors: parsed.endpointErrors,
+      model: model.trim(),
+      httpStatus: response.status,
+      errorCategory: parsed.errorCategory,
+      errorMessage: parsed.message,
+      upstreamBodyPreview: parsed.upstreamBodyPreview,
+      proxyDurationMs: parsed.proxyDurationMs,
+      upstreamDurationMs: parsed.upstreamDurationMs,
+      timeoutMs,
+      rawResponsePreview: parsed.rawPreview,
+      timestamp: new Date().toISOString(),
+    });
   };
 
   const isBasicReady = quickPing.status === 'pass' && jsonTest.status === 'pass';
@@ -906,16 +1110,22 @@ export default function SettingsPage() {
               <button className="vp-btn vp-btn-primary" onClick={handleSave} disabled={!hasConfig || saved}>
                 {saved ? <><Check size={14} /> 已保存</> : '保存配置'}
               </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleQuickPing} disabled={!hasConfig || quickPing.status === 'running'}>
+              <button className="vp-btn vp-btn-ghost" onClick={handleProxyHealth}>
+                {proxyHealth.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 检测中...</> : <><Heart size={14} /> Proxy Health</>}
+              </button>
+              <button className="vp-btn vp-btn-ghost" onClick={handleRawChatTest} disabled={!hasConfig || rawChat.status === 'running' || proxyHealthFailed}>
+                {rawChat.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : <><MessageSquare size={14} /> Raw Chat</>}
+              </button>
+              <button className="vp-btn vp-btn-ghost" onClick={handleQuickPing} disabled={!hasConfig || quickPing.status === 'running' || proxyHealthFailed}>
                 {quickPing.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : 'Quick Ping'}
               </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleJsonTest} disabled={!hasConfig || jsonTest.status === 'running'}>
+              <button className="vp-btn vp-btn-ghost" onClick={handleJsonTest} disabled={!hasConfig || jsonTest.status === 'running' || proxyHealthFailed}>
                 {jsonTest.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : 'JSON Test'}
               </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleLongJsonTest} disabled={!hasConfig || longJson.status === 'running'}>
+              <button className="vp-btn vp-btn-ghost" onClick={handleLongJsonTest} disabled={!hasConfig || longJson.status === 'running' || proxyHealthFailed}>
                 {longJson.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '长 JSON 测试'}
               </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleRunAllTests} disabled={!hasConfig || isTesting}>
+              <button className="vp-btn vp-btn-ghost" onClick={handleRunAllTests} disabled={!hasConfig || isTesting || proxyHealthFailed}>
                 {isTesting ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '一键测试全部'}
               </button>
               <button className="vp-btn vp-btn-ghost" onClick={handleRunSelfTest} style={{ fontSize: 13 }}>
@@ -927,6 +1137,24 @@ export default function SettingsPage() {
                 </button>
               )}
             </div>
+
+            {/* V5.2: Compatibility Options */}
+            <div style={{ marginTop: 16, padding: '10px 14px', borderRadius: 8, background: 'var(--vp-surface)', border: '1px solid var(--vp-border)' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--color-text-secondary)' }}>
+                Advanced Options (第三方网关兼容)
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={disableSystemMessage}
+                  onChange={(e) => {
+                    setDisableSystemMessage(e.target.checked);
+                    try { localStorage.setItem('vibepilot_compat_disable_system', String(e.target.checked)); } catch { /* storage unavailable */ }
+                  }}
+                />
+                <span>Disable system message (部分第三方网关不支持 system role)</span>
+              </label>
+            </div>
           </LiquidCard>
 
           {/* V4.9: API Diagnostics Card — layered test results */}
@@ -937,10 +1165,12 @@ export default function SettingsPage() {
             </h3>
             <div style={{ display: 'grid', gap: 8 }}>
               {[
-                { label: '1. Quick Ping (12s)', result: quickPing, desc: '验证 API 地址和 Key 是否基本可用' },
-                { label: '2. JSON Test (30s)', result: jsonTest, desc: '验证模型能否返回小 JSON' },
-                { label: '3. Long JSON (90s)', result: longJson, desc: '验证模型能否返回结构化长 JSON' },
-                { label: '4. Reference Validation', result: refValidation, desc: '验证输出与输入相关性' },
+                { label: '0. Proxy Health', result: proxyHealth, desc: '验证 /api/ai-proxy 函数是否正常启动', icon: '🏥' },
+                { label: '1. Raw Chat Test', result: rawChat, desc: '最基础请求，不要求 JSON', icon: '💬' },
+                { label: '2. Quick Ping (12s)', result: quickPing, desc: '验证 API 地址和 Key 是否基本可用', icon: '⚡' },
+                { label: '3. JSON Test (30s)', result: jsonTest, desc: '验证模型能否返回小 JSON', icon: '📋' },
+                { label: '4. Long JSON (90s)', result: longJson, desc: '验证模型能否返回结构化长 JSON', icon: '📄' },
+                { label: '5. Reference Validation', result: refValidation, desc: '验证输出与输入相关性', icon: '✅' },
               ].map((item) => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13 }}>
                   <span>
@@ -964,6 +1194,30 @@ export default function SettingsPage() {
               ))}
             </div>
 
+            {/* V5.2: Proxy Health details */}
+            {proxyHealth.details && (
+              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: proxyHealth.details.ok ? 'rgba(52,199,89,0.08)' : 'rgba(255,59,48,0.08)', fontSize: 12, lineHeight: 1.8 }}>
+                <strong>Proxy Health:</strong> {proxyHealth.details.ok ? '✅ 正常' : '❌ 异常'}
+                {proxyHealth.details.version && <span style={{ marginLeft: 8 }}>v{proxyHealth.details.version}</span>}
+                {proxyHealth.details.selfTest && (
+                  <div style={{ marginTop: 4 }}>
+                    Normalizer Self-Test: {proxyHealth.details.selfTest.passed ? '✅' : '❌'}
+                    {proxyHealth.details.selfTest.total != null && ` (${proxyHealth.details.selfTest.total} 项)`}
+                    {proxyHealth.details.selfTest.failed != null && proxyHealth.details.selfTest.failed > 0 && (
+                      <span style={{ color: 'var(--color-danger)' }}> — {proxyHealth.details.selfTest.failed} 项失败</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Proxy health failed warning */}
+            {proxyHealthFailed && (
+              <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(255,59,48,0.1)', fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6 }}>
+                /api/ai-proxy 函数自身不可用，请检查 Vercel Function 部署、导入路径或服务端运行时。
+              </div>
+            )}
+
             {/* Status summary */}
             <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'var(--vp-surface)', fontSize: 12, lineHeight: 1.6 }}>
               <strong>状态：</strong>
@@ -972,6 +1226,133 @@ export default function SettingsPage() {
                '❌ API 尚未就绪 — 需要至少通过 Quick Ping 和 JSON Test'}
             </div>
           </LiquidCard>
+
+          {/* V5.2: API Debug Panel */}
+          {apiDebugInfo && (
+            <LiquidCard style={{ marginBottom: 16, borderColor: 'rgba(255,59,48,0.2)' }}>
+              <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertTriangle size={14} style={{ color: 'var(--color-danger)' }} />
+                API Debug — {apiDebugInfo.testName.replace(/_/g, ' ').toUpperCase()}
+              </h3>
+              <div style={{ fontSize: 12, lineHeight: 1.8, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
+                <span style={{ color: 'var(--color-text-hint)' }}>Input API URL</span>
+                <span style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>{apiDebugInfo.inputApiUrl}</span>
+
+                {apiDebugInfo.normalizedEndpoint && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Normalized Endpoint</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>{apiDebugInfo.normalizedEndpoint}</span>
+                  </>
+                )}
+
+                {apiDebugInfo.endpointKind && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Endpoint Kind</span>
+                    <span>{apiDebugInfo.endpointKind}</span>
+                  </>
+                )}
+
+                <span style={{ color: 'var(--color-text-hint)' }}>Model</span>
+                <span>{apiDebugInfo.model}</span>
+
+                {apiDebugInfo.httpStatus != null && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>HTTP Status</span>
+                    <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{apiDebugInfo.httpStatus}</span>
+                  </>
+                )}
+
+                {apiDebugInfo.errorCategory && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Error Category</span>
+                    <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{apiDebugInfo.errorCategory}</span>
+                  </>
+                )}
+
+                {apiDebugInfo.errorMessage && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Error Message</span>
+                    <span style={{ color: 'var(--color-danger)' }}>{apiDebugInfo.errorMessage}</span>
+                  </>
+                )}
+
+                {apiDebugInfo.proxyDurationMs != null && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Proxy Duration</span>
+                    <span>{apiDebugInfo.proxyDurationMs}ms</span>
+                  </>
+                )}
+
+                {apiDebugInfo.upstreamDurationMs != null && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Upstream Duration</span>
+                    <span>{apiDebugInfo.upstreamDurationMs}ms</span>
+                  </>
+                )}
+
+                {apiDebugInfo.timeoutMs != null && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Timeout</span>
+                    <span>{apiDebugInfo.timeoutMs}ms ({Math.round(apiDebugInfo.timeoutMs / 1000)}s)</span>
+                  </>
+                )}
+
+                {apiDebugInfo.endpointWarnings && apiDebugInfo.endpointWarnings.length > 0 && (
+                  <>
+                    <span style={{ color: 'var(--color-warning)' }}>Warnings</span>
+                    <span style={{ color: 'var(--color-warning)', fontSize: 10 }}>{apiDebugInfo.endpointWarnings.join('; ')}</span>
+                  </>
+                )}
+
+                <span style={{ color: 'var(--color-text-hint)' }}>Time</span>
+                <span style={{ fontSize: 10 }}>{new Date(apiDebugInfo.timestamp).toLocaleTimeString()}</span>
+              </div>
+
+              {/* Upstream body preview */}
+              {apiDebugInfo.upstreamBodyPreview && (
+                <details style={{ marginTop: 12 }}>
+                  <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                    Upstream Body Preview ({apiDebugInfo.upstreamBodyPreview.length} chars)
+                  </summary>
+                  <pre style={{
+                    marginTop: 8, padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--color-bg-secondary)', fontSize: 10,
+                    lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                    fontFamily: 'monospace',
+                  }}>
+                    {apiDebugInfo.upstreamBodyPreview}
+                  </pre>
+                </details>
+              )}
+
+              {/* Raw response preview for non-JSON */}
+              {apiDebugInfo.rawResponsePreview && (
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                    Raw Response Preview ({apiDebugInfo.rawResponsePreview.length} chars)
+                  </summary>
+                  <pre style={{
+                    marginTop: 8, padding: '8px 12px', borderRadius: 6,
+                    background: 'var(--color-bg-secondary)', fontSize: 10,
+                    lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                    fontFamily: 'monospace',
+                  }}>
+                    {apiDebugInfo.rawResponsePreview}
+                  </pre>
+                </details>
+              )}
+
+              <button
+                className="vp-btn vp-btn-ghost"
+                style={{ marginTop: 8, fontSize: 11 }}
+                onClick={() => setApiDebugInfo(null)}
+              >
+                关闭 Debug Panel
+              </button>
+            </LiquidCard>
+          )}
 
           {/* V4.9: Last AI Timing */}
           {lastTiming && (

@@ -381,6 +381,7 @@ function abortSignalTimeout(timeoutMs: number): AbortSignal {
  * V4.9: Main AI proxy call. No preflight check on normal path (removed for speed).
  * Uses task-appropriate timeout profile via timeoutMs parameter.
  * Records timing diagnostics to localStorage for debugging.
+ * V5.2: Uses parseApiProxyError for structured error handling.
  */
 async function callAIProxy(config: AIConfig, body: Record<string, unknown>, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<Record<string, unknown>> {
   const startedAt = performance.now();
@@ -419,7 +420,6 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
             upstreamDurationMs: Number(response.headers.get('X-Vibe-Upstream-Duration-Ms')) || 0,
             endpoint: response.headers.get('X-Vibe-Upstream-Endpoint') || 'unknown',
             timeoutMs: Number(response.headers.get('X-Vibe-Timeout-Ms')) || timeoutMs,
-            // V5.1: Endpoint normalization diagnostics
             normalizedEndpoint: response.headers.get('X-Vibe-Normalized-Endpoint') || response.headers.get('X-Vibe-Upstream-Endpoint') || 'unknown',
             endpointKind: response.headers.get('X-Vibe-Endpoint-Kind') || '',
             endpointWarnings: (response.headers.get('X-Vibe-Endpoint-Warnings') || '').split('; ').filter(Boolean),
@@ -447,7 +447,6 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
           timeoutMs: proxyTiming?.timeoutMs || timeoutMs,
           model,
           endpoint: proxyTiming?.endpoint || config.apiUrl,
-          // V5.1: Endpoint normalization diagnostics
           normalizedEndpoint: proxyTiming?.normalizedEndpoint || config.apiUrl,
           endpointKind: proxyTiming?.endpointKind || '',
           endpointWarnings: proxyTiming?.endpointWarnings || [],
@@ -459,41 +458,50 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
         });
       } catch { /* diagnostic save non-critical */ }
 
+      // V5.2: Use parseApiProxyError for structured error handling
       if (!response.ok) {
-        let parsedError: unknown;
+        const { parseApiProxyError, classifyParsedApiErrorToAIErrorType, buildUserFacingApiErrorMessage } = await import('./apiErrorParser');
+        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
+
+        // Save enhanced diagnostic with error details
         try {
-          parsedError = JSON.parse(rawText) as unknown;
-        } catch {
-          parsedError = null;
-        }
+          const { saveLastAITiming } = await import('./aiDiagnostics');
+          saveLastAITiming({
+            durationMs,
+            proxyDurationMs: proxyTiming?.proxyDurationMs || 0,
+            upstreamDurationMs: proxyTiming?.upstreamDurationMs || 0,
+            timeoutMs: proxyTiming?.timeoutMs || timeoutMs,
+            model,
+            endpoint: proxyTiming?.endpoint || config.apiUrl,
+            normalizedEndpoint: proxyTiming?.normalizedEndpoint || config.apiUrl,
+            endpointKind: proxyTiming?.endpointKind || '',
+            endpointWarnings: proxyTiming?.endpointWarnings || [],
+            apiUrlInput: config.apiUrl,
+            status: response.status,
+            ok: false,
+            responseChars: rawText.length,
+            timestamp: new Date().toISOString(),
+            // V5.2: Enhanced error fields
+            errorCategory: parsed.errorCategory,
+            errorMessage: parsed.message,
+            upstreamBodyPreview: parsed.upstreamBodyPreview,
+            rawResponsePreview: parsed.rawPreview,
+          });
+        } catch { /* non-critical */ }
 
-        const errorObject = parsedError && typeof parsedError === 'object' ? parsedError as Record<string, unknown> : null;
-        const errorValue = errorObject?.error;
-        const errorMessage = typeof errorValue === 'string'
-          ? errorValue
-          : errorValue && typeof errorValue === 'object' && typeof (errorValue as Record<string, unknown>).message === 'string'
-            ? (errorValue as Record<string, unknown>).message as string
-            : rawText.slice(0, 300);
-
-        // V5.1: Check for /v1/v1 duplication in endpoint
+        // Check for /v1/v1 duplication
         const normalizedEp = proxyTiming?.normalizedEndpoint || '';
         if (/\/v1\/v1(\/|$)/i.test(normalizedEp)) {
           throw new VibeAIError('connection', '检测到 endpoint 被错误拼接为 /v1/v1/chat/completions，请修复 URL 归一化逻辑。');
         }
 
-        // V5.1: Better error messages based on HTTP status
-        const statusPrefix = response.status === 401 ? 'API key 无效或没有权限。'
-          : response.status === 403 ? 'API key 无权限访问该模型或服务。'
-          : response.status === 404 ? `endpoint 或模型名错误。请检查最终请求地址和模型名。${normalizedEp ? ` 最终请求: ${normalizedEp}` : ''}`
-          : response.status === 429 ? '额度不足或触发限流。'
-          : response.status === 502 || response.status === 503 || response.status === 504 ? '代理或上游 API 暂时不可用。请查看 Last AI Timing 判断是代理问题还是上游问题。'
-          : '';
+        const errorType = classifyParsedApiErrorToAIErrorType(parsed);
+        const userMessage = buildUserFacingApiErrorMessage(parsed);
 
-        const detail = statusPrefix
-          ? `${statusPrefix} (HTTP ${response.status}) ${errorMessage}`
-          : `AI API 返回错误 (${response.status}): ${errorMessage}`;
-
-        throw new VibeAIError('http', detail);
+        throw new VibeAIError(errorType, userMessage, {
+          detail: parsed,
+          rawContent: parsed.rawPreview || parsed.upstreamBodyPreview,
+        });
       }
 
       try {

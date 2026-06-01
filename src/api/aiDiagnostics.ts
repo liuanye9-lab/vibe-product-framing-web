@@ -1,11 +1,11 @@
 /**
- * V5.1 — AI Timing Diagnostics
+ * V5.2 — AI Timing Diagnostics
  *
  * Captures per-request timing data and persists the last result to localStorage.
  * Used by SettingsPage and Agent Debug panels to show API performance.
  *
- * V5.1 changes:
- * - Added normalizedEndpoint, endpointKind, endpointWarnings, apiUrlInput fields
+ * V5.2 changes:
+ * - Added errorCategory, errorMessage, upstreamBodyPreview, rawResponsePreview fields
  */
 
 export interface AITimingDiagnostic {
@@ -39,6 +39,14 @@ export interface AITimingDiagnostic {
   task?: string;
   /** Response character count */
   responseChars: number;
+  /** V5.2: Error category from proxy */
+  errorCategory?: string;
+  /** V5.2: Error message from proxy */
+  errorMessage?: string;
+  /** V5.2: Upstream response body preview */
+  upstreamBodyPreview?: string;
+  /** V5.2: Raw response preview (for non-JSON) */
+  rawResponsePreview?: string;
 }
 
 const LAST_AI_TIMING_KEY = 'vibepilot_last_ai_timing';
