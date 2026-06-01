@@ -13,6 +13,7 @@ import {
   ExternalLink,
   Home,
   Activity,
+  Search,
 } from 'lucide-react';
 import {
   clearAIConfig,
@@ -43,6 +44,12 @@ import {
   getLastAITiming,
   type AITimingDiagnostic,
 } from '../api/aiDiagnostics';
+import {
+  normalizeOpenAICompatibleEndpoint,
+  runEndpointNormalizerSelfTest,
+  type NormalizedEndpointResult,
+  type EndpointSelfTestCase,
+} from '../api/endpointNormalizer';
 import { PageReveal, LiquidCard, LiquidBadge } from '../components/liquid';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -50,7 +57,7 @@ const PRESETS = [
   {
     name: 'OpenAI',
     apiUrl: 'https://api.openai.com',
-    model: 'gpt-4o',
+    model: 'gpt-4o-mini',
     docUrl: 'https://platform.openai.com/api-keys',
   },
   {
@@ -61,9 +68,24 @@ const PRESETS = [
   },
   {
     name: 'GLM (智谱)',
-    apiUrl: 'https://open.bigmodel.cn/api/paas',
-    model: 'glm-4-flash',
+    apiUrl: '',
+    model: '',
     docUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
+    note: '请填写智谱 OpenAI-compatible chat completions endpoint 或兼容根地址。',
+  },
+  {
+    name: 'Custom Gateway',
+    apiUrl: 'https://gpt-agent.cc',
+    model: '',
+    docUrl: '',
+    note: 'OpenAI-compatible 网关，支持 root 或 /v1 写法。模型名以服务商后台为准。',
+  },
+  {
+    name: 'LLM Token',
+    apiUrl: 'https://api.llm-token.cn',
+    model: '',
+    docUrl: '',
+    note: '第三方 OpenAI-compatible 网关。模型名以服务商后台为准。',
   },
 ];
 
@@ -123,6 +145,10 @@ export default function SettingsPage() {
   const [longJson, setLongJson] = useState<TestResult>({ status: 'idle' });
   const [refValidation, setRefValidation] = useState<TestResult>({ status: 'idle' });
 
+  // V5.1: Endpoint preview & self-test
+  const [endpointPreview, setEndpointPreview] = useState<NormalizedEndpointResult | null>(null);
+  const [selfTestResults, setSelfTestResults] = useState<EndpointSelfTestCase[] | null>(null);
+
   // Old results kept for backward compatibility in UI
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [longTestResult, setLongTestResult] = useState<{
@@ -156,6 +182,16 @@ export default function SettingsPage() {
       }
     }
   }, []);
+
+  // V5.1: Update endpoint preview when apiUrl changes
+  useEffect(() => {
+    if (apiUrl.trim()) {
+      const normalized = normalizeOpenAICompatibleEndpoint(apiUrl);
+      setEndpointPreview(normalized);
+    } else {
+      setEndpointPreview(null);
+    }
+  }, [apiUrl]);
 
   const hasConfig = apiUrl.trim() && apiKey.trim() && model.trim();
   const storedConfig = getAIConfig();
@@ -615,6 +651,12 @@ export default function SettingsPage() {
     markConfigChanged(preset.apiUrl, apiKey, preset.model);
   };
 
+  // V5.1: Run endpoint normalizer self-test
+  const handleRunSelfTest = () => {
+    const results = runEndpointNormalizerSelfTest();
+    setSelfTestResults(results);
+  };
+
   const isBasicReady = quickPing.status === 'pass' && jsonTest.status === 'pass';
   const isFullReady = isBasicReady && longJson.status === 'pass' && refValidation.status === 'pass';
 
@@ -782,8 +824,47 @@ export default function SettingsPage() {
                 placeholder="https://api.openai.com"
               />
               <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
-                如果你的服务商不是 OpenAI-compatible，请填写完整 endpoint，例如以 /chat/completions 结尾。
+                支持 root URL、/v1 URL 或完整 /v1/chat/completions endpoint。
               </p>
+
+              {/* V5.1: Endpoint Preview */}
+              {endpointPreview && (
+                <div style={{
+                  marginTop: 8, padding: '8px 12px', borderRadius: 8,
+                  background: endpointPreview.kind === 'invalid' ? 'rgba(255,59,48,0.08)' : 'var(--vp-surface)',
+                  border: endpointPreview.kind === 'invalid' ? '1px solid rgba(255,59,48,0.2)' : '1px solid var(--vp-border)',
+                  fontSize: 12, lineHeight: 1.8,
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
+                    <span style={{ color: 'var(--color-text-hint)' }}>最终请求地址：</span>
+                    <span style={{
+                      fontFamily: 'monospace', fontSize: 11, wordBreak: 'break-all',
+                      color: endpointPreview.kind === 'invalid' ? 'var(--color-danger)' : 'var(--color-text)',
+                    }}>
+                      {endpointPreview.endpoint || '(无效)'}
+                    </span>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Endpoint 类型：</span>
+                    <span>{endpointPreview.kind}</span>
+                    {endpointPreview.warnings.length > 0 && (
+                      <>
+                        <span style={{ color: 'var(--color-warning)' }}>Warnings：</span>
+                        <span style={{ color: 'var(--color-warning)' }}>{endpointPreview.warnings.join('；')}</span>
+                      </>
+                    )}
+                    {endpointPreview.errors.length > 0 && (
+                      <>
+                        <span style={{ color: 'var(--color-danger)' }}>Errors：</span>
+                        <span style={{ color: 'var(--color-danger)' }}>{endpointPreview.errors.join('；')}</span>
+                      </>
+                    )}
+                  </div>
+                  {endpointPreview.endpoint.includes('/v1/v1') && (
+                    <div style={{ marginTop: 6, padding: '6px 10px', borderRadius: 6, background: 'rgba(255,59,48,0.12)', color: 'var(--color-danger)', fontSize: 12, fontWeight: 500 }}>
+                      检测到重复 /v1，这是 URL 归一化错误，不能继续测试。
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div style={{ marginBottom: 20 }}>
@@ -836,6 +917,9 @@ export default function SettingsPage() {
               </button>
               <button className="vp-btn vp-btn-ghost" onClick={handleRunAllTests} disabled={!hasConfig || isTesting}>
                 {isTesting ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '一键测试全部'}
+              </button>
+              <button className="vp-btn vp-btn-ghost" onClick={handleRunSelfTest} style={{ fontSize: 13 }}>
+                <Search size={14} /> URL 兼容性自检
               </button>
               {storedConfig && (
                 <button className="vp-btn vp-btn-danger-text" onClick={handleClear} style={{ fontSize: 13, color: 'var(--color-danger)' }}>
@@ -894,6 +978,26 @@ export default function SettingsPage() {
             <LiquidCard style={{ marginBottom: 16 }}>
               <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>最近 AI 耗时</h3>
               <div style={{ fontSize: 12, lineHeight: 1.8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                {lastTiming.apiUrlInput && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>用户输入 API URL</span><span style={{ fontSize: 10 }}>{lastTiming.apiUrlInput}</span>
+                  </>
+                )}
+                {lastTiming.normalizedEndpoint && lastTiming.normalizedEndpoint !== lastTiming.endpoint && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>最终 Endpoint</span><span style={{ fontSize: 10 }}>{lastTiming.normalizedEndpoint}</span>
+                  </>
+                )}
+                {lastTiming.endpointKind && (
+                  <>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Endpoint Kind</span><span>{lastTiming.endpointKind}</span>
+                  </>
+                )}
+                {lastTiming.endpointWarnings && lastTiming.endpointWarnings.length > 0 && (
+                  <>
+                    <span style={{ color: 'var(--color-warning)' }}>Warnings</span><span style={{ color: 'var(--color-warning)', fontSize: 10 }}>{lastTiming.endpointWarnings.join('; ')}</span>
+                  </>
+                )}
                 <span style={{ color: 'var(--color-text-hint)' }}>Model</span><span>{lastTiming.model}</span>
                 <span style={{ color: 'var(--color-text-hint)' }}>Timeout</span><span>{lastTiming.timeoutMs}ms ({Math.round(lastTiming.timeoutMs / 1000)}s)</span>
                 <span style={{ color: 'var(--color-text-hint)' }}>Duration</span><span style={{ color: lastTiming.ok ? 'var(--color-success)' : 'var(--color-danger)' }}>{lastTiming.durationMs}ms</span>
@@ -942,6 +1046,48 @@ export default function SettingsPage() {
               <p style={{ fontSize: 13, color: testResult.ok ? 'var(--color-success)' : 'var(--color-danger)', lineHeight: 1.6 }}>
                 {testResult.ok ? '✅ ' : '❌ '}{testResult.msg}
               </p>
+            </LiquidCard>
+          )}
+
+          {/* V5.1: URL Self-Test Results */}
+          {selfTestResults && (
+            <LiquidCard style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Search size={14} />
+                URL 兼容性自检结果
+              </h3>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', fontFamily: 'monospace' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--vp-border)', textAlign: 'left' }}>
+                      <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Input</th>
+                      <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Expected</th>
+                      <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Actual</th>
+                      <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Passed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selfTestResults.map((tc, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--vp-border)', background: tc.passed ? undefined : 'rgba(255,59,48,0.06)' }}>
+                        <td style={{ padding: '4px 8px', wordBreak: 'break-all', maxWidth: 200 }}>{tc.input}</td>
+                        <td style={{ padding: '4px 8px', wordBreak: 'break-all', maxWidth: 200 }}>{tc.expected}</td>
+                        <td style={{ padding: '4px 8px', wordBreak: 'break-all', maxWidth: 200, color: tc.passed ? undefined : 'var(--color-danger)' }}>{tc.actual}</td>
+                        <td style={{ padding: '4px 8px' }}>{tc.passed ? '✅' : '❌'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {(() => {
+                const passedCount = selfTestResults.filter((tc) => tc.passed).length;
+                const failedCount = selfTestResults.length - passedCount;
+                return (
+                  <div style={{ marginTop: 8, padding: '6px 12px', borderRadius: 6, background: failedCount > 0 ? 'rgba(255,59,48,0.08)' : 'rgba(52,199,89,0.08)', fontSize: 12 }}>
+                    <strong>{passedCount}/{selfTestResults.length} 通过</strong>
+                    {failedCount > 0 && <span style={{ color: 'var(--color-danger)', marginLeft: 8 }}>{failedCount} 项失败 — 请检查 endpoint normalizer</span>}
+                  </div>
+                );
+              })()}
             </LiquidCard>
           )}
 

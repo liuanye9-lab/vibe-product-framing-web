@@ -1,5 +1,53 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V5.1 OpenAI-Compatible URL Normalization Patch (2026-06-01)
+
+### 审计发现
+| # | 问题 | 严重度 |
+|---|------|--------|
+| 1 | `api/ai-proxy.ts:39` `/v1` → `/v1/v1/chat/completions` 双重 /v1 | P0 |
+| 2 | `vite.config.ts:14` `/v1` → `/chat/completions` 正确但与 ai-proxy 不一致 | P0 |
+| 3 | SettingsPage 无 Endpoint Preview | P1 |
+| 4 | 无 URL 兼容性自检 | P1 |
+| 5 | GLM preset `/api/paas` 必然失败 | P1 |
+| 6 | 错误文案笼统，不区分 URL/key/model/quota/timeout | P1 |
+
+### 初始状态
+- `npm install`: ✅ 0 vulnerabilities
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (454ms, 605KB JS)
+
+### 修复详情
+| 步骤 | 变更 | 文件 |
+|------|------|------|
+| 2 | 新增统一 endpoint normalizer | `shared/endpointNormalizer.ts` +, `src/api/endpointNormalizer.ts` + |
+| 5 | ai-proxy 使用共享 normalizer，新增诊断 headers | `api/ai-proxy.ts` ~ |
+| 6 | vite.config 使用共享 normalizer | `vite.config.ts` ~ |
+| 7-8 | Endpoint Preview + URL 自检按钮 | `src/pages/SettingsPage.tsx` ~ |
+| 9 | Presets 修复 (GLM, Custom Gateway, LLM Token) | `src/pages/SettingsPage.tsx` ~ |
+| 10-11 | 诊断字段 + error messages | `src/api/evaluate.ts` ~, `src/api/aiDiagnostics.ts` ~ |
+| 14 | 错误文案优化 (401/403/404/429/502/503/504/timeout) | `src/api/evaluate.ts` ~ |
+| 15 | 文档更新 | `CHANGELOG.md` ~, `API_CONNECTION_DIAGNOSIS.md` + |
+
+### 最终验证
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (1.68s, 614KB JS)
+- 新增文件: 3 (`shared/endpointNormalizer.ts`, `src/api/endpointNormalizer.ts`, `API_CONNECTION_DIAGNOSIS.md`)
+- 修改文件: 6 (`api/ai-proxy.ts`, `vite.config.ts`, `src/pages/SettingsPage.tsx`, `src/api/evaluate.ts`, `src/api/aiDiagnostics.ts`, `CHANGELOG.md`)
+- 无新增 npm 依赖
+- 无破坏 Agent Runtime / Handoff / localStorage / ProductBrief
+
+### URL 归一化验证
+| Input | Kind | Endpoint |
+|---|---|---|
+| `https://gpt-agent.cc` | root | `https://gpt-agent.cc/v1/chat/completions` |
+| `https://gpt-agent.cc/v1` | v1_root | `https://gpt-agent.cc/v1/chat/completions` |
+| `https://api.llm-token.cn` | root | `https://api.llm-token.cn/v1/chat/completions` |
+| `https://api.openai.com/v1` | v1_root | `https://api.openai.com/v1/chat/completions` |
+| `https://api.openai.com/v1/v1/chat/completions` | chat_completions | `https://api.openai.com/v1/chat/completions` (auto-fix) |
+
+---
+
 ## V4.9 API Timeout Diagnosis (2026-05-31)
 
 ### 审计发现

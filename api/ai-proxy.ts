@@ -1,18 +1,19 @@
 /**
- * V4.9 API Proxy — Vercel Serverless Function
+ * V5.1 API Proxy — Vercel Serverless Function
  *
  * Forwards AI API requests from the browser to any OpenAI-compatible endpoint.
  * Uses Vercel Serverless runtime (not edge) for longer timeout support.
  *
- * V4.9 changes:
- * - Removed 50s hard timeout cap; now controlled by AI_PROXY_MAX_TIMEOUT_MS env var (default 120s).
- * - Added X-Vibe-* response headers for timing diagnostics.
- * - maxDuration set to 120s. Actual limit still depends on plan: Hobby 60s, Pro 900s.
- *   If deploying to Hobby, set AI_PROXY_MAX_TIMEOUT_MS=50000 to stay within the 60s limit.
+ * V5.1 changes:
+ * - Uses shared endpoint normalizer (same logic as vite.config.ts and frontend)
+ * - Added X-Vibe-Normalized-Endpoint, X-Vibe-Endpoint-Kind, X-Vibe-Endpoint-Warnings headers
+ * - Improved error messages for URL, key, model, quota, and timeout issues
  */
 
 // DO NOT export runtime: 'edge' — Edge has 30s limit, too short for AI calls.
 // Serverless default: 60s (Hobby), up to 900s (Pro with maxDuration config).
+
+import { normalizeOpenAICompatibleEndpoint } from '../shared/endpointNormalizer';
 
 export const config = {
   maxDuration: 120, // seconds — actual ceiling depends on Vercel plan
@@ -26,30 +27,6 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
       ...(init?.headers || {}),
     },
   });
-}
-
-function normalizeChatCompletionsEndpoint(rawApiUrl: string): string {
-  const cleanUrl = rawApiUrl.trim().replace(/\/+$/, '');
-
-  if (/\/chat\/completions$/i.test(cleanUrl)) {
-    return cleanUrl;
-  }
-
-  if (/\/v1$/i.test(cleanUrl)) {
-    return `${cleanUrl}/v1/chat/completions`;
-  }
-
-  if (/\/v1\/chat$/i.test(cleanUrl)) {
-    return `${cleanUrl}/completions`;
-  }
-
-  // Non-standard paths: if it contains /api/paas but no /chat/completions,
-  // don't guess — let the caller handle it
-  if (/\/api\/paas/i.test(cleanUrl) && !/\/chat\/completions$/i.test(cleanUrl)) {
-    return rawApiUrl; // Return as-is, caller should validate
-  }
-
-  return `${cleanUrl}/v1/chat/completions`;
 }
 
 /**
@@ -107,27 +84,34 @@ export default async function handler(request: Request) {
     return jsonResponse({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const apiUrl = payload.apiUrl?.trim().replace(/\/+$/, '');
+  const apiUrl = payload.apiUrl?.trim();
   const apiKey = payload.apiKey?.trim();
 
   if (!apiUrl || !apiKey || !payload.body) {
     return jsonResponse({ error: 'Missing apiUrl, apiKey, or body' }, { status: 400 });
   }
 
-  if (!/^https?:\/\//i.test(apiUrl)) {
-    return jsonResponse({ error: 'apiUrl must start with http:// or https://' }, { status: 400 });
-  }
+  // V5.1: Use unified endpoint normalizer
+  const normalized = normalizeOpenAICompatibleEndpoint(apiUrl);
 
-  const endpoint = normalizeChatCompletionsEndpoint(apiUrl);
-  const timeoutMs = normalizeTimeoutMs(payload.timeoutMs);
-  const maskedEndpoint = endpoint.replace(/\/\/[^@/]+@/, '//***@');
-
-  // Validate non-standard endpoints
-  if (!/\/chat\/completions$/i.test(endpoint)) {
+  if (normalized.kind === 'invalid' || normalized.errors.length > 0) {
     return jsonResponse({
-      error: '该服务商 API 路径可能不是 OpenAI-compatible，请填写完整 chat completions endpoint。',
+      error: normalized.errors.join('；') || 'API URL 无效。',
+      endpointDiagnostics: normalized,
     }, { status: 400 });
   }
+
+  // Safety: /v1/v1 should never reach upstream
+  if (/\/v1\/v1(\/|$)/i.test(normalized.endpoint)) {
+    return jsonResponse({
+      error: 'Endpoint normalizer 出错：endpoint 仍包含 /v1/v1。请更新代码或使用 root URL。',
+      endpointDiagnostics: normalized,
+    }, { status: 400 });
+  }
+
+  const endpoint = normalized.endpoint;
+  const timeoutMs = normalizeTimeoutMs(payload.timeoutMs);
+  const maskedEndpoint = endpoint.replace(/\/\/[^@/]+@/, '//***@');
 
   try {
     const upstreamStartedAt = performance.now();
@@ -153,6 +137,10 @@ export default async function handler(request: Request) {
       'X-Vibe-Upstream-Endpoint': maskedEndpoint,
       'X-Vibe-Upstream-Duration-Ms': String(upstreamDurationMs),
       'X-Vibe-Timeout-Ms': String(timeoutMs),
+      // V5.1: Endpoint normalization diagnostics
+      'X-Vibe-Normalized-Endpoint': maskedEndpoint,
+      'X-Vibe-Endpoint-Kind': normalized.kind,
+      'X-Vibe-Endpoint-Warnings': normalized.warnings.join('; '),
     };
 
     return new Response(text, {
@@ -172,6 +160,9 @@ export default async function handler(request: Request) {
           'X-Vibe-Proxy-Duration-Ms': String(proxyDurationMs),
           'X-Vibe-Upstream-Endpoint': maskedEndpoint,
           'X-Vibe-Timeout-Ms': String(timeoutMs),
+          'X-Vibe-Normalized-Endpoint': maskedEndpoint,
+          'X-Vibe-Endpoint-Kind': normalized.kind,
+          'X-Vibe-Endpoint-Warnings': normalized.warnings.join('; '),
         },
       }
     );

@@ -1,8 +1,11 @@
 /**
- * V4.9 — AI Timing Diagnostics
+ * V5.1 — AI Timing Diagnostics
  *
  * Captures per-request timing data and persists the last result to localStorage.
  * Used by SettingsPage and Agent Debug panels to show API performance.
+ *
+ * V5.1 changes:
+ * - Added normalizedEndpoint, endpointKind, endpointWarnings, apiUrlInput fields
  */
 
 export interface AITimingDiagnostic {
@@ -18,6 +21,14 @@ export interface AITimingDiagnostic {
   model: string;
   /** Masked endpoint (no apiKey) */
   endpoint: string;
+  /** V5.1: Normalized endpoint from proxy */
+  normalizedEndpoint?: string;
+  /** V5.1: Endpoint kind (root, v1_root, chat_completions, etc.) */
+  endpointKind?: string;
+  /** V5.1: Endpoint normalization warnings */
+  endpointWarnings?: string[];
+  /** V5.1: User-input API URL */
+  apiUrlInput?: string;
   /** HTTP status of the proxy response */
   status: number;
   /** Request succeeded (status 2xx and valid response) */

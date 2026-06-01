@@ -64,11 +64,31 @@ export function getAIErrorMessage(error: unknown): string {
   if (error instanceof VibeAIError) {
     switch (error.type) {
       case 'connection':
+        if (error.message.includes('/v1/v1')) {
+          return '检测到 endpoint 出现 /v1/v1，这是 URL 拼接错误。请更新代码或改用 root URL。';
+        }
         return 'API 连接失败：请检查 API URL、网络、部署环境和服务商状态。';
       case 'timeout':
-        return '模型响应超时：当前任务输出较长。建议换更快模型，或稍后重试。';
-      case 'http':
-        return `上游 API 返回错误：${error.message.replace(/^AI API 返回错误\s*\(?\d*\)?\s*:\s*/, '')}。请检查 API key、余额、模型名和 endpoint。`;
+        return '请求已发出，但在 timeout 内没有完成。请检查模型速度、timeout 配置和上游响应时间。';
+      case 'http': {
+        const msg = error.message;
+        if (msg.includes('401') || msg.includes('API key 无效')) {
+          return 'API key 无效或没有权限。';
+        }
+        if (msg.includes('403')) {
+          return 'API key 无权限访问该模型或服务。';
+        }
+        if (msg.includes('404') || msg.includes('endpoint 或模型名')) {
+          return 'endpoint 或模型名错误。请检查最终请求地址和模型名。';
+        }
+        if (msg.includes('429') || msg.includes('额度不足')) {
+          return '额度不足或触发限流。';
+        }
+        if (msg.includes('502') || msg.includes('503') || msg.includes('504')) {
+          return '代理或上游 API 暂时不可用。请查看 Last AI Timing 判断是代理问题还是上游问题。';
+        }
+        return `上游 API 返回错误：${msg.replace(/^AI API 返回错误\s*\(?\d*\)?\s*:\s*/, '')}。请检查 API key、余额、模型名和 endpoint。`;
+      }
       case 'empty':
         return '模型已响应但没有返回内容。请检查模型是否支持该请求格式。';
       case 'json_parse':
@@ -390,7 +410,7 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
       const durationMs = Math.round(performance.now() - startedAt);
 
       // V4.9: Extract proxy timing headers
-      let proxyTiming: { proxyDurationMs: number; upstreamDurationMs: number; endpoint: string; timeoutMs: number } | null = null;
+      let proxyTiming: { proxyDurationMs: number; upstreamDurationMs: number; endpoint: string; timeoutMs: number; normalizedEndpoint: string; endpointKind: string; endpointWarnings: string[] } | null = null;
       try {
         const pd = Number(response.headers.get('X-Vibe-Proxy-Duration-Ms'));
         if (Number.isFinite(pd)) {
@@ -399,6 +419,10 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
             upstreamDurationMs: Number(response.headers.get('X-Vibe-Upstream-Duration-Ms')) || 0,
             endpoint: response.headers.get('X-Vibe-Upstream-Endpoint') || 'unknown',
             timeoutMs: Number(response.headers.get('X-Vibe-Timeout-Ms')) || timeoutMs,
+            // V5.1: Endpoint normalization diagnostics
+            normalizedEndpoint: response.headers.get('X-Vibe-Normalized-Endpoint') || response.headers.get('X-Vibe-Upstream-Endpoint') || 'unknown',
+            endpointKind: response.headers.get('X-Vibe-Endpoint-Kind') || '',
+            endpointWarnings: (response.headers.get('X-Vibe-Endpoint-Warnings') || '').split('; ').filter(Boolean),
           };
         }
       } catch { /* headers unavailable */ }
@@ -423,6 +447,11 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
           timeoutMs: proxyTiming?.timeoutMs || timeoutMs,
           model,
           endpoint: proxyTiming?.endpoint || config.apiUrl,
+          // V5.1: Endpoint normalization diagnostics
+          normalizedEndpoint: proxyTiming?.normalizedEndpoint || config.apiUrl,
+          endpointKind: proxyTiming?.endpointKind || '',
+          endpointWarnings: proxyTiming?.endpointWarnings || [],
+          apiUrlInput: config.apiUrl,
           status: response.status,
           ok: response.ok,
           responseChars: rawText.length,
@@ -446,7 +475,25 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
             ? (errorValue as Record<string, unknown>).message as string
             : rawText.slice(0, 300);
 
-        throw new VibeAIError('http', `AI API 返回错误 (${response.status}): ${errorMessage}`);
+        // V5.1: Check for /v1/v1 duplication in endpoint
+        const normalizedEp = proxyTiming?.normalizedEndpoint || '';
+        if (/\/v1\/v1(\/|$)/i.test(normalizedEp)) {
+          throw new VibeAIError('connection', '检测到 endpoint 被错误拼接为 /v1/v1/chat/completions，请修复 URL 归一化逻辑。');
+        }
+
+        // V5.1: Better error messages based on HTTP status
+        const statusPrefix = response.status === 401 ? 'API key 无效或没有权限。'
+          : response.status === 403 ? 'API key 无权限访问该模型或服务。'
+          : response.status === 404 ? `endpoint 或模型名错误。请检查最终请求地址和模型名。${normalizedEp ? ` 最终请求: ${normalizedEp}` : ''}`
+          : response.status === 429 ? '额度不足或触发限流。'
+          : response.status === 502 || response.status === 503 || response.status === 504 ? '代理或上游 API 暂时不可用。请查看 Last AI Timing 判断是代理问题还是上游问题。'
+          : '';
+
+        const detail = statusPrefix
+          ? `${statusPrefix} (HTTP ${response.status}) ${errorMessage}`
+          : `AI API 返回错误 (${response.status}): ${errorMessage}`;
+
+        throw new VibeAIError('http', detail);
       }
 
       try {

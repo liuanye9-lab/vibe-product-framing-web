@@ -1,5 +1,42 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V5.1 — OpenAI-Compatible URL Normalization Patch (2026-06-01)
+
+### Added
+- `shared/endpointNormalizer.ts`: unified endpoint normalizer used by frontend, Vite proxy, and Vercel proxy
+- `src/api/endpointNormalizer.ts`: re-export for frontend
+- Endpoint Preview card on SettingsPage — shows normalized endpoint, kind, warnings, errors in real-time
+- URL compatibility self-test button + results table on SettingsPage
+- `runEndpointNormalizerSelfTest()`: covers all user URL formats (root, /v1, /v1/chat, full, double /v1)
+- Custom Gateway and LLM Token presets with notes about model name requirements
+- `X-Vibe-Normalized-Endpoint`, `X-Vibe-Endpoint-Kind`, `X-Vibe-Endpoint-Warnings` proxy response headers
+- `normalizedEndpoint`, `endpointKind`, `endpointWarnings`, `apiUrlInput` fields in `AITimingDiagnostic`
+- Last AI Timing panel shows user-input URL, normalized endpoint, endpoint kind, warnings
+
+### Changed
+- `api/ai-proxy.ts`: replaced internal `normalizeChatCompletionsEndpoint` with shared normalizer
+- `vite.config.ts`: replaced internal `normalizeChatCompletionsEndpoint` with shared normalizer
+- `src/api/aiDiagnostics.ts`: added V5.1 fields to `AITimingDiagnostic` interface
+- `src/api/evaluate.ts`: reads new V5.1 headers, improved HTTP error messages (401/403/404/429/502/503/504)
+- `getAIErrorMessage()`: specific messages for URL duplication, auth errors, rate limits, upstream failures, timeouts
+- GLM preset: removed default `/api/paas` URL, now prompts user for correct endpoint
+- OpenAI preset: model changed to `gpt-4o-mini`
+- API URL input hint: updated to mention root URL and /v1 support
+
+### Fixed
+- **`/v1` normalized to `/v1/v1/chat/completions`** — the core bug in api/ai-proxy.ts line 39
+- **Local proxy and Vercel proxy used different normalization logic** — now both use `shared/endpointNormalizer.ts`
+- **Third-party OpenAI-compatible gateway URLs** (gpt-agent.cc, api.llm-token.cn) now handled correctly
+- **Misleading API error messages** — now distinguishes URL errors, key errors, model errors, quota errors, timeouts
+- Preset GLM with `/api/paas` URL would always fail — removed
+
+### Not Changed
+- Agent runtime business logic
+- ProductBrief schema
+- localStorage project history
+- API required runtime policy
+- Mock fallback remains disabled
+
 ## V4.9 — API Timeout Diagnosis & Streaming Readiness Patch (2026-05-31)
 
 ### Added

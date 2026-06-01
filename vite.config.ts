@@ -2,29 +2,7 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
-
-function normalizeChatCompletionsEndpoint(rawApiUrl: string): string {
-  const cleanUrl = rawApiUrl.trim().replace(/\/+$/, '')
-
-  if (/\/chat\/completions$/i.test(cleanUrl)) {
-    return cleanUrl
-  }
-
-  if (/\/v1$/i.test(cleanUrl)) {
-    return `${cleanUrl}/chat/completions`
-  }
-
-  if (/\/v1\/chat$/i.test(cleanUrl)) {
-    return `${cleanUrl}/completions`
-  }
-
-  // Non-standard paths: if it contains /api/paas but no /chat/completions, don't guess
-  if (/\/api\/paas/i.test(cleanUrl) && !/\/chat\/completions$/i.test(cleanUrl)) {
-    return rawApiUrl
-  }
-
-  return `${cleanUrl}/v1/chat/completions`
-}
+import { normalizeOpenAICompatibleEndpoint } from './shared/endpointNormalizer'
 
 function normalizeTimeoutMs(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value)
@@ -77,7 +55,7 @@ function localAiProxy(): Plugin {
               timeoutMs?: number
             }
 
-            const apiUrl = payload.apiUrl?.trim().replace(/\/+$/, '')
+            const apiUrl = payload.apiUrl?.trim()
             const apiKey = payload.apiKey?.trim()
 
             if (!apiUrl || !apiKey || !payload.body) {
@@ -87,25 +65,32 @@ function localAiProxy(): Plugin {
               return
             }
 
-            if (!/^https?:\/\//i.test(apiUrl)) {
-              res.statusCode = 400
-              res.setHeader('Content-Type', 'application/json; charset=utf-8')
-              res.end(JSON.stringify({ error: 'apiUrl must start with http:// or https://' }))
-              return
-            }
+            // V5.1: Use unified endpoint normalizer (same as api/ai-proxy.ts)
+            const normalized = normalizeOpenAICompatibleEndpoint(apiUrl)
 
-            endpoint = normalizeChatCompletionsEndpoint(apiUrl)
-            timeoutMs = normalizeTimeoutMs(payload.timeoutMs)
-
-            // Validate non-standard endpoints
-            if (!/\/chat\/completions$/i.test(endpoint)) {
+            if (normalized.kind === 'invalid' || normalized.errors.length > 0) {
               res.statusCode = 400
               res.setHeader('Content-Type', 'application/json; charset=utf-8')
               res.end(JSON.stringify({
-                error: '该服务商 API 路径可能不是 OpenAI-compatible，请填写完整 chat completions endpoint。',
+                error: normalized.errors.join('；') || 'API URL 无效。',
+                endpointDiagnostics: normalized,
               }))
               return
             }
+
+            // Safety: /v1/v1 should never reach upstream
+            if (/\/v1\/v1(\/|$)/i.test(normalized.endpoint)) {
+              res.statusCode = 400
+              res.setHeader('Content-Type', 'application/json; charset=utf-8')
+              res.end(JSON.stringify({
+                error: 'Endpoint normalizer 出错：endpoint 仍包含 /v1/v1。请更新代码或使用 root URL。',
+                endpointDiagnostics: normalized,
+              }))
+              return
+            }
+
+            endpoint = normalized.endpoint
+            timeoutMs = normalizeTimeoutMs(payload.timeoutMs)
 
             const upstream = await fetch(endpoint, {
               method: 'POST',
@@ -120,6 +105,11 @@ function localAiProxy(): Plugin {
             const text = await upstream.text()
             res.statusCode = upstream.status
             res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/json; charset=utf-8')
+            // V5.1: Endpoint normalization diagnostics
+            const maskedEndpoint = endpoint.replace(/\/\/[^@/]+@/, '//***@')
+            res.setHeader('X-Vibe-Normalized-Endpoint', maskedEndpoint)
+            res.setHeader('X-Vibe-Endpoint-Kind', normalized.kind)
+            res.setHeader('X-Vibe-Endpoint-Warnings', normalized.warnings.join('; '))
             res.end(text)
           } catch (error) {
             res.statusCode = 502
