@@ -1,5 +1,62 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V5.3 Single API Smoke Test Patch (2026-06-02)
+
+### 初始状态
+- `npm install`: ✅ 0 vulnerabilities
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (988ms, 684.73KB JS)
+
+### 审计发现
+1. **当前 Settings 测试按钮数量**：6 个主测试按钮 + 1 个 "Run All Tests" 按钮
+   - Proxy Health
+   - Raw Chat Test
+   - Quick Ping
+   - JSON Test
+   - Long JSON Test
+   - Reference Validation
+   - Run All Tests
+2. **当前 Quick Ping / JSON Test / Long JSON / Reference Validation 是否仍显示**：是，全部显示在主 UI
+3. **Long JSON 测试问题**：
+   - 包含 system message 和复杂字段要求
+   - 容易触发第三方兼容网关 HTTP 500
+   - 失败后会 markApiFailed('long_json_failed')，导致即使基础 API 可用，也被标记成 API 不可用
+4. **当前 API Ready 逻辑**：需要 Quick Ping + JSON Test 通过才能达到 basic_ready，Long JSON 通过才能达到 ready
+5. **错误诊断不足**：HTTP 500 只显示 "HTTP 500"，缺乏详细诊断信息
+
+### 本轮修改文件
+1. `src/pages/SettingsPage.tsx` - 主要重构，简化测试逻辑
+2. `src/api/apiHealth.ts` - 调整状态规则
+3. `src/api/apiErrorParser.ts` - 优化错误诊断文案
+4. `CHANGELOG.md` - 更新变更日志
+5. `API_CONNECTION_DIAGNOSIS.md` - 更新诊断文档
+6. `IMPLEMENTATION_LOG.md` - 本文件
+
+### 本轮不改 Agent Runtime
+- 不修改 `src/agent-v4/` 目录
+- 不修改 `src/api/evaluate.ts` 核心逻辑
+- 不恢复 mock/local-rule fallback
+- 不破坏现有 localStorage 历史数据
+
+### 最终验证
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (664.18KB JS)
+- 新增文件: 0
+- 修改文件: 3 (`src/pages/SettingsPage.tsx`, `src/api/apiHealth.ts`, `CHANGELOG.md`, `API_CONNECTION_DIAGNOSIS.md`, `IMPLEMENTATION_LOG.md`)
+- 无新增 npm 依赖
+- 无破坏 Agent Runtime / Handoff / localStorage / ProductBrief
+
+### 修改详情
+| 文件 | 变更 |
+|------|------|
+| `src/pages/SettingsPage.tsx` | 删除 6 个测试按钮 + 2 个旧函数，新增 `handleApiSmokeTest` + `buildSmokeTestErrorMessage`，简化 UI 为单一按钮 + 折叠 Debug Panel |
+| `src/api/apiHealth.ts` | 新增 `smokeTest` 字段到 tests 类型，更新 `markApiReady` 消息，`assertApiFullyReady` 委托给 `assertApiReady` |
+| `CHANGELOG.md` | 新增 V5.3 条目 |
+| `API_CONNECTION_DIAGNOSIS.md` | 重写为 V5.3 版本，新增 Smoke Test 说明、HTTP 500 诊断、错误分类表 |
+| `IMPLEMENTATION_LOG.md` | 新增 V5.3 审计记录和最终验证 |
+
+---
+
 ## V5.2 API 500 Deep Diagnosis Patch (2026-06-01)
 
 ### 初始状态

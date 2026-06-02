@@ -9,6 +9,11 @@
  * - Added basic_ready state (Quick Ping + JSON Test pass)
  * - Split failure states: proxy_failed, quick_ping_failed, json_failed, long_json_failed
  * - Agent can run with basic_ready; Handoff requires ready.
+ *
+ * V5.3 changes:
+ * - Added smokeTest field to tests
+ * - API Ready based on single smoke test (non-empty model response)
+ * - Long JSON / Reference Validation no longer block API Ready
  */
 
 export type ApiHealthStatus =
@@ -32,6 +37,7 @@ export interface ApiHealthState {
   details?: string;
   /** V4.9: per-test results */
   tests?: {
+    smokeTest?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string; checkedAt?: string };
     quickPing?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string };
     jsonTest?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string };
     longJson?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string };
@@ -91,20 +97,20 @@ export function isApiFullyReady(): boolean {
 /**
  * Throw if API is not at least basic_ready.
  * Must be called at the start of every core workflow path.
- * V4.9: basic_ready is sufficient for Agent turns.
+ * V5.3: basic_ready is sufficient for all tasks (smoke test passed).
  */
 export function assertApiReady(): void {
   const health = getApiHealth();
   if (health.status === 'ready' || health.status === 'basic_ready') return;
 
   const messages: Record<ApiHealthStatus, string> = {
-    unknown: 'API 状态未知。请进入设置页完成 Quick Ping + JSON Parse 测试。',
+    unknown: 'API 状态未知。请进入设置页点击「测试并保存 API」完成 Smoke Test。',
     not_configured: 'API 未配置。请先进入设置页填写 API URL、API Key 和模型名。',
     proxy_failed: 'API 代理不可达。请检查部署环境是否正常。',
-    quick_ping_failed: 'Quick Ping 失败。API 地址、Key 或模型名可能无效。请在设置页重新测试。',
-    json_failed: '模型已响应，但没有返回有效 JSON。请换稳定模型或降低输出长度。',
-    long_json_failed: '基础 API 可用（Quick Ping/JSON 通过），但长 JSON 生成未通过。Agent 仍可运行，但 Handoff 等功能需要长 JSON 测试通过。',
-    validation_failed: '模型输出没有通过业务校验。请检查模型能力或更换模型。',
+    quick_ping_failed: 'API Smoke Test 失败。请在设置页重新测试。',
+    json_failed: 'API Smoke Test 失败（模型返回为空）。请检查模型名或服务商状态。',
+    long_json_failed: '复杂测试失败，但 API 基础可用性未受影响。请在设置页重新测试。',
+    validation_failed: '输出校验失败，但 API 基础可用性未受影响。请在设置页重新测试。',
     basic_ready: '', // unreachable
     ready: '', // unreachable
   };
@@ -114,26 +120,19 @@ export function assertApiReady(): void {
 }
 
 /**
- * Throw if API is not fully ready (all 4 tests).
- * Use for Handoff and other long-generation tasks.
+ * V5.3: assertApiFullyReady now same as assertApiReady (smoke test is sufficient).
  */
 export function assertApiFullyReady(): void {
-  const health = getApiHealth();
-  if (health.status === 'ready') return;
-  if (health.status === 'basic_ready') {
-    throw new Error('API 基础可用（Quick Ping/JSON 通过），但 Handoff 等长生成任务需要完整 API 验证通过（Long JSON + Reference Validation）。请在设置页完成全部测试。');
-  }
-  // Reuse assertApiReady for other cases
   assertApiReady();
 }
 
 /**
- * Mark API as fully ready (all 4 tests pass).
+ * Mark API as fully ready (smoke test passed — non-empty model response).
  */
 export function markApiReady(details?: Partial<ApiHealthState>): void {
   saveApiHealth({
     status: 'ready',
-    message: 'API 已通过全部验证（Quick Ping + JSON + Long JSON + Reference）。',
+    message: 'API 已通过 Smoke Test（模型返回非空内容）。',
     ...details,
     checkedAt: new Date().toISOString(),
   });

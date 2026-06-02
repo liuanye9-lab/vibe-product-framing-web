@@ -14,20 +14,15 @@ import {
   Home,
   Activity,
   Search,
-  Heart,
-  MessageSquare,
 } from 'lucide-react';
 import {
   clearAIConfig,
-  clearAICache,
   extractAIContent,
-  extractJson,
   getAIConfig,
   getAIConnectionStatus,
   normalizeApiUrl,
   saveAIConfig,
   saveAIConnectionStatus,
-  validateAIOutputReferencesInput,
   type AIConnectionStatus,
 } from '../api/evaluate';
 import {
@@ -35,17 +30,8 @@ import {
   getApiHealth,
   markApiFailed,
   markApiReady,
-  markApiBasicReady,
-  updateApiHealthTests,
   type ApiHealthStatus,
 } from '../api/apiHealth';
-import {
-  getTimeoutProfile,
-} from '../api/timeoutProfile';
-import {
-  getLastAITiming,
-  type AITimingDiagnostic,
-} from '../api/aiDiagnostics';
 import {
   normalizeOpenAICompatibleEndpoint,
   runEndpointNormalizerSelfTest,
@@ -99,40 +85,6 @@ const PRESETS = [
   },
 ];
 
-/** Minimal brief used for Settings long JSON test validation */
-const LONG_TEST_BRIEF = {
-  id: 'settings-test',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  rawIdea: '雅思生词和错题管理工具',
-  mode: 'beginner' as const,
-  ideaInput: {
-    rawIdea: '雅思生词和错题管理工具',
-    targetUser: '正在备考雅思、需要复盘阅读和听力错题的学生',
-    scenario: '做完剑桥雅思真题后整理生词、同义替换和错题原因',
-    problem: '生词、同义替换和错题原因分散记录，无法形成可复盘的词库和错题模式',
-    projectType: 'Web App',
-  },
-  stages: {
-    discovery: {} as Record<string, unknown>,
-    product: {} as Record<string, unknown>,
-    business: {} as Record<string, unknown>,
-    technical: {} as Record<string, unknown>,
-    mvp: {} as Record<string, unknown>,
-    blindSpot: {} as Record<string, unknown>,
-  },
-  steps: {} as Record<string, unknown>,
-  developmentPrompt: '',
-} as unknown as import('../types').ProductBrief;
-
-function isUsefulString(value: unknown, minLength = 10): value is string {
-  return typeof value === 'string'
-    && value.trim().length >= minLength
-    && value.trim() !== '...'
-    && value.trim() !== '待补充'
-    && value.trim() !== 'N/A';
-}
-
 interface TestResult {
   status: 'idle' | 'running' | 'pass' | 'fail';
   durationMs?: number;
@@ -165,39 +117,17 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<AIConnectionStatus>(getAIConnectionStatus());
-  const [lastTiming, setLastTiming] = useState<AITimingDiagnostic | null>(getLastAITiming());
 
-  // V4.9: Layered test results
-  const [quickPing, setQuickPing] = useState<TestResult>({ status: 'idle' });
-  const [jsonTest, setJsonTest] = useState<TestResult>({ status: 'idle' });
-  const [longJson, setLongJson] = useState<TestResult>({ status: 'idle' });
-  const [refValidation, setRefValidation] = useState<TestResult>({ status: 'idle' });
+  // V5.3: Single smoke test result
+  const [smokeTest, setSmokeTest] = useState<TestResult>({ status: 'idle' });
 
   // V5.1: Endpoint preview & self-test
   const [endpointPreview, setEndpointPreview] = useState<NormalizedEndpointResult | null>(null);
   const [selfTestResults, setSelfTestResults] = useState<EndpointSelfTestCase[] | null>(null);
 
-  // V5.2: New states
-  const [proxyHealth, setProxyHealth] = useState<TestResult & { details?: { ok?: boolean; version?: string; selfTest?: { passed?: boolean; total?: number; failed?: number; failedCases?: unknown[] } } }>({ status: 'idle' });
-  const [rawChat, setRawChat] = useState<TestResult>({ status: 'idle' });
+  // V5.3: Simplified states
   const [apiDebugInfo, setApiDebugInfo] = useState<ApiDebugInfo | null>(null);
-  const [disableSystemMessage, setDisableSystemMessage] = useState(() => {
-    try { return localStorage.getItem('vibepilot_compat_disable_system') === 'true'; } catch { return false; }
-  });
-
-  // V5.2: Proxy health disabled state — if proxy health fails, disable other tests
-  const proxyHealthFailed = proxyHealth.status === 'fail';
-
-  // Old results kept for backward compatibility in UI
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
-  const [longTestResult, setLongTestResult] = useState<{
-    apiConnection?: boolean;
-    jsonGeneration?: boolean;
-    requiredFields?: { passed: boolean; missingFields: string[]; msg: string };
-    refValidation?: { passed: boolean; msg: string };
-  } | null>(null);
 
   useEffect(() => {
     const config = getAIConfig();
@@ -208,19 +138,8 @@ export default function SettingsPage() {
     }
     // Restore saved test states
     const health = getApiHealth();
-    if (health.tests) {
-      if (health.tests.quickPing) {
-        setQuickPing({ status: health.tests.quickPing.status === 'pass' ? 'pass' : 'fail', durationMs: health.tests.quickPing.durationMs, error: health.tests.quickPing.error });
-      }
-      if (health.tests.jsonTest) {
-        setJsonTest({ status: health.tests.jsonTest.status === 'pass' ? 'pass' : 'fail', durationMs: health.tests.jsonTest.durationMs, error: health.tests.jsonTest.error });
-      }
-      if (health.tests.longJson) {
-        setLongJson({ status: health.tests.longJson.status === 'pass' ? 'pass' : 'fail', durationMs: health.tests.longJson.durationMs, error: health.tests.longJson.error });
-      }
-      if (health.tests.refValidation) {
-        setRefValidation({ status: health.tests.refValidation.status === 'pass' ? 'pass' : 'fail', error: health.tests.refValidation.reason });
-      }
+    if (health.tests?.smokeTest) {
+      setSmokeTest({ status: health.tests.smokeTest.status === 'pass' ? 'pass' : 'fail', durationMs: health.tests.smokeTest.durationMs, error: health.tests.smokeTest.error });
     }
   }, []);
 
@@ -236,7 +155,7 @@ export default function SettingsPage() {
 
   const hasConfig = apiUrl.trim() && apiKey.trim() && model.trim();
   const storedConfig = getAIConfig();
-  const isTesting = quickPing.status === 'running' || jsonTest.status === 'running' || longJson.status === 'running';
+  const isTesting = smokeTest.status === 'running';
 
   const setStatus = (status: AIConnectionStatus) => {
     saveAIConnectionStatus(status);
@@ -245,130 +164,45 @@ export default function SettingsPage() {
 
   const markConfigChanged = (nextApiUrl: string, nextApiKey: string, nextModel: string) => {
     setStatus(nextApiUrl.trim() && nextApiKey.trim() && nextModel.trim() ? 'failed' : 'unconfigured');
-    setTestResult(null);
-  };
-
-  const handleSave = () => {
-    if (!hasConfig) return;
-    const normalizedApiUrl = normalizeApiUrl(apiUrl);
-    setApiUrl(normalizedApiUrl);
-    saveAIConfig({ apiUrl: normalizedApiUrl, apiKey: apiKey.trim(), model: model.trim() });
-    clearAICache();
-    clearApiHealth();
-    setStatus('failed');
-    setSaved(true);
-    setTestResult(null);
-    setLongTestResult(null);
-    resetAllTests();
-    setTimeout(() => setSaved(false), 2000);
   };
 
   const resetAllTests = () => {
-    setQuickPing({ status: 'idle' });
-    setJsonTest({ status: 'idle' });
-    setLongJson({ status: 'idle' });
-    setRefValidation({ status: 'idle' });
-    setTestResult(null);
-    setLongTestResult(null);
+    setSmokeTest({ status: 'idle' });
+    setApiDebugInfo(null);
   };
 
-  // ---- V4.9: Quick Ping Test ----
-  const handleQuickPing = async () => {
+  // ---- V5.3: Single API Smoke Test ----
+  const handleApiSmokeTest = async () => {
     if (!hasConfig) return;
-    const profile = getTimeoutProfile('quick_ping');
-    setQuickPing({ status: 'running' });
-    setTestResult(null);
+    setSmokeTest({ status: 'running' });
+    setApiDebugInfo(null);
 
-    const startedAt = getTime();
-    try {
-      const signal = AbortSignal?.timeout?.(profile.timeoutMs + profile.clientExtraMs) || undefined;
-      const response = await fetch('/api/ai-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal,
-        body: JSON.stringify({
-          apiUrl: normalizeApiUrl(apiUrl),
-          apiKey: apiKey.trim(),
-          timeoutMs: profile.timeoutMs,
-          body: {
-            model: model.trim(),
-            messages: disableSystemMessage
-              ? [{ role: 'user' as const, content: 'Return JSON only: {"ok":true}' }]
-              : [
-                  { role: 'system' as const, content: 'Return JSON only.' },
-                  { role: 'user' as const, content: 'Return {"ok":true}.' },
-                ],
-            max_tokens: profile.maxTokens,
-            temperature: 0,
-          },
-        }),
-      });
-
-      const durationMs = getTime() - startedAt;
-      const rawText = await response.text();
-
-      if (!response.ok) {
-        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
-        const errMsg = parsed.message;
-        setQuickPing({ status: 'fail', durationMs, error: `${errMsg} [${parsed.errorCategory}]` });
-        updateApiHealthTests({ quickPing: { status: 'fail', durationMs, error: errMsg } });
-        markApiFailed('quick_ping_failed', `Quick Ping 失败 (${durationMs}ms): ${errMsg}`);
-        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
-        setStatus('failed');
-        saveDebugFromProxyResponse('quick_ping', response, rawText, durationMs, profile.timeoutMs);
-        return;
-      }
-
-      let data: Record<string, unknown>;
-      try { data = JSON.parse(rawText); } catch {
-        setQuickPing({ status: 'fail', durationMs, error: 'Response not JSON' });
-        updateApiHealthTests({ quickPing: { status: 'fail', durationMs } });
-        markApiFailed('quick_ping_failed', `Quick Ping 失败 (${durationMs}ms): 响应不是 JSON`);
-        setStatus('failed');
-        return;
-      }
-
-      extractAIContent(data); // validate reachability
-
-      setQuickPing({ status: 'pass', durationMs });
-      updateApiHealthTests({ quickPing: { status: 'pass', durationMs } });
-      setTestResult({ ok: true, msg: `Quick Ping 通过 (${durationMs}ms)！API 基本可达。` });
-      setLastTiming(getLastAITiming());
-
-      // If quick ping passes, check jsonTest state
-      if (jsonTest.status === 'pass') {
-        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
-        setStatus('connected');
-        if (longJson.status === 'pass' && refValidation.status === 'pass') {
-          markApiReady({ model: model.trim(), apiUrl: normalizeApiUrl(apiUrl), tests: getApiHealth().tests });
-        } else {
-          markApiBasicReady({ model: model.trim(), apiUrl: normalizeApiUrl(apiUrl), tests: getApiHealth().tests });
-        }
-      }
-    } catch (err) {
-      const durationMs = getTime() - startedAt;
-      const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
-      const errorMsg = isTimeout
-        ? `Quick Ping 超时：项目在 ${Math.round(profile.timeoutMs / 1000)} 秒内没有拿到最小响应。可能是代理函数不可达、网络阻塞、API key 无效、模型名错误，或部署环境无法访问上游 API。`
-        : `Quick Ping 失败：${err instanceof Error ? err.message : String(err)}`;
-      setQuickPing({ status: 'fail', durationMs, error: errorMsg });
-      updateApiHealthTests({ quickPing: { status: 'fail', durationMs, error: errorMsg } });
-      markApiFailed('quick_ping_failed', errorMsg);
+    // Step 1: Validate endpoint
+    const normalized = normalizeOpenAICompatibleEndpoint(apiUrl);
+    if (normalized.kind === 'invalid' || normalized.errors.length > 0) {
+      const errMsg = `Endpoint 无效：${normalized.errors.join('；') || 'URL 格式不正确'}`;
+      setSmokeTest({ status: 'fail', error: errMsg });
+      markApiFailed('not_configured', errMsg);
       setStatus('failed');
-    } finally {
-      setLastTiming(getLastAITiming());
+      setApiDebugInfo({
+        testName: 'quick_ping',
+        inputApiUrl: apiUrl,
+        normalizedEndpoint: normalized.endpoint,
+        endpointKind: normalized.kind,
+        endpointWarnings: normalized.warnings,
+        endpointErrors: normalized.errors,
+        model: model.trim(),
+        errorCategory: 'bad_request',
+        errorMessage: errMsg,
+        timestamp: new Date().toISOString(),
+      });
+      return;
     }
-  };
 
-  // ---- V4.9: JSON Test ----
-  const handleJsonTest = async () => {
-    if (!hasConfig) return;
-    const profile = getTimeoutProfile('json_test');
-    setJsonTest({ status: 'running' });
-
+    // Step 2: Send minimal smoke test request
     const startedAt = getTime();
     try {
-      const signal = AbortSignal?.timeout?.(profile.timeoutMs + profile.clientExtraMs) || undefined;
+      const signal = AbortSignal?.timeout?.(45000) || undefined;
       const response = await fetch('/api/ai-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -376,311 +210,97 @@ export default function SettingsPage() {
         body: JSON.stringify({
           apiUrl: normalizeApiUrl(apiUrl),
           apiKey: apiKey.trim(),
-          timeoutMs: profile.timeoutMs,
+          timeoutMs: 30000,
           body: {
             model: model.trim(),
             messages: [
-              { role: 'system', content: '你是 API 连通性测试器。只返回 JSON，不要 Markdown。' },
-              { role: 'user', content: '请返回 {"ok":true,"message":"连接成功","model":"<your model name>","task":"json_test"}，不要输出其他内容。' },
-            ],
-            max_tokens: profile.maxTokens,
-            temperature: 0,
-          },
-        }),
-      });
-
-      const durationMs = getTime() - startedAt;
-      const rawText = await response.text();
-
-      if (!response.ok) {
-        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
-        const errMsg = parsed.message;
-        setJsonTest({ status: 'fail', durationMs, error: `${errMsg} [${parsed.errorCategory}]` });
-        updateApiHealthTests({ jsonTest: { status: 'fail', durationMs, error: errMsg } });
-        markApiFailed('json_failed', `JSON Test 失败 (${durationMs}ms): ${errMsg}`);
-        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
-        setStatus('failed');
-        saveDebugFromProxyResponse('json_test', response, rawText, durationMs, profile.timeoutMs);
-        return;
-      }
-
-      let data: Record<string, unknown>;
-      try { data = JSON.parse(rawText); } catch {
-        setJsonTest({ status: 'fail', durationMs, error: '响应不是有效 JSON' });
-        updateApiHealthTests({ jsonTest: { status: 'fail', durationMs } });
-        markApiFailed('json_failed', `JSON Test 失败 (${durationMs}ms): 响应不是有效 JSON`);
-        setStatus('failed');
-        return;
-      }
-
-      const content = extractAIContent(data);
-      if (!content) {
-        setJsonTest({ status: 'fail', durationMs, error: '模型返回为空' });
-        updateApiHealthTests({ jsonTest: { status: 'fail', durationMs } });
-        markApiFailed('json_failed', `JSON Test 失败 (${durationMs}ms): 模型返回为空`);
-        setStatus('failed');
-        return;
-      }
-
-      const parsed = extractJson<{ ok?: boolean }>(content);
-      const isValid = parsed && parsed.ok === true;
-
-      setJsonTest({ status: isValid ? 'pass' : 'fail', durationMs, error: isValid ? undefined : 'JSON 中 ok !== true' });
-      updateApiHealthTests({ jsonTest: { status: isValid ? 'pass' : 'fail', durationMs } });
-      setTestResult({ ok: true, msg: `JSON Test 通过 (${durationMs}ms)！模型可返回结构化 JSON。` });
-
-      if (isValid && quickPing.status === 'pass') {
-        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
-        setStatus('connected');
-        markApiBasicReady({ model: model.trim(), apiUrl: normalizeApiUrl(apiUrl), tests: getApiHealth().tests });
-      } else if (!isValid) {
-        markApiFailed('json_failed', `JSON Test: ok !== true (${durationMs}ms)`);
-        setStatus('failed');
-      }
-    } catch (err) {
-      const durationMs = getTime() - startedAt;
-      const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
-      const errorMsg = isTimeout
-        ? `JSON Test 超时：API 已发出请求，但模型没有在 ${Math.round(profile.timeoutMs / 1000)} 秒内返回小 JSON。请检查模型名是否为可用的快速模型。`
-        : `JSON Test 失败：${err instanceof Error ? err.message : String(err)}`;
-      setJsonTest({ status: 'fail', durationMs, error: errorMsg });
-      updateApiHealthTests({ jsonTest: { status: 'fail', durationMs, error: errorMsg } });
-      markApiFailed('json_failed', errorMsg);
-      setStatus('failed');
-    } finally {
-      setLastTiming(getLastAITiming());
-    }
-  };
-
-  // ---- V4.9: Long JSON Test (kept from V4.4 but with updated profile) ----
-  const handleLongJsonTest = async () => {
-    if (!hasConfig) return;
-    const profile = getTimeoutProfile('long_json_test');
-    setLongJson({ status: 'running' });
-    setRefValidation({ status: 'idle' });
-    setLongTestResult(null);
-
-    const startedAt = getTime();
-    const result: NonNullable<typeof longTestResult> = {};
-
-    try {
-      const signal = AbortSignal?.timeout?.(profile.timeoutMs + profile.clientExtraMs) || undefined;
-
-      const response = await fetch('/api/ai-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal,
-        body: JSON.stringify({
-          apiUrl: normalizeApiUrl(apiUrl),
-          apiKey: apiKey.trim(),
-          timeoutMs: profile.timeoutMs,
-          body: {
-            model: model.trim(),
-            messages: [
-              {
-                role: 'system' as const,
-                content: '你是 VibePilot 的长 JSON 生成测试器。你必须只返回一个 JSON 对象，不要 markdown，不要解释，不要使用省略号，不要使用 "..." 作为字段值。',
-              },
               {
                 role: 'user' as const,
-                content: `请基于以下产品想法生成一个可解析 JSON：
-
-产品想法：雅思生词和错题管理工具
-目标用户：正在备考雅思、需要复盘阅读和听力错题的学生
-使用场景：做完剑桥雅思真题后整理生词、同义替换和错题原因
-核心问题：生词、同义替换和错题原因分散记录，无法形成可复盘的词库和错题模式
-
-必须返回以下顶层字段：
-{
-  "referenceEvidence": {
-    "rawIdea": "必须复述产品想法",
-    "targetUser": "必须复述目标用户",
-    "scenario": "必须复述使用场景",
-    "problem": "必须复述核心问题",
-    "summary": "一句话说明输出如何基于当前产品想法"
-  },
-  "productBrief": "不少于 30 个中文字符，必须包含雅思、生词、错题",
-  "mvpScope": "不少于 30 个中文字符，必须包含 Must Have 和 Out of Scope",
-  "devSpec": "不少于 30 个中文字符，必须包含页面、数据结构、验收标准",
-  "developmentPrompt": "不少于 30 个中文字符，必须说明要开发什么、不要开发什么、如何验收"
-}
-
-要求：
-1. 只能返回 JSON，不要 markdown。
-2. 不要使用省略号。
-3. 不要使用空字符串。
-4. 不要把字段嵌套到 data、result、output、content 里。
-5. 所有字段值必须是字符串或对象。`,
+                content: '请只回复一个很短的 JSON：{"ok":true,"pong":"vibe"}',
               },
             ],
-            max_tokens: profile.maxTokens,
+            max_tokens: 80,
             temperature: 0,
           },
         }),
       });
 
       const durationMs = getTime() - startedAt;
+      const rawText = await response.text();
 
-      result.apiConnection = response.ok;
-
+      // Step 3: Handle non-OK response
       if (!response.ok) {
-        const rawText = await response.text();
         const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
-        const errMsg = parsed.message;
-        setLongJson({ status: 'fail', durationMs, error: `${errMsg} [${parsed.errorCategory}]` });
-        updateApiHealthTests({ longJson: { status: 'fail', durationMs, error: errMsg } });
-        setLongTestResult({
-          apiConnection: false,
-          jsonGeneration: false,
-          requiredFields: { passed: false, missingFields: ['N/A'], msg: `API 请求失败: ${errMsg}` },
-          refValidation: { passed: false, msg: 'API 连接失败，无法校验。' },
-        });
-        markApiFailed('long_json_failed', `Long JSON: ${errMsg} (${durationMs}ms)`);
-        saveDebugFromProxyResponse('long_json', response, rawText, durationMs, profile.timeoutMs);
+        const errMsg = buildSmokeTestErrorMessage(parsed.errorCategory, response.status, parsed.message);
+        setSmokeTest({ status: 'fail', durationMs, error: errMsg });
+        markApiFailed('quick_ping_failed', errMsg);
+        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
+        setStatus('failed');
+        saveDebugFromProxyResponse('quick_ping', response, rawText, durationMs, 30000);
         return;
       }
 
-      const rawText = await response.text();
+      // Step 4: Parse response and extract content
       let data: Record<string, unknown>;
       try { data = JSON.parse(rawText); } catch {
-        setLongJson({ status: 'fail', durationMs, error: '代理返回的不是有效 JSON' });
-        updateApiHealthTests({ longJson: { status: 'fail', durationMs } });
-        setLongTestResult({
-          apiConnection: true,
-          jsonGeneration: false,
-          requiredFields: { passed: false, missingFields: ['N/A'], msg: '代理返回的不是有效 JSON' },
-          refValidation: { passed: false, msg: '代理响应格式错误。' },
-        });
-        markApiFailed('json_failed', `Long JSON parse failed (${durationMs}ms)`);
+        const errMsg = '代理返回的不是标准 OpenAI-compatible JSON。请检查该网关是否兼容 Chat Completions 格式。';
+        setSmokeTest({ status: 'fail', durationMs, error: errMsg });
+        markApiFailed('quick_ping_failed', errMsg);
+        setStatus('failed');
         return;
       }
 
       const content = extractAIContent(data);
-      if (!content) {
-        setLongJson({ status: 'fail', durationMs, error: '模型返回为空' });
-        updateApiHealthTests({ longJson: { status: 'fail', durationMs } });
-        setLongTestResult({
-          apiConnection: true,
-          jsonGeneration: false,
-          requiredFields: { passed: false, missingFields: ['N/A'], msg: '模型返回为空' },
-          refValidation: { passed: false, msg: '模型无响应内容。' },
-        });
-        markApiFailed('json_failed', `Long JSON empty (${durationMs}ms)`);
+      if (!content || content.trim().length === 0) {
+        const errMsg = '模型返回为空。请检查模型名是否正确，或服务商是否支持该模型。';
+        setSmokeTest({ status: 'fail', durationMs, error: errMsg });
+        markApiFailed('json_failed', errMsg);
+        setStatus('failed');
         return;
       }
 
-      const parsed = extractJson<Record<string, unknown>>(content);
-      if (!parsed) {
-        setLongJson({ status: 'fail', durationMs, error: 'JSON 解析失败' });
-        updateApiHealthTests({ longJson: { status: 'fail', durationMs } });
-        setLongTestResult({
-          apiConnection: true,
-          jsonGeneration: false,
-          requiredFields: { passed: false, missingFields: ['N/A'], msg: '模型返回无法解析为 JSON' },
-          refValidation: { passed: false, msg: `JSON 解析失败。原始内容：${content.slice(0, 160)}` },
-        });
-        markApiFailed('json_failed', `Long JSON parse failed: cannot parse (${durationMs}ms)`);
-        return;
-      }
-
-      result.jsonGeneration = true;
-      setLongJson({ status: 'pass', durationMs });
-      updateApiHealthTests({ longJson: { status: 'pass', durationMs } });
-
-      const fieldChecks = {
-        referenceEvidence: parsed.referenceEvidence && typeof parsed.referenceEvidence === 'object',
-        productBrief: isUsefulString(parsed.productBrief, 20),
-        mvpScope: isUsefulString(parsed.mvpScope, 20),
-        devSpec: isUsefulString(parsed.devSpec, 20),
-        developmentPrompt: isUsefulString(parsed.developmentPrompt, 20),
-      };
-
-      const missingFields = Object.entries(fieldChecks)
-        .filter(([, ok]) => !ok)
-        .map(([key]) => key);
-
-      if (missingFields.length > 0) {
-        const isDotDotDot = (
-          (typeof parsed.productBrief === 'string' && parsed.productBrief === '...') ||
-          (typeof parsed.mvpScope === 'string' && parsed.mvpScope === '...') ||
-          (typeof parsed.devSpec === 'string' && parsed.devSpec === '...') ||
-          (typeof parsed.developmentPrompt === 'string' && parsed.developmentPrompt === '...')
-        );
-        const hint = isDotDotDot
-          ? '模型可能只复制了模板中的省略号。请检查模型是否理解要求，或在 prompt 中强调不要使用省略号。'
-          : '请检查模型是否只是复读模板或返回省略号/空字符串。';
-
-        setLongTestResult({
-          ...result,
-          requiredFields: { passed: false, missingFields, msg: `关键字段质量不足：${missingFields.join(', ')}。${hint}` },
-          refValidation: { passed: false, msg: '字段不足，无法校验内容相关性。' },
-        });
-        markApiFailed('validation_failed', `Long JSON: fields missing (${missingFields.join(', ')})`);
-        return;
-      }
-
-      result.requiredFields = { passed: true, missingFields: [], msg: '全部关键字段可用。' };
-
-      const validation = validateAIOutputReferencesInput(LONG_TEST_BRIEF, parsed);
-      result.refValidation = {
-        passed: validation.passed,
-        msg: validation.passed ? `通过：${validation.reason}` : `相关性不足：${validation.reason}`,
-      };
-
-      setRefValidation({ status: validation.passed ? 'pass' : 'fail', error: validation.reason });
-      updateApiHealthTests({ refValidation: { status: validation.passed ? 'pass' : 'fail', reason: validation.reason } });
-
-      setLongTestResult(result);
+      // Step 5: Success — content is non-empty, API is ready
+      setSmokeTest({ status: 'pass', durationMs });
       saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
+      saveAIConnectionStatus('connected');
+      markApiReady({
+        model: model.trim(),
+        apiUrl: normalizeApiUrl(apiUrl),
+        tests: {
+          smokeTest: { status: 'pass', durationMs, checkedAt: new Date().toISOString() },
+        },
+      });
       setStatus('connected');
-
-      const allPassed = result.apiConnection && result.jsonGeneration && result.requiredFields.passed && result.refValidation.passed;
-      if (allPassed) {
-        markApiReady({ model: model.trim(), apiUrl: normalizeApiUrl(apiUrl), tests: getApiHealth().tests });
-      } else {
-        const health = getApiHealth();
-        if (health.status === 'basic_ready') {
-          // Keep basic_ready if Quick Ping + JSON Test already passed
-        } else {
-          markApiFailed('validation_failed', `API 验证部分失败。Conn:${result.apiConnection} JSON:${result.jsonGeneration} Fields:${result.requiredFields.passed} Ref:${result.refValidation.passed}`);
-        }
-      }
     } catch (err) {
       const durationMs = getTime() - startedAt;
       const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
       const errorMsg = isTimeout
-        ? `Long JSON Test 超时：基础 API 可能可用，但当前模型生成结构化长 JSON 太慢。建议换更快模型、降低输出长度，或开启流式/后台生成。`
-        : `Long JSON 测试失败：${err instanceof Error ? err.message : String(err)}`;
-      setLongJson({ status: 'fail', durationMs, error: errorMsg });
-      updateApiHealthTests({ longJson: { status: 'fail', durationMs, error: errorMsg } });
-      markApiFailed('long_json_failed', errorMsg);
-      setLongTestResult({
-        apiConnection: false,
-        jsonGeneration: false,
-        requiredFields: { passed: false, missingFields: [], msg: '' },
-        refValidation: { passed: false, msg: isTimeout ? '长 JSON 生成超时，建议换更快模型' : `错误：${err instanceof Error ? err.message : String(err)}` },
-      });
-    } finally {
-      setLastTiming(getLastAITiming());
+        ? `请求超时（>45s）。请检查模型速度、网关稳定性或 timeout 设置。`
+        : `请求失败：${err instanceof Error ? err.message : String(err)}`;
+      setSmokeTest({ status: 'fail', durationMs, error: errorMsg });
+      markApiFailed('quick_ping_failed', errorMsg);
+      setStatus('failed');
     }
   };
 
-  // ---- Run all tests sequentially ----
-  const handleRunAllTests = async () => {
-    if (!hasConfig || isTesting) return;
-    resetAllTests();
-
-    // Step 1: Quick Ping — delegate to existing handler
-    await handleQuickPing();
-    // Wait for state to settle
-    await new Promise((r) => setTimeout(r, 300));
-
-    // Step 2: JSON Test
-    await handleJsonTest();
-    await new Promise((r) => setTimeout(r, 300));
-
-    // Step 3: Long JSON
-    await handleLongJsonTest();
+  // V5.3: Build user-friendly error message based on error category
+  const buildSmokeTestErrorMessage = (category: string, httpStatus: number, rawMessage: string): string => {
+    switch (category) {
+      case 'auth_error':
+        return `API Key 无效或没有权限（HTTP ${httpStatus}）。请检查 API Key 是否正确。`;
+      case 'permission_error':
+        return `API Key 无权限访问该模型（HTTP ${httpStatus}）。请在服务商后台确认权限。`;
+      case 'model_not_found':
+        return `Endpoint 或模型名错误（HTTP ${httpStatus}）。请检查模型名称是否正确。`;
+      case 'quota_or_rate_limit':
+        return `额度不足或触发限流（HTTP ${httpStatus}）。请检查账户余额或稍后重试。`;
+      case 'provider_internal_error':
+        return `上游服务商返回 HTTP ${httpStatus}。API 请求已到达服务商，但服务商内部处理失败。建议检查模型名、服务商后台状态，或使用更简单的 Smoke Test 请求。`;
+      case 'upstream_unavailable':
+        return `上游服务商暂时不可用（HTTP ${httpStatus}）。请稍后重试或检查服务商状态。`;
+      default:
+        return rawMessage || `HTTP ${httpStatus} 请求失败。`;
+    }
   };
 
   const handleClear = () => {
@@ -690,7 +310,6 @@ export default function SettingsPage() {
     setApiUrl('');
     setApiKey('');
     setModel('');
-    setTestResult(null);
     resetAllTests();
   };
 
@@ -704,132 +323,6 @@ export default function SettingsPage() {
   const handleRunSelfTest = () => {
     const results = runEndpointNormalizerSelfTest();
     setSelfTestResults(results);
-  };
-
-  // V5.2: Proxy Health Check
-  const handleProxyHealth = async () => {
-    setProxyHealth({ status: 'running' });
-    try {
-      const response = await fetch('/api/ai-proxy', { method: 'GET' });
-      const rawText = await response.text();
-      let data: Record<string, unknown>;
-      try { data = JSON.parse(rawText); } catch {
-        setProxyHealth({ status: 'fail', error: 'Proxy 返回非 JSON' });
-        return;
-      }
-
-      const ok = data.ok === true;
-      const selfTest = data.normalizerSelfTest as Record<string, unknown> | undefined;
-      setProxyHealth({
-        status: ok ? 'pass' : 'fail',
-        error: ok ? undefined : `Normalizer self-test 有 ${selfTest?.failed || 0} 项失败`,
-        details: {
-          ok,
-          version: typeof data.version === 'string' ? data.version : undefined,
-          selfTest: selfTest ? {
-            passed: selfTest.passed === true,
-            total: typeof selfTest.total === 'number' ? selfTest.total : undefined,
-            failed: typeof selfTest.failed === 'number' ? selfTest.failed : undefined,
-            failedCases: Array.isArray(selfTest.failedCases) ? selfTest.failedCases : undefined,
-          } : undefined,
-        },
-      });
-
-      if (!ok) {
-        setApiDebugInfo({
-          testName: 'proxy_health',
-          inputApiUrl: '/api/ai-proxy (GET)',
-          model: '-',
-          httpStatus: response.status,
-          errorCategory: 'proxy_internal_error',
-          errorMessage: `Normalizer self-test 失败: ${selfTest?.failed || 0} 项`,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    } catch (err) {
-      setProxyHealth({
-        status: 'fail',
-        error: `Proxy 不可达: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
-  };
-
-  // V5.2: Raw Chat Test — minimal request
-  const handleRawChatTest = async () => {
-    if (!hasConfig) return;
-    const profile = getTimeoutProfile('quick_ping');
-    setRawChat({ status: 'running' });
-
-    const startedAt = getTime();
-    try {
-      const messages = disableSystemMessage
-        ? [{ role: 'user' as const, content: 'Say OK' }]
-        : [{ role: 'user' as const, content: 'Say OK' }];
-
-      const signal = AbortSignal?.timeout?.(profile.timeoutMs + profile.clientExtraMs) || undefined;
-      const response = await fetch('/api/ai-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal,
-        body: JSON.stringify({
-          apiUrl: normalizeApiUrl(apiUrl),
-          apiKey: apiKey.trim(),
-          timeoutMs: profile.timeoutMs,
-          body: {
-            model: model.trim(),
-            messages,
-            max_tokens: 10,
-            temperature: 0,
-          },
-        }),
-      });
-
-      const durationMs = getTime() - startedAt;
-      const rawText = await response.text();
-
-      if (!response.ok) {
-        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
-        setRawChat({ status: 'fail', durationMs, error: parsed.message });
-        setApiDebugInfo({
-          testName: 'raw_chat',
-          inputApiUrl: normalizeApiUrl(apiUrl),
-          normalizedEndpoint: parsed.normalizedEndpoint,
-          endpointKind: parsed.endpointKind,
-          endpointWarnings: parsed.endpointWarnings,
-          endpointErrors: parsed.endpointErrors,
-          model: model.trim(),
-          httpStatus: response.status,
-          errorCategory: parsed.errorCategory,
-          errorMessage: parsed.message,
-          upstreamBodyPreview: parsed.upstreamBodyPreview,
-          rawResponsePreview: parsed.rawPreview,
-          timestamp: new Date().toISOString(),
-        });
-        return;
-      }
-
-      let data: Record<string, unknown>;
-      try { data = JSON.parse(rawText); } catch {
-        setRawChat({ status: 'fail', durationMs, error: '响应不是 JSON' });
-        return;
-      }
-
-      const content = extractAIContent(data);
-      if (!content) {
-        setRawChat({ status: 'fail', durationMs, error: '模型返回为空' });
-        return;
-      }
-
-      setRawChat({ status: 'pass', durationMs });
-    } catch (err) {
-      const durationMs = getTime() - startedAt;
-      const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
-      setRawChat({
-        status: 'fail',
-        durationMs,
-        error: isTimeout ? `Raw Chat 超时 (${Math.round(profile.timeoutMs / 1000)}s)` : `Raw Chat 失败: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
   };
 
   // V5.2: Helper to build debug info from a test result
@@ -861,8 +354,7 @@ export default function SettingsPage() {
     });
   };
 
-  const isBasicReady = quickPing.status === 'pass' && jsonTest.status === 'pass';
-  const isFullReady = isBasicReady && longJson.status === 'pass' && refValidation.status === 'pass';
+  const isApiReady = connectionStatus === 'connected' && smokeTest.status === 'pass';
 
   return (
     <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -883,7 +375,7 @@ export default function SettingsPage() {
 
       <main style={{ flex: 1, padding: '2rem' }}>
         <div style={{ maxWidth: 640, margin: '0 auto' }}>
-          {/* V4.9: API Runtime Status Card */}
+          {/* V5.3: API Runtime Status Card */}
           {(() => {
             const health = getApiHealth();
             const statusColors: Record<ApiHealthStatus, string> = {
@@ -892,8 +384,8 @@ export default function SettingsPage() {
               proxy_failed: 'var(--color-danger)',
               quick_ping_failed: 'var(--color-danger)',
               json_failed: 'var(--color-danger)',
-              long_json_failed: 'var(--color-warning)',
-              validation_failed: 'var(--color-warning)',
+              long_json_failed: 'var(--color-text-hint)',
+              validation_failed: 'var(--color-text-hint)',
               basic_ready: 'var(--color-success)',
               ready: 'var(--color-success)',
             };
@@ -901,12 +393,12 @@ export default function SettingsPage() {
               unknown: '状态未知',
               not_configured: '未配置',
               proxy_failed: '代理不可达',
-              quick_ping_failed: 'Quick Ping 失败',
-              json_failed: 'JSON 生成失败',
-              long_json_failed: '长 JSON 失败',
-              validation_failed: '输出校验失败',
-              basic_ready: '基础可用 ✓',
-              ready: '全功能就绪 ✓',
+              quick_ping_failed: 'API 不可用',
+              json_failed: 'API 不可用',
+              long_json_failed: '复杂测试失败（不影响 API 可用性）',
+              validation_failed: '输出校验失败（不影响 API 可用性）',
+              basic_ready: 'API 可用 ✓',
+              ready: 'API 可用 ✓',
             };
             const color = statusColors[health.status] || 'var(--color-text-hint)';
             const label = statusLabels[health.status] || '未知';
@@ -963,9 +455,9 @@ export default function SettingsPage() {
               style={{ marginBottom: 24, borderColor: 'rgba(52,199,89,0.15)' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <Zap size={16} style={{ color: isFullReady ? 'var(--color-success)' : isBasicReady ? 'var(--color-success)' : 'var(--color-warning)' }} />
-                <span style={{ fontSize: 14, fontWeight: 500, color: isFullReady ? 'var(--color-success)' : isBasicReady ? 'var(--color-success)' : 'var(--color-warning)' }}>
-                  {isFullReady ? 'AI 模型全功能就绪' : isBasicReady ? 'AI 模型基础可用' : 'AI 模型已配置，尚未测试成功'}
+                <Zap size={16} style={{ color: isApiReady ? 'var(--color-success)' : 'var(--color-warning)' }} />
+                <span style={{ fontSize: 14, fontWeight: 500, color: isApiReady ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                  {isApiReady ? 'API 可用' : 'API 尚未就绪 — 请点击「测试并保存 API」完成一次最小模型响应测试。'}
                 </span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
@@ -973,11 +465,6 @@ export default function SettingsPage() {
                 &nbsp;·&nbsp;
                 {storedConfig.apiUrl}
               </p>
-              {!isBasicReady && connectionStatus !== 'connected' && (
-                <p style={{ fontSize: 12, color: 'var(--color-warning)', lineHeight: 1.6, marginTop: 6 }}>
-                  保存配置不等于连接成功。请运行 API 测试，通过 Quick Ping 和 JSON Test 后 Agent 才能运行。
-                </p>
-              )}
             </LiquidCard>
           ) : (
             <LiquidCard
@@ -1107,29 +594,24 @@ export default function SettingsPage() {
 
             {/* Actions */}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="vp-btn vp-btn-primary" onClick={handleSave} disabled={!hasConfig || saved}>
-                {saved ? <><Check size={14} /> 已保存</> : '保存配置'}
-              </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleProxyHealth}>
-                {proxyHealth.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 检测中...</> : <><Heart size={14} /> Proxy Health</>}
-              </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleRawChatTest} disabled={!hasConfig || rawChat.status === 'running' || proxyHealthFailed}>
-                {rawChat.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : <><MessageSquare size={14} /> Raw Chat</>}
-              </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleQuickPing} disabled={!hasConfig || quickPing.status === 'running' || proxyHealthFailed}>
-                {quickPing.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : 'Quick Ping'}
-              </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleJsonTest} disabled={!hasConfig || jsonTest.status === 'running' || proxyHealthFailed}>
-                {jsonTest.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : 'JSON Test'}
-              </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleLongJsonTest} disabled={!hasConfig || longJson.status === 'running' || proxyHealthFailed}>
-                {longJson.status === 'running' ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '长 JSON 测试'}
-              </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleRunAllTests} disabled={!hasConfig || isTesting || proxyHealthFailed}>
-                {isTesting ? <><Loader2 size={14} className="vp-spin" /> 测试中...</> : '一键测试全部'}
+              <button
+                className="vp-btn vp-btn-primary"
+                onClick={handleApiSmokeTest}
+                disabled={!hasConfig || isTesting}
+                style={{ minWidth: 160 }}
+              >
+                {isTesting ? (
+                  <><Loader2 size={14} className="vp-spin" /> 测试中...</>
+                ) : smokeTest.status === 'pass' ? (
+                  <><Check size={14} /> API 可用</>
+                ) : smokeTest.status === 'fail' ? (
+                  <><AlertTriangle size={14} /> 重新测试</>
+                ) : (
+                  '测试并保存 API'
+                )}
               </button>
               <button className="vp-btn vp-btn-ghost" onClick={handleRunSelfTest} style={{ fontSize: 13 }}>
-                <Search size={14} /> URL 兼容性自检
+                <Search size={14} /> URL 自检
               </button>
               {storedConfig && (
                 <button className="vp-btn vp-btn-danger-text" onClick={handleClear} style={{ fontSize: 13, color: 'var(--color-danger)' }}>
@@ -1137,297 +619,177 @@ export default function SettingsPage() {
                 </button>
               )}
             </div>
-
-            {/* V5.2: Compatibility Options */}
-            <div style={{ marginTop: 16, padding: '10px 14px', borderRadius: 8, background: 'var(--vp-surface)', border: '1px solid var(--vp-border)' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--color-text-secondary)' }}>
-                Advanced Options (第三方网关兼容)
-              </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={disableSystemMessage}
-                  onChange={(e) => {
-                    setDisableSystemMessage(e.target.checked);
-                    try { localStorage.setItem('vibepilot_compat_disable_system', String(e.target.checked)); } catch { /* storage unavailable */ }
-                  }}
-                />
-                <span>Disable system message (部分第三方网关不支持 system role)</span>
-              </label>
-            </div>
           </LiquidCard>
 
-          {/* V4.9: API Diagnostics Card — layered test results */}
-          <LiquidCard style={{ marginBottom: 16 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Activity size={14} />
-              API 分层诊断
-            </h3>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {[
-                { label: '0. Proxy Health', result: proxyHealth, desc: '验证 /api/ai-proxy 函数是否正常启动', icon: '🏥' },
-                { label: '1. Raw Chat Test', result: rawChat, desc: '最基础请求，不要求 JSON', icon: '💬' },
-                { label: '2. Quick Ping (12s)', result: quickPing, desc: '验证 API 地址和 Key 是否基本可用', icon: '⚡' },
-                { label: '3. JSON Test (30s)', result: jsonTest, desc: '验证模型能否返回小 JSON', icon: '📋' },
-                { label: '4. Long JSON (90s)', result: longJson, desc: '验证模型能否返回结构化长 JSON', icon: '📄' },
-                { label: '5. Reference Validation', result: refValidation, desc: '验证输出与输入相关性', icon: '✅' },
-              ].map((item) => (
-                <div key={item.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13 }}>
-                  <span>
-                    {item.result.status === 'running' ? <Loader2 size={12} className="vp-spin" /> :
-                     item.result.status === 'pass' ? '✅' :
-                     item.result.status === 'fail' ? '❌' : '○'}
-                  </span>
-                  <div style={{ flex: 1 }}>
-                    <span><strong>{item.label}</strong></span>
-                    {item.result.durationMs != null && (
-                      <span style={{ fontSize: 11, color: 'var(--color-text-hint)', marginLeft: 8 }}>{item.result.durationMs}ms</span>
-                    )}
-                    {item.result.error && (
-                      <div style={{ fontSize: 11, color: 'var(--color-danger)', marginTop: 2, lineHeight: 1.5 }}>{item.result.error}</div>
-                    )}
-                    {item.result.status === 'idle' && (
-                      <div style={{ fontSize: 11, color: 'var(--color-text-hint)', marginTop: 2 }}>{item.desc}</div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* V5.2: Proxy Health details */}
-            {proxyHealth.details && (
-              <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: proxyHealth.details.ok ? 'rgba(52,199,89,0.08)' : 'rgba(255,59,48,0.08)', fontSize: 12, lineHeight: 1.8 }}>
-                <strong>Proxy Health:</strong> {proxyHealth.details.ok ? '✅ 正常' : '❌ 异常'}
-                {proxyHealth.details.version && <span style={{ marginLeft: 8 }}>v{proxyHealth.details.version}</span>}
-                {proxyHealth.details.selfTest && (
-                  <div style={{ marginTop: 4 }}>
-                    Normalizer Self-Test: {proxyHealth.details.selfTest.passed ? '✅' : '❌'}
-                    {proxyHealth.details.selfTest.total != null && ` (${proxyHealth.details.selfTest.total} 项)`}
-                    {proxyHealth.details.selfTest.failed != null && proxyHealth.details.selfTest.failed > 0 && (
-                      <span style={{ color: 'var(--color-danger)' }}> — {proxyHealth.details.selfTest.failed} 项失败</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Proxy health failed warning */}
-            {proxyHealthFailed && (
-              <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(255,59,48,0.1)', fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6 }}>
-                /api/ai-proxy 函数自身不可用，请检查 Vercel Function 部署、导入路径或服务端运行时。
-              </div>
-            )}
-
-            {/* Status summary */}
-            <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 8, background: 'var(--vp-surface)', fontSize: 12, lineHeight: 1.6 }}>
-              <strong>状态：</strong>
-              {isFullReady ? '✅ 全功能就绪 — 所有测试通过，Agent 和 Handoff 均可运行' :
-               isBasicReady ? '⚠️ 基础可用 — Quick Ping + JSON 通过，Agent 可运行，但 Handoff 等需要完整验证' :
-               '❌ API 尚未就绪 — 需要至少通过 Quick Ping 和 JSON Test'}
-            </div>
-          </LiquidCard>
-
-          {/* V5.2: API Debug Panel */}
-          {apiDebugInfo && (
-            <LiquidCard style={{ marginBottom: 16, borderColor: 'rgba(255,59,48,0.2)' }}>
-              <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <AlertTriangle size={14} style={{ color: 'var(--color-danger)' }} />
-                API Debug — {apiDebugInfo.testName.replace(/_/g, ' ').toUpperCase()}
-              </h3>
-              <div style={{ fontSize: 12, lineHeight: 1.8, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
-                <span style={{ color: 'var(--color-text-hint)' }}>Input API URL</span>
-                <span style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>{apiDebugInfo.inputApiUrl}</span>
-
-                {apiDebugInfo.normalizedEndpoint && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>Normalized Endpoint</span>
-                    <span style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>{apiDebugInfo.normalizedEndpoint}</span>
-                  </>
-                )}
-
-                {apiDebugInfo.endpointKind && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>Endpoint Kind</span>
-                    <span>{apiDebugInfo.endpointKind}</span>
-                  </>
-                )}
-
-                <span style={{ color: 'var(--color-text-hint)' }}>Model</span>
-                <span>{apiDebugInfo.model}</span>
-
-                {apiDebugInfo.httpStatus != null && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>HTTP Status</span>
-                    <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{apiDebugInfo.httpStatus}</span>
-                  </>
-                )}
-
-                {apiDebugInfo.errorCategory && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>Error Category</span>
-                    <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{apiDebugInfo.errorCategory}</span>
-                  </>
-                )}
-
-                {apiDebugInfo.errorMessage && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>Error Message</span>
-                    <span style={{ color: 'var(--color-danger)' }}>{apiDebugInfo.errorMessage}</span>
-                  </>
-                )}
-
-                {apiDebugInfo.proxyDurationMs != null && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>Proxy Duration</span>
-                    <span>{apiDebugInfo.proxyDurationMs}ms</span>
-                  </>
-                )}
-
-                {apiDebugInfo.upstreamDurationMs != null && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>Upstream Duration</span>
-                    <span>{apiDebugInfo.upstreamDurationMs}ms</span>
-                  </>
-                )}
-
-                {apiDebugInfo.timeoutMs != null && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>Timeout</span>
-                    <span>{apiDebugInfo.timeoutMs}ms ({Math.round(apiDebugInfo.timeoutMs / 1000)}s)</span>
-                  </>
-                )}
-
-                {apiDebugInfo.endpointWarnings && apiDebugInfo.endpointWarnings.length > 0 && (
-                  <>
-                    <span style={{ color: 'var(--color-warning)' }}>Warnings</span>
-                    <span style={{ color: 'var(--color-warning)', fontSize: 10 }}>{apiDebugInfo.endpointWarnings.join('; ')}</span>
-                  </>
-                )}
-
-                <span style={{ color: 'var(--color-text-hint)' }}>Time</span>
-                <span style={{ fontSize: 10 }}>{new Date(apiDebugInfo.timestamp).toLocaleTimeString()}</span>
-              </div>
-
-              {/* Upstream body preview */}
-              {apiDebugInfo.upstreamBodyPreview && (
-                <details style={{ marginTop: 12 }}>
-                  <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                    Upstream Body Preview ({apiDebugInfo.upstreamBodyPreview.length} chars)
-                  </summary>
-                  <pre style={{
-                    marginTop: 8, padding: '8px 12px', borderRadius: 6,
-                    background: 'var(--color-bg-secondary)', fontSize: 10,
-                    lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                    fontFamily: 'monospace',
-                  }}>
-                    {apiDebugInfo.upstreamBodyPreview}
-                  </pre>
-                </details>
-              )}
-
-              {/* Raw response preview for non-JSON */}
-              {apiDebugInfo.rawResponsePreview && (
-                <details style={{ marginTop: 8 }}>
-                  <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                    Raw Response Preview ({apiDebugInfo.rawResponsePreview.length} chars)
-                  </summary>
-                  <pre style={{
-                    marginTop: 8, padding: '8px 12px', borderRadius: 6,
-                    background: 'var(--color-bg-secondary)', fontSize: 10,
-                    lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                    fontFamily: 'monospace',
-                  }}>
-                    {apiDebugInfo.rawResponsePreview}
-                  </pre>
-                </details>
-              )}
-
-              <button
-                className="vp-btn vp-btn-ghost"
-                style={{ marginTop: 8, fontSize: 11 }}
-                onClick={() => setApiDebugInfo(null)}
-              >
-                关闭 Debug Panel
-              </button>
-            </LiquidCard>
-          )}
-
-          {/* V4.9: Last AI Timing */}
-          {lastTiming && (
-            <LiquidCard style={{ marginBottom: 16 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>最近 AI 耗时</h3>
-              <div style={{ fontSize: 12, lineHeight: 1.8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                {lastTiming.apiUrlInput && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>用户输入 API URL</span><span style={{ fontSize: 10 }}>{lastTiming.apiUrlInput}</span>
-                  </>
-                )}
-                {lastTiming.normalizedEndpoint && lastTiming.normalizedEndpoint !== lastTiming.endpoint && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>最终 Endpoint</span><span style={{ fontSize: 10 }}>{lastTiming.normalizedEndpoint}</span>
-                  </>
-                )}
-                {lastTiming.endpointKind && (
-                  <>
-                    <span style={{ color: 'var(--color-text-hint)' }}>Endpoint Kind</span><span>{lastTiming.endpointKind}</span>
-                  </>
-                )}
-                {lastTiming.endpointWarnings && lastTiming.endpointWarnings.length > 0 && (
-                  <>
-                    <span style={{ color: 'var(--color-warning)' }}>Warnings</span><span style={{ color: 'var(--color-warning)', fontSize: 10 }}>{lastTiming.endpointWarnings.join('; ')}</span>
-                  </>
-                )}
-                <span style={{ color: 'var(--color-text-hint)' }}>Model</span><span>{lastTiming.model}</span>
-                <span style={{ color: 'var(--color-text-hint)' }}>Timeout</span><span>{lastTiming.timeoutMs}ms ({Math.round(lastTiming.timeoutMs / 1000)}s)</span>
-                <span style={{ color: 'var(--color-text-hint)' }}>Duration</span><span style={{ color: lastTiming.ok ? 'var(--color-success)' : 'var(--color-danger)' }}>{lastTiming.durationMs}ms</span>
-                <span style={{ color: 'var(--color-text-hint)' }}>Proxy</span><span>{lastTiming.proxyDurationMs || '-'}ms</span>
-                <span style={{ color: 'var(--color-text-hint)' }}>Upstream</span><span>{lastTiming.upstreamDurationMs || '-'}ms</span>
-                <span style={{ color: 'var(--color-text-hint)' }}>Status</span><span style={{ color: lastTiming.ok ? 'var(--color-success)' : 'var(--color-danger)' }}>{lastTiming.ok ? 'OK' : `HTTP ${lastTiming.status}`}</span>
-                <span style={{ color: 'var(--color-text-hint)' }}>Chars</span><span>{lastTiming.responseChars}</span>
-                <span style={{ color: 'var(--color-text-hint)' }}>Endpoint</span><span style={{ fontSize: 10 }}>{lastTiming.endpoint}</span>
-                <span style={{ color: 'var(--color-text-hint)' }}>Time</span><span style={{ fontSize: 10 }}>{lastTiming.timestamp ? new Date(lastTiming.timestamp).toLocaleTimeString() : '-'}</span>
-              </div>
-            </LiquidCard>
-          )}
-
-          {/* Long JSON test result (legacy detail) */}
-          {longTestResult && (
-            <LiquidCard style={{ marginBottom: 16 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 500, marginBottom: 12 }}>长 JSON 生成测试详情</h3>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {[
-                  { label: 'API Connection', passed: longTestResult.apiConnection },
-                  { label: 'JSON Parse', passed: longTestResult.jsonGeneration },
-                  { label: 'Required Fields', passed: longTestResult.requiredFields?.passed, msg: longTestResult.requiredFields?.msg, missing: longTestResult.requiredFields?.missingFields },
-                  { label: 'Reference Validation', passed: longTestResult.refValidation?.passed, msg: longTestResult.refValidation?.msg },
-                ].map((item) => (
-                  <div key={item.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13 }}>
-                    <span>{item.passed ? '✅' : '❌'}</span>
-                    <div>
-                      <span><strong>{item.label}:</strong> {item.passed ? '通过' : item.msg || '不通过'}</span>
-                      {item.missing && item.missing.length > 0 && (
-                        <div style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
-                          缺失/不足: {item.missing.join(', ')}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </LiquidCard>
-          )}
-
-          {/* Short test result */}
-          {testResult && (
+          {/* V5.3: Smoke Test Result */}
+          {smokeTest.status === 'pass' && (
             <LiquidCard
-              style={{ marginBottom: 16, borderColor: testResult.ok ? 'rgba(52,199,89,0.15)' : 'rgba(255,59,48,0.15)' }}
+              style={{ marginBottom: 16, borderColor: 'rgba(52,199,89,0.25)', boxShadow: '0 0 24px rgba(52,199,89,0.10), var(--vp-shadow-inner)' }}
             >
-              <p style={{ fontSize: 13, color: testResult.ok ? 'var(--color-success)' : 'var(--color-danger)', lineHeight: 1.6 }}>
-                {testResult.ok ? '✅ ' : '❌ '}{testResult.msg}
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Check size={18} style={{ color: 'var(--color-success)' }} />
+                <div>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-success)' }}>
+                    API 可用 — 当前模型已能通过代理返回内容。
+                  </p>
+                  {smokeTest.durationMs != null && (
+                    <p style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
+                      响应耗时：{smokeTest.durationMs}ms
+                    </p>
+                  )}
+                </div>
+              </div>
             </LiquidCard>
+          )}
+
+          {smokeTest.status === 'fail' && smokeTest.error && (
+            <LiquidCard
+              style={{ marginBottom: 16, borderColor: 'rgba(255,59,48,0.2)' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <AlertTriangle size={18} style={{ color: 'var(--color-danger)', flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-danger)' }}>
+                    API 不可用 — 查看下方 Debug 详情。
+                  </p>
+                  <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                    {smokeTest.error}
+                  </p>
+                </div>
+              </div>
+            </LiquidCard>
+          )}
+
+          {/* V5.3: Collapsible Debug Panel */}
+          {apiDebugInfo && (
+            <details style={{ marginBottom: 16 }}>
+              <summary style={{
+                fontSize: 13, fontWeight: 500, cursor: 'pointer', color: 'var(--color-text-secondary)',
+                padding: '10px 14px', borderRadius: 8, background: 'var(--vp-surface)', border: '1px solid var(--vp-border)',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <Activity size={14} />
+                API Debug 详情
+                {apiDebugInfo.httpStatus && (
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--color-danger)', fontFamily: 'monospace' }}>
+                    HTTP {apiDebugInfo.httpStatus}
+                  </span>
+                )}
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                <LiquidCard style={{ borderColor: 'rgba(255,59,48,0.15)' }}>
+                  <div style={{ fontSize: 12, lineHeight: 1.8, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
+                    <span style={{ color: 'var(--color-text-hint)' }}>Input API URL</span>
+                    <span style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>{apiDebugInfo.inputApiUrl}</span>
+
+                    {apiDebugInfo.normalizedEndpoint && (
+                      <>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Normalized Endpoint</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>{apiDebugInfo.normalizedEndpoint}</span>
+                      </>
+                    )}
+
+                    {apiDebugInfo.endpointKind && (
+                      <>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Endpoint Kind</span>
+                        <span>{apiDebugInfo.endpointKind}</span>
+                      </>
+                    )}
+
+                    <span style={{ color: 'var(--color-text-hint)' }}>Model</span>
+                    <span>{apiDebugInfo.model}</span>
+
+                    {apiDebugInfo.httpStatus != null && (
+                      <>
+                        <span style={{ color: 'var(--color-text-hint)' }}>HTTP Status</span>
+                        <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{apiDebugInfo.httpStatus}</span>
+                      </>
+                    )}
+
+                    {apiDebugInfo.errorCategory && (
+                      <>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Error Category</span>
+                        <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{apiDebugInfo.errorCategory}</span>
+                      </>
+                    )}
+
+                    {apiDebugInfo.errorMessage && (
+                      <>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Error Message</span>
+                        <span style={{ color: 'var(--color-danger)' }}>{apiDebugInfo.errorMessage}</span>
+                      </>
+                    )}
+
+                    {apiDebugInfo.timeoutMs != null && (
+                      <>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Timeout</span>
+                        <span>{apiDebugInfo.timeoutMs}ms ({Math.round(apiDebugInfo.timeoutMs / 1000)}s)</span>
+                      </>
+                    )}
+
+                    {apiDebugInfo.proxyDurationMs != null && (
+                      <>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Proxy Duration</span>
+                        <span>{apiDebugInfo.proxyDurationMs}ms</span>
+                      </>
+                    )}
+
+                    {apiDebugInfo.upstreamDurationMs != null && (
+                      <>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Upstream Duration</span>
+                        <span>{apiDebugInfo.upstreamDurationMs}ms</span>
+                      </>
+                    )}
+
+                    {apiDebugInfo.endpointWarnings && apiDebugInfo.endpointWarnings.length > 0 && (
+                      <>
+                        <span style={{ color: 'var(--color-warning)' }}>Warnings</span>
+                        <span style={{ color: 'var(--color-warning)', fontSize: 10 }}>{apiDebugInfo.endpointWarnings.join('; ')}</span>
+                      </>
+                    )}
+
+                    <span style={{ color: 'var(--color-text-hint)' }}>Time</span>
+                    <span style={{ fontSize: 10 }}>{new Date(apiDebugInfo.timestamp).toLocaleTimeString()}</span>
+                  </div>
+
+                  {/* Upstream body preview */}
+                  {apiDebugInfo.upstreamBodyPreview && (
+                    <details style={{ marginTop: 12 }}>
+                      <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                        Upstream Body Preview ({apiDebugInfo.upstreamBodyPreview.length} chars)
+                      </summary>
+                      <pre style={{
+                        marginTop: 8, padding: '8px 12px', borderRadius: 6,
+                        background: 'var(--color-bg-secondary)', fontSize: 10,
+                        lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
+                        whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                        fontFamily: 'monospace',
+                      }}>
+                        {apiDebugInfo.upstreamBodyPreview}
+                      </pre>
+                    </details>
+                  )}
+
+                  {/* Raw response preview */}
+                  {apiDebugInfo.rawResponsePreview && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                        Raw Response Preview ({apiDebugInfo.rawResponsePreview.length} chars)
+                      </summary>
+                      <pre style={{
+                        marginTop: 8, padding: '8px 12px', borderRadius: 6,
+                        background: 'var(--color-bg-secondary)', fontSize: 10,
+                        lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
+                        whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                        fontFamily: 'monospace',
+                      }}>
+                        {apiDebugInfo.rawResponsePreview}
+                      </pre>
+                    </details>
+                  )}
+                </LiquidCard>
+              </div>
+            </details>
           )}
 
           {/* V5.1: URL Self-Test Results */}
@@ -1486,11 +848,11 @@ export default function SettingsPage() {
               </p>
               <p style={{ marginBottom: 8 }}>
                 <strong>Q: 不配置 AI 能用吗？</strong><br />
-                A: 正式生成不能用。生产环境必须先通过 Quick Ping 和 JSON Test。
+                A: 正式生成不能用。请点击「测试并保存 API」完成一次最小模型响应测试。
               </p>
               <p>
-                <strong>Q: 为什么官方 API 也超时？</strong><br />
-                A: V4.9 已修复。旧版本有 40s 前端硬超时 + 50s 代理硬限制，会主动中断慢模型。现在使用分层 timeout（12s/30s/90s），Quick Ping 只需 12s 即可验证 API 基础可用性。
+                <strong>Q: 测试报 HTTP 500 是什么意思？</strong><br />
+                A: 说明请求已到达上游服务商，但服务商内部处理失败。通常不是 URL 或 Key 的问题，而是模型名不兼容或服务商临时故障。请查看 Debug 详情中的 Error Category 和 Upstream Body Preview。
               </p>
             </div>
           </div>

@@ -1,5 +1,38 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V5.3 — Single API Smoke Test Patch (2026-06-02)
+
+### Added
+- Single "测试并保存 API" button replaces 6 separate test buttons
+- Minimal Chat Completions smoke test (user message only, no system message)
+- `smokeTest` field in `apiHealth.ts` tests type
+- Better HTTP 500 provider_internal_error diagnostics with category-specific messages
+- Collapsible API Debug Panel (default collapsed)
+- `buildSmokeTestErrorMessage()` — category-aware error messages for 7 error types
+
+### Changed
+- Settings no longer requires Long JSON / Reference Validation to mark API ready
+- API Ready is based on minimal non-empty model response (smoke test)
+- `assertApiFullyReady()` now delegates to `assertApiReady()` (smoke test is sufficient)
+- Long JSON moved to optional (removed from main UI)
+- Removed confusing multi-step test UI (Proxy Health, Raw Chat, Quick Ping, JSON Test, Long JSON, Reference Validation)
+- Status labels simplified: "API 可用" / "API 不可用" / "未配置"
+- FAQ updated to reflect new smoke test approach
+
+### Fixed
+- Provider HTTP 500 during Long JSON causing whole API status to fail
+- API usable but marked unavailable due to complex validation test
+- Confusing status copy about Quick Ping / JSON / Long JSON requirements
+
+### Not Changed
+- Agent Runtime (`src/agent-v4/`)
+- API Required policy (`ApiRequiredGate`)
+- ProductBrief schema
+- localStorage project history
+- No mock/local-rule fallback restored
+
+---
+
 ## V5.2 — Real Agent Workflow Runtime Upgrade (2026-06-02)
 
 ### Added

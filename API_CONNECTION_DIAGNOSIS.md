@@ -1,8 +1,66 @@
 # API Connection Diagnosis Guide
 
-> V5.1 — OpenAI-Compatible URL Normalization Patch
+> V5.3 — Single API Smoke Test Patch
 
-## Supported URL Formats
+## V5.3：为什么改成一个 Smoke Test
+
+V5.2 之前，Settings 页面有 6 个测试按钮（Proxy Health、Raw Chat、Quick Ping、JSON Test、Long JSON、Reference Validation），用户需要全部通过才能标记 API 可用。
+
+**问题：** Long JSON 测试包含复杂的 system message 和结构化字段要求，容易触发第三方兼容网关 HTTP 500。即使基础 API 完全可用，Long JSON 失败也会导致整个 API 状态被标记为不可用。
+
+**V5.3 方案：** 只保留一个「测试并保存 API」按钮，发送最小 Chat Completions 请求（仅 user message，无 system message）。只要模型返回非空 content，就认为 API 可用。
+
+## Smoke Test 通过标准
+
+1. `/api/ai-proxy` 返回 2xx
+2. 能提取到模型 content
+3. content 非空
+4. 不强制 content 必须是 JSON（很多兼容网关会把 JSON 作为字符串返回或加少量文本）
+
+## HTTP 500 provider_internal_error 详解
+
+当 Settings 显示 `HTTP 500 provider_internal_error` 时：
+
+- **含义：** API 请求已到达上游服务商，但服务商内部处理失败
+- **不是：** URL 拼接错误、API Key 无效、网络不可达
+- **常见原因：**
+  - 模型名不兼容（服务商不支持该模型）
+  - 服务商临时故障
+  - 请求格式不兼容（如 system message 不被支持）
+  - 账户额度问题
+
+**V5.3 改进：** Smoke Test 不使用 system message，只用 user message，提高兼容性。
+
+## 如何查看 Debug Panel
+
+1. 运行「测试并保存 API」
+2. 如果测试失败，页面会显示错误摘要
+3. 错误摘要下方有可折叠的「API Debug 详情」
+4. 展开后可查看：
+   - Input API URL
+   - Normalized Endpoint
+   - Model
+   - HTTP Status
+   - Error Category
+   - Error Message
+   - Timeout
+   - Proxy/Upstream Duration
+   - Upstream Body Preview（原始响应内容）
+   - Raw Response Preview
+
+## 错误分类与建议
+
+| Error Category | 含义 | 建议 |
+|---|---|---|
+| `auth_error` | API Key 无效或没有权限 | 检查 Key 是否正确 |
+| `permission_error` | API Key 无权限访问该模型 | 在服务商后台确认权限 |
+| `model_not_found` | Endpoint 或模型名错误 | 检查模型名称 |
+| `quota_or_rate_limit` | 额度不足或触发限流 | 检查账户余额或稍后重试 |
+| `provider_internal_error` | 上游服务商内部错误 | 检查模型名、服务商状态 |
+| `upstream_unavailable` | 上游服务商不可用 | 稍后重试 |
+| `bad_request` | 请求格式错误 | 检查 URL 格式 |
+
+## URL 归一化（不变）
 
 本项目支持用户输入以下任何一种 URL 格式，系统会自动归一化为 `/v1/chat/completions` endpoint：
 
