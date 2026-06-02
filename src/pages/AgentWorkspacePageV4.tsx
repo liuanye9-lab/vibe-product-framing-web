@@ -1,8 +1,10 @@
 /**
- * Agent Workspace Page — V4.9 Minimal Monochrome Edition
+ * Agent Workspace Page — V5.2 Real Agent Workflow Runtime Edition
  *
  * Uses agent-v4 runtime: AgentGraphSession, Graph Nodes, Event Log,
  * Checkpoints, Tool Registry, Memory, Skill Library.
+ *
+ * V5.2: Added TaskGraph Runtime, Tool Calls, Observations, Approvals panels.
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -28,6 +30,10 @@ import {
   GitBranch,
   Database,
   StopCircle,
+  Network,
+  Wrench,
+  Eye,
+  ShieldCheck,
 } from 'lucide-react';
 import { useProductBrief } from '../hooks/useProductBrief';
 import { getGraphSession } from '../agent-v4/graphStore';
@@ -40,6 +46,18 @@ import type {
   AgentGraphStatus,
 } from '../agent-v4/types';
 import { AGENT_NODE_LABELS } from '../agent-v4/types';
+
+// V5.2 TaskGraph imports
+import type { AgentTaskGraph } from '../agent-v4/taskGraph/taskGraphTypes';
+import { getTaskGraph } from '../agent-v4/taskGraph/taskGraphStore';
+import { runAgentTaskGraphTurn, initializeTaskGraph } from '../agent-v4/taskGraph/taskGraphRuntime';
+import { approveHumanApproval, rejectHumanApproval } from '../agent-v4/taskGraph/humanApproval';
+import type { AgentToolCallRecord, AgentObservation, HumanApproval } from '../agent-v4/taskGraph/taskGraphTypes';
+import { TaskGraphPanel } from '../agent-v4/ui/TaskGraphPanel';
+import { ToolCallsPanel } from '../agent-v4/ui/ToolCallsPanel';
+import { ObservationsPanel } from '../agent-v4/ui/ObservationsPanel';
+import { ApprovalsPanel } from '../agent-v4/ui/ApprovalsPanel';
+
 import { AgentGraphPanel } from '../agent-v4/ui/AgentGraphPanel';
 import { AgentEventTimeline } from '../agent-v4/ui/AgentEventTimeline';
 import { AgentTaskBoard } from '../agent-v4/ui/AgentTaskBoard';
@@ -72,9 +90,14 @@ const STATUS_LABELS: Record<AgentGraphStatus, { label: string; color: string }> 
   failed: { label: '失败', color: 'var(--vp-danger)' },
 };
 
-type TabKey = 'state' | 'slots' | 'tasks' | 'findings' | 'memory' | 'skills' | 'debug';
+type TabKey = 'state' | 'slots' | 'tasks' | 'findings' | 'memory' | 'skills' | 'debug'
+  | 'taskgraph' | 'toolcalls' | 'observations' | 'approvals';
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
+  { key: 'taskgraph', label: '任务图', icon: <Network size={12} /> },
+  { key: 'toolcalls', label: '工具', icon: <Wrench size={12} /> },
+  { key: 'observations', label: '观察', icon: <Eye size={12} /> },
+  { key: 'approvals', label: '确认', icon: <ShieldCheck size={12} /> },
   { key: 'state', label: '状态', icon: <Activity size={12} /> },
   { key: 'slots', label: '信息槽', icon: <Database size={12} /> },
   { key: 'tasks', label: '任务', icon: <ListChecks size={12} /> },
@@ -100,7 +123,7 @@ export default function AgentWorkspacePageV4() {
   const [userInput, setUserInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<TabKey>('state');
+  const [activeTab, setActiveTab] = useState<TabKey>('taskgraph');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Turn lifecycle & optimistic UI
@@ -109,6 +132,12 @@ export default function AgentWorkspacePageV4() {
   const slowTimerRef = useRef<number | null>(null);
   const [optimisticUserMsg, setOptimisticUserMsg] = useState<string>('');
   const [optimisticAgentReply, setOptimisticAgentReply] = useState<string>('');
+
+  // V5.2 TaskGraph state
+  const [taskGraph, setTaskGraph] = useState<AgentTaskGraph | null>(null);
+  const [taskGraphToolCalls, setTaskGraphToolCalls] = useState<AgentToolCallRecord[]>([]);
+  const [taskGraphObservations, setTaskGraphObservations] = useState<AgentObservation[]>([]);
+  const [taskGraphApprovals, setTaskGraphApprovals] = useState<HumanApproval[]>([]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -121,6 +150,19 @@ export default function AgentWorkspacePageV4() {
     let sess = getGraphSession(id);
     if (!sess) sess = sendV4WelcomeMessage(brief);
     setSession(sess);
+
+    // V5.2: Initialize or load TaskGraph
+    try {
+      const tg = getTaskGraph(id) || initializeTaskGraph(id, brief.rawIdea || '');
+      setTaskGraph(tg);
+      // Extract tool calls from all tasks
+      const allToolCalls = tg.tasks.flatMap(t => t.toolCalls);
+      setTaskGraphToolCalls(allToolCalls);
+      setTaskGraphObservations(tg.observations);
+      setTaskGraphApprovals(tg.approvals);
+    } catch {
+      // TaskGraph init failure is non-fatal
+    }
   }, [id, brief]);
 
   // Auto-scroll
@@ -164,26 +206,78 @@ export default function AgentWorkspacePageV4() {
     }, 8000);
 
     try {
-      const result = await runAgentGraphTurn({
-        brief,
-        userMessage: message,
-        onProgress: (evt) => {
-          turn = markProgressStep({ lifecycle: turn, phase: evt.phase as never, status: 'done' });
-          setActiveTurn({ ...turn });
-        },
-      });
+      // V5.2: Try TaskGraph Runtime first, fallback to legacy
+      let usedTaskGraph = false;
+      try {
+        const tgResult = await runAgentTaskGraphTurn({
+          brief,
+          userMessage: message,
+          onProgress: (evt) => {
+            turn = markProgressStep({ lifecycle: turn, phase: evt.phase as never, status: 'done' });
+            setActiveTurn({ ...turn });
+          },
+        });
 
-      // Cleanup
-      if (slowTimerRef.current) { window.clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
+        // Update TaskGraph state
+        setTaskGraph(tgResult.graph);
+        const allToolCalls = tgResult.graph.tasks.flatMap(t => t.toolCalls);
+        setTaskGraphToolCalls(allToolCalls);
+        setTaskGraphObservations(tgResult.graph.observations);
+        setTaskGraphApprovals(tgResult.graph.approvals);
 
-      setSession(result.session);
-      setOptimisticUserMsg('');
-      setOptimisticAgentReply('');
-      setActiveTurn(null);
-      setSlowHint('');
+        // Also run legacy runtime for session events
+        const legacyResult = await runAgentGraphTurn({
+          brief,
+          userMessage: message,
+          onProgress: () => {},
+        });
 
-      if (result.briefPatch && Object.keys(result.briefPatch).length > 0) {
-        save({ ...brief, ...result.briefPatch });
+        // Cleanup
+        if (slowTimerRef.current) { window.clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
+
+        setSession(legacyResult.session);
+        setOptimisticUserMsg('');
+        setOptimisticAgentReply(tgResult.reply);
+        setActiveTurn(null);
+        setSlowHint('');
+
+        // Apply brief patches from both runtimes
+        const combinedPatch: Partial<typeof brief> = {};
+        if (legacyResult.briefPatch) Object.assign(combinedPatch, legacyResult.briefPatch);
+        if (tgResult.briefPatch) Object.assign(combinedPatch, tgResult.briefPatch);
+        if (Object.keys(combinedPatch).length > 0) {
+          save({ ...brief, ...combinedPatch });
+        }
+
+        usedTaskGraph = true;
+      } catch (tgErr) {
+        // TaskGraph runtime failed, fall through to legacy
+        console.warn('[TaskGraph] Runtime failed, falling back to legacy:', tgErr);
+      }
+
+      if (!usedTaskGraph) {
+        // Legacy runtime fallback
+        const result = await runAgentGraphTurn({
+          brief,
+          userMessage: message,
+          onProgress: (evt) => {
+            turn = markProgressStep({ lifecycle: turn, phase: evt.phase as never, status: 'done' });
+            setActiveTurn({ ...turn });
+          },
+        });
+
+        // Cleanup
+        if (slowTimerRef.current) { window.clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
+
+        setSession(result.session);
+        setOptimisticUserMsg('');
+        setOptimisticAgentReply('');
+        setActiveTurn(null);
+        setSlowHint('');
+
+        if (result.briefPatch && Object.keys(result.briefPatch).length > 0) {
+          save({ ...brief, ...result.briefPatch });
+        }
       }
     } catch (e) {
       if (slowTimerRef.current) { window.clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
@@ -226,6 +320,35 @@ export default function AgentWorkspacePageV4() {
   const handleSkip = useCallback(() => sendAgentMessage('先跳过', { immediateReply: '已收到，我会把当前缺失项标记为跳过，并继续推进。' }), [sendAgentMessage]);
   const handleMakeAssumption = useCallback(() => sendAgentMessage('帮我做默认假设', { immediateReply: '可以，我会先做低置信度假设，并把这些假设标出来，后面你可以随时改。' }), [sendAgentMessage]);
   const handleGenerateHandoff = useCallback(() => sendAgentMessage('生成开发文档', { immediateReply: '收到，我会先补齐必要假设，然后整理 Product Brief、MVP Scope、DEV_SPEC 和 Codex Prompt。' }), [sendAgentMessage]);
+
+  // V5.2: Approval handlers
+  const handleApprove = useCallback((approvalId: string) => {
+    if (!brief) return;
+    try {
+      const updated = approveHumanApproval({ briefId: brief.id, approvalId });
+      setTaskGraph(updated);
+      const allToolCalls = updated.tasks.flatMap(t => t.toolCalls);
+      setTaskGraphToolCalls(allToolCalls);
+      setTaskGraphObservations(updated.observations);
+      setTaskGraphApprovals(updated.approvals);
+    } catch (e) {
+      console.error('[TaskGraph] Approve failed:', e);
+    }
+  }, [brief]);
+
+  const handleReject = useCallback((approvalId: string, reason: string) => {
+    if (!brief) return;
+    try {
+      const updated = rejectHumanApproval({ briefId: brief.id, approvalId, reason });
+      setTaskGraph(updated);
+      const allToolCalls = updated.tasks.flatMap(t => t.toolCalls);
+      setTaskGraphToolCalls(allToolCalls);
+      setTaskGraphObservations(updated.observations);
+      setTaskGraphApprovals(updated.approvals);
+    } catch (e) {
+      console.error('[TaskGraph] Reject failed:', e);
+    }
+  }, [brief]);
 
   if (loading) {
     return (
@@ -280,7 +403,7 @@ export default function AgentWorkspacePageV4() {
         <GitBranch size={14} style={{ color: 'var(--vp-accent)' }} />
 
         <h1 style={{ fontSize: 13, fontWeight: 600, flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          Agent Decision OS V4.9
+          Agent Decision OS V5.2
         </h1>
 
         {/* Current node + API badge */}
@@ -334,10 +457,15 @@ export default function AgentWorkspacePageV4() {
             {conversationEvents.length === 0 && !sending && (
               <div style={{ padding: '20px 0', textAlign: 'center' }}>
                 <Bot size={32} style={{ color: 'var(--vp-text-tertiary)', marginBottom: 12 }} />
-                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V4.9 就绪</p>
+                <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Agent Decision OS V5.2 就绪</p>
                 <p style={{ fontSize: 12, color: 'var(--vp-text-secondary)', lineHeight: 1.7 }}>
-                  描述你的产品想法，我会像产品经理一样带你一步步把想法变成开发规格。
+                  描述你的产品想法，我会通过 TaskGraph 驱动的 Agent 工作流，一步步把想法变成开发规格。
                 </p>
+                {taskGraph && taskGraph.tasks.length > 0 && (
+                  <p style={{ fontSize: 11, color: 'var(--vp-text-tertiary)', marginTop: 8 }}>
+                    已创建 {taskGraph.tasks.length} 个决策任务，进度 {taskGraph.progressPercent}%
+                  </p>
+                )}
               </div>
             )}
 
@@ -504,6 +632,19 @@ export default function AgentWorkspacePageV4() {
           </div>
 
           <div style={{ padding: '10px 12px' }}>
+            {/* V5.2: TaskGraph panels */}
+            {activeTab === 'taskgraph' && <TaskGraphPanel graph={taskGraph} />}
+            {activeTab === 'toolcalls' && <ToolCallsPanel toolCalls={taskGraphToolCalls} />}
+            {activeTab === 'observations' && <ObservationsPanel observations={taskGraphObservations} />}
+            {activeTab === 'approvals' && (
+              <ApprovalsPanel
+                approvals={taskGraphApprovals}
+                onApprove={handleApprove}
+                onReject={handleReject}
+              />
+            )}
+
+            {/* Legacy panels */}
             {activeTab === 'state' && <StateView session={session} />}
             {activeTab === 'slots' && <AgentSlotPanel slots={state?.slotFilling?.slots as Record<string, import('../agent-v4/types').InfoSlot> | undefined} />}
             {activeTab === 'tasks' && (
@@ -543,6 +684,21 @@ export default function AgentWorkspacePageV4() {
                       {t.name} - {t.description.slice(0, 60)}
                     </p>
                   ))}
+                </div>
+                <div className="vp-card" style={{ padding: '8px 12px' }}>
+                  <p style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>TaskGraph Info</p>
+                  {taskGraph ? (
+                    <>
+                      <p style={{ fontSize: 10, color: 'var(--vp-text-tertiary)', margin: '1px 0' }}>
+                        Tasks: {taskGraph.tasks.length} · Progress: {taskGraph.progressPercent}%
+                      </p>
+                      <p style={{ fontSize: 10, color: 'var(--vp-text-tertiary)', margin: '1px 0' }}>
+                        Tool Calls: {taskGraphToolCalls.length} · Observations: {taskGraphObservations.length}
+                      </p>
+                    </>
+                  ) : (
+                    <p style={{ fontSize: 10, color: 'var(--vp-text-tertiary)', margin: '1px 0' }}>无 TaskGraph</p>
+                  )}
                 </div>
                 <div className="vp-card" style={{ padding: '8px 12px' }}>
                   <p style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>事件流</p>

@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Download } from 'lucide-react';
 import { useProductBrief } from '../hooks/useProductBrief';
@@ -15,10 +15,30 @@ import CodexTaskPackPreview from '../components/CodexTaskPackPreview';
 import { PageReveal, LiquidCard, LiquidProgress } from '../components/liquid';
 import ThemeToggle from '../components/ThemeToggle';
 
+// V5.2: TaskGraph imports
+import type { AgentTaskGraph } from '../agent-v4/taskGraph/taskGraphTypes';
+import { getTaskGraph } from '../agent-v4/taskGraph/taskGraphStore';
+import { listMemories } from '../agent-v4/taskGraph/memoryRuntime';
+import { listSkills } from '../agent-v4/taskGraph/skillLibrary';
+
 export default function DecisionOutputPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { brief, loading } = useProductBrief(id);
+
+  // V5.2: TaskGraph state
+  const [taskGraph, setTaskGraph] = useState<AgentTaskGraph | null>(null);
+
+  useEffect(() => {
+    if (id) {
+      try {
+        const tg = getTaskGraph(id);
+        setTaskGraph(tg);
+      } catch {
+        // non-fatal
+      }
+    }
+  }, [id]);
 
   const data = useMemo(() => {
     if (!brief) return null;
@@ -264,6 +284,119 @@ export default function DecisionOutputPage() {
           <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 8 }}>CODEX_TASK_PACK</h2>
           <CodexTaskPackPreview taskPack={codexTaskPack} />
         </LiquidCard>
+
+        {/* V5.2: Agent Execution Trace */}
+        {taskGraph && (
+          <LiquidCard style={{ marginBottom: 16 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 650, marginBottom: 12 }}>Agent 执行追踪</h2>
+
+            {/* Summary stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+              {[
+                { label: '任务完成', value: `${taskGraph.tasks.filter(t => t.status === 'done').length}/${taskGraph.tasks.length}` },
+                { label: '工具调用', value: String(taskGraph.tasks.flatMap(t => t.toolCalls).length) },
+                { label: '观察记录', value: String(taskGraph.observations.length) },
+                { label: '确认请求', value: String(taskGraph.approvals.length) },
+              ].map(stat => (
+                <div key={stat.label} style={{
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--vp-radius-sm)',
+                  padding: 10,
+                  textAlign: 'center',
+                  background: 'rgba(255,255,255,0.32)',
+                }}>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--vp-blue)' }}>{stat.value}</div>
+                  <div style={{ fontSize: 10, color: 'var(--color-text-secondary)', marginTop: 2 }}>{stat.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Task list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 12 }}>
+              {taskGraph.tasks.map(task => {
+                const statusColors: Record<string, string> = {
+                  todo: 'var(--color-border)',
+                  running: 'var(--vp-blue)',
+                  waiting_approval: 'var(--vp-orange)',
+                  done: 'var(--vp-green)',
+                  failed: 'var(--vp-red)',
+                  blocked: 'var(--vp-red)',
+                  skipped: 'var(--color-text-hint)',
+                  planning: 'var(--vp-blue)',
+                };
+                return (
+                  <div key={task.id} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    border: '1px solid var(--color-border)',
+                    background: task.status === 'done' ? 'rgba(52,199,89,0.04)' : 'transparent',
+                  }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: statusColors[task.status] || 'var(--color-border)',
+                      flexShrink: 0,
+                    }} />
+                    <span style={{ fontSize: 12, fontWeight: 500, flex: 1 }}>{task.title}</span>
+                    <span style={{ fontSize: 10, color: 'var(--color-text-hint)' }}>
+                      {task.toolCalls.length} 工具 · {task.observations.length} 观察
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Pending approvals warning */}
+            {taskGraph.approvals.some(a => a.status === 'pending') && (
+              <div style={{
+                padding: '8px 12px',
+                borderRadius: 8,
+                border: '1px solid rgba(255,149,0,0.3)',
+                background: 'rgba(255,149,0,0.04)',
+                fontSize: 12,
+                color: 'var(--vp-orange)',
+              }}>
+                ⚠️ 有 {taskGraph.approvals.filter(a => a.status === 'pending').length} 个待确认请求，建议在 Agent 工作区完成确认后再使用此任务包。
+              </div>
+            )}
+
+            {/* Skills and Memories */}
+            {(() => {
+              const memories = listMemories({ briefId: brief.id, limit: 5 });
+              const skills = listSkills().slice(0, 3);
+              return (memories.length > 0 || skills.length > 0) && (
+                <div style={{ marginTop: 12, display: 'flex', gap: 12 }}>
+                  {memories.length > 0 && (
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+                        决策记忆 ({memories.length})
+                      </p>
+                      {memories.map(m => (
+                        <p key={m.id} style={{ fontSize: 10, color: 'var(--color-text-hint)', margin: '2px 0' }}>
+                          [{m.type}] {m.title}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {skills.length > 0 && (
+                    <div style={{ flex: 1 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 4 }}>
+                        引用技能
+                      </p>
+                      {skills.map(s => (
+                        <p key={s.id} style={{ fontSize: 10, color: 'var(--color-text-hint)', margin: '2px 0' }}>
+                          {s.title}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </LiquidCard>
+        )}
 
         {/* Phase Details */}
         <LiquidCard style={{ marginBottom: 16 }}>

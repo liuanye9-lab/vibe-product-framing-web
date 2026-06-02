@@ -73,7 +73,21 @@ export interface AgentGraphEvent {
     | 'ai_call_started'
     | 'ai_call_completed'
     | 'ai_call_failed'
-    | 'error';
+    | 'error'
+    // V5.2 TaskGraph events
+    | 'task_graph_created'
+    | 'task_created'
+    | 'task_started'
+    | 'task_completed'
+    | 'task_graph_tool_call_started'
+    | 'task_graph_tool_call_completed'
+    | 'observation_created'
+    | 'approval_requested'
+    | 'approval_approved'
+    | 'approval_rejected'
+    | 'memory_written'
+    | 'skill_used'
+    | 'task_graph_failed';
   nodeId?: AgentNodeId;
   message?: string;
   payload?: Record<string, unknown>;

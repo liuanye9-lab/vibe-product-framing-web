@@ -1,5 +1,61 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V5.2 — Real Agent Workflow Runtime Upgrade (2026-06-02)
+
+### Added
+- **AgentTaskGraph** — 9-task decision workflow graph with status tracking and progress computation
+- **AgentTask / AgentStep / AgentObservation / HumanApproval** — structured agent workflow data types
+- **TaskGraph Runtime** (`taskGraphRuntime.ts`) — main agent workflow engine with LLM planner integration
+- **Task Graph Store** (`taskGraphStore.ts`) — localStorage persistence with safety caps (80 tasks, 200 observations, 200 toolCalls)
+- **Task Planner** (`taskPlanner.ts`) — generates initial 9 decision tasks from raw idea
+- **Task Graph Prompt Builder** (`taskGraphPromptBuilder.ts`) — builds LLM prompts with skill/memory context
+- **12 real internal tools** with permission metadata:
+  - `inspectBriefContext` (read) — reads Brief context
+  - `evaluateRequirementQualityTool` (read) — 8-dimension quality scoring
+  - `detectAmbiguityTool` (read) — fuzzy pattern detection
+  - `deriveScopeControlTool` (generate_artifact) — P0/P1/P2/Out of Scope
+  - `generateEarsCriteriaTool` (generate_artifact) — EARS acceptance criteria
+  - `buildDevSpecTool` (generate_artifact) — generates DEV_SPEC
+  - `buildCodexTaskPackTool` (generate_artifact) — generates CODEX_TASK_PACK
+  - `validateCodexTaskPackTool` (read) — validates task pack completeness
+  - `createObservationTool` (write_state) — creates observation records
+  - `requestHumanApprovalTool` (write_state) — creates approval requests
+  - `writeDecisionMemoryTool` (write_state) — writes decision memories
+  - `createSkillFromDecisionTool` (write_state) — creates reusable skills
+- **Tool permission metadata** — `permissionLevel`, `sideEffect`, `requiresApproval` on all tools
+- **Human Approval Gate** (`humanApproval.ts`) — approve/reject flow for key decisions
+- **Skill Library** (`skillLibrary.ts`) — 6 preset skills + find/save/list API
+- **Memory Runtime** (`memoryRuntime.ts`) — TaskGraph-specific memory with relevance scoring
+- **Task Graph Panel** — shows task graph progress and task list in sidebar
+- **Tool Calls Panel** — shows recent 20 tool calls with status and metadata
+- **Observations Panel** — shows recent 20 observations with evidence and risks
+- **Approvals Panel** — shows pending/resolved approvals with approve/reject buttons
+- **DecisionOutputPage Agent Execution Trace** — shows task completion, tool calls, observations, approvals, skills, memories
+- **13 new event types** for TaskGraph operations (task_graph_created, tool_call_started, observation_created, approval_requested, etc.)
+
+### Changed
+- **AgentWorkspacePageV4** now uses `runAgentTaskGraphTurn` as primary agent workflow (with legacy fallback)
+- Default tab changed to "任务图" (TaskGraph)
+- Version label updated to V5.2
+- Empty state message updated to reflect TaskGraph workflow
+- **Tool Registry** upgraded with `permissionLevel`, `sideEffect`, `requiresApproval` metadata on all 13 existing tools
+
+### Fixed
+- Agent behavior no longer appears as simple prompt-response loop
+- Tool results now become structured Observations
+- Key decisions require human confirmation before proceeding
+
+### Not Done
+- No shell execution
+- No actual MCP server
+- No database (localStorage only)
+- No vector memory (keyword matching)
+- No external GitHub write tools
+- No multi-user collaboration
+- No background agent execution
+
+---
+
 ## V5.2 — API 500 Deep Diagnosis Patch (2026-06-01)
 
 ### Added

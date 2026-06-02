@@ -22,6 +22,9 @@ function register(tool: AgentTool): void {
 register({
   name: 'updateBriefStage',
   description: 'Update a stage of the ProductBrief with AI suggestions.',
+  permissionLevel: 'write_state',
+  sideEffect: 'state_update',
+  requiresApproval: false,
   inputSchema: {
     type: 'object',
     properties: {
@@ -49,6 +52,9 @@ register({
 register({
   name: 'createFinding',
   description: 'Create a finding in the agent state.',
+  permissionLevel: 'write_state',
+  sideEffect: 'state_update',
+  requiresApproval: false,
   inputSchema: {
     type: 'object',
     properties: {
@@ -88,6 +94,9 @@ register({
 register({
   name: 'createTask',
   description: 'Create a task in the agent state.',
+  permissionLevel: 'write_state',
+  sideEffect: 'state_update',
+  requiresApproval: false,
   inputSchema: {
     type: 'object',
     properties: {
@@ -121,6 +130,9 @@ register({
 register({
   name: 'completeTask',
   description: 'Mark a task as completed.',
+  permissionLevel: 'write_state',
+  sideEffect: 'state_update',
+  requiresApproval: false,
   inputSchema: {
     type: 'object',
     properties: {
@@ -147,6 +159,9 @@ register({
 register({
   name: 'moveNode',
   description: 'Move to a different graph node.',
+  permissionLevel: 'write_state',
+  sideEffect: 'state_update',
+  requiresApproval: false,
   inputSchema: {
     type: 'object',
     properties: {
@@ -168,6 +183,9 @@ register({
 register({
   name: 'legacyGenerateLocalHandoff',
   description: '[Legacy/Debug] Generate handoff locally from ProductBrief without AI. Not used in core agent path.',
+  permissionLevel: 'generate_artifact',
+  sideEffect: 'artifact_generation',
+  requiresApproval: false,
   inputSchema: { type: 'object', properties: {} },
   execute: async (input) => {
     try {
@@ -182,6 +200,9 @@ register({
 register({
   name: 'optimizeHandoffWithAI',
   description: 'Optimize handoff using AI. Requires valid API connection. No local fallback on failure.',
+  permissionLevel: 'external_ai',
+  sideEffect: 'artifact_generation',
+  requiresApproval: false,
   inputSchema: { type: 'object', properties: {} },
   execute: async (input) => {
     try {
@@ -196,6 +217,9 @@ register({
 register({
   name: 'evaluateHandoffQuality',
   description: 'Evaluate the quality of the final handoff.',
+  permissionLevel: 'read',
+  sideEffect: 'none',
+  requiresApproval: false,
   inputSchema: { type: 'object', properties: {} },
   execute: async (input) => {
     try {
@@ -210,6 +234,9 @@ register({
 register({
   name: 'applyLocalHandoffFixes',
   description: 'Apply local fix suggestions to the handoff.',
+  permissionLevel: 'generate_artifact',
+  sideEffect: 'artifact_generation',
+  requiresApproval: false,
   inputSchema: { type: 'object', properties: {} },
   execute: async (input) => {
     try {
@@ -224,6 +251,9 @@ register({
 register({
   name: 'createMemory',
   description: 'Create a memory entry.',
+  permissionLevel: 'write_state',
+  sideEffect: 'state_update',
+  requiresApproval: false,
   inputSchema: {
     type: 'object',
     properties: {
@@ -248,6 +278,9 @@ register({
 register({
   name: 'createSkill',
   description: 'Create a reusable skill in the skill library.',
+  permissionLevel: 'write_state',
+  sideEffect: 'state_update',
+  requiresApproval: false,
   inputSchema: {
     type: 'object',
     properties: {
@@ -271,6 +304,9 @@ register({
 register({
   name: 'askUser',
   description: 'Pause execution and ask the user for input.',
+  permissionLevel: 'write_state',
+  sideEffect: 'state_update',
+  requiresApproval: false,
   inputSchema: {
     type: 'object',
     properties: {
