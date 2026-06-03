@@ -1,33 +1,85 @@
 # API Connection Diagnosis Guide
 
-> V5.3 — Single API Smoke Test Patch
+> V5.4 — Provider-Compatible Smoke Test Patch
 
-## V5.3：为什么改成一个 Smoke Test
+## V5.4：为什么需要多 Variant Smoke Test
 
-V5.2 之前，Settings 页面有 6 个测试按钮（Proxy Health、Raw Chat、Quick Ping、JSON Test、Long JSON、Reference Validation），用户需要全部通过才能标记 API 可用。
+V5.3 使用单一 payload 进行 Smoke Test，但不同 AI 服务商对 OpenAI API 的兼容程度不同。有些服务商不支持 `max_tokens`、`temperature`、`system role` 等参数，导致单一 payload 可能失败。
 
-**问题：** Long JSON 测试包含复杂的 system message 和结构化字段要求，容易触发第三方兼容网关 HTTP 500。即使基础 API 完全可用，Long JSON 失败也会导致整个 API 状态被标记为不可用。
+**V5.4 方案：** 系统内部自动尝试 6 种不同 payload variant，从最标准到最简化，直到找到一个能工作的。UI 上仍然只有一个「测试并保存 API」按钮。
 
-**V5.3 方案：** 只保留一个「测试并保存 API」按钮，发送最小 Chat Completions 请求（仅 user message，无 system message）。只要模型返回非空 content，就认为 API 可用。
+### 6 种 Payload Variants
 
-## Smoke Test 通过标准
+| Variant | 说明 | 使用场景 |
+|---------|------|----------|
+| `user_json_minimal` | 标准请求：user message + max_tokens + temperature | 大多数标准 OpenAI-compatible 服务 |
+| `user_plain_minimal` | 纯文本请求：user message + max_tokens + temperature | 不支持 JSON 格式的服务 |
+| `user_json_no_temperature` | 无 temperature 参数 | 不支持 temperature 的服务 |
+| `user_json_no_max_tokens` | 无 max_tokens 参数 | 不支持 max_tokens 的服务 |
+| `user_json_max_completion_tokens` | 使用 max_completion_tokens | 使用新参数名的服务 |
+| `messages_plain_no_extra_params` | 仅 model + messages | 最简化的请求，兼容性最高 |
 
-1. `/api/ai-proxy` 返回 2xx
-2. 能提取到模型 content
-3. content 非空
-4. 不强制 content 必须是 JSON（很多兼容网关会把 JSON 作为字符串返回或加少量文本）
+### 为什么 endpoint 正确但仍可能失败
 
-## HTTP 500 provider_internal_error 详解
+即使 endpoint preview 显示正确的 URL（如 `https://token-plan-cn.xiaomimo.com/v1/chat/completions`），请求仍可能失败，因为：
 
-当 Settings 显示 `HTTP 500 provider_internal_error` 时：
+1. **模型名不匹配**：服务商要求精确的模型名（大小写、版本号、横线格式）
+2. **模型未开通**：Key 有权限但模型未在后台开通
+3. **参数不兼容**：服务商不支持 `max_tokens`、`temperature` 等参数
+4. **服务商内部错误**：服务商把模型不存在、权限错误等包装成 HTTP 500
 
-- **含义：** API 请求已到达上游服务商，但服务商内部处理失败
-- **不是：** URL 拼接错误、API Key 无效、网络不可达
-- **常见原因：**
-  - 模型名不兼容（服务商不支持该模型）
-  - 服务商临时故障
-  - 请求格式不兼容（如 system message 不被支持）
-  - 账户额度问题
+### HTTP 500 的真正含义
+
+HTTP 500 表示**请求已到达上游服务商**，但服务商内部处理失败。这不是 URL 拼接错误或网络问题。
+
+当系统显示「上游服务商在最小请求下仍返回 HTTP 500」时，说明：
+- 系统已尝试 6 种不同 payload variant（含无 temperature、无 max_tokens、无额外参数）
+- 全部失败
+- 大概率是模型名、Key 权限、网关兼容性或服务商内部状态问题
+
+## 如何查看 Attempts 表格
+
+1. 运行「测试并保存 API」
+2. 展开「API Debug — Smoke Test」折叠面板
+3. 查看 Attempts 表格，显示每种 variant 的：
+   - Variant 名称
+   - 状态（✅/❌）
+   - HTTP Status
+   - Error Category
+   - Duration
+   - Preview（成功时显示 content，失败时显示 raw response）
+
+## 模型名提示
+
+如果所有 attempts 都失败（404 或 500），系统会显示：
+
+> 当前模型名：xxx。请确认服务商后台要求的精确模型名。常见问题包括大小写、版本号、横线格式、模型未开通或当前 key 无权限访问该模型。
+
+## 为什么系统不显示 API Key
+
+API Key 仅存储在浏览器 localStorage 中，Debug Panel 不会显示 Key 内容。这是安全设计，防止 Key 泄露。
+
+## 常见 HTTP 错误解释
+
+| HTTP Status | 含义 | 建议 |
+|---|---|---|
+| 401 | API key 无效或没有权限 | 检查 key 是否正确、是否过期 |
+| 403 | API key 无权限访问该模型或服务 | 检查 key 权限和模型白名单 |
+| 404 | endpoint 或模型名错误 | 查看 Endpoint Preview 确认最终 URL，检查模型名 |
+| 429 | 额度不足或触发限流 | 等待一段时间或充值 |
+| 500 | 服务商内部错误 | 检查模型名、服务商后台状态，查看 attempts 表格 |
+| Timeout | 请求在 timeout 内未完成 | 检查模型速度、timeout 配置和上游响应时间 |
+
+## URL 归一化（不变）
+
+本项目支持用户输入以下任何一种 URL 格式，系统会自动归一化为 `/v1/chat/completions` endpoint：
+
+| 输入格式 | 示例 | 归一化结果 |
+|---|---|---|
+| Root URL | `https://gpt-agent.cc` | `https://gpt-agent.cc/v1/chat/completions` |
+| /v1 URL | `https://gpt-agent.cc/v1` | `https://gpt-agent.cc/v1/chat/completions` |
+| /v1/chat | `https://gpt-agent.cc/v1/chat` | `https://gpt-agent.cc/v1/chat/completions` |
+| Full endpoint | `https://gpt-agent.cc/v1/chat/completions` | `https://gpt-agent.cc/v1/chat/completions` |
 
 **V5.3 改进：** Smoke Test 不使用 system message，只用 user message，提高兼容性。
 

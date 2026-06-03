@@ -1,5 +1,43 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V5.4 Provider-Compatible Smoke Test Patch (2026-06-03)
+
+### 初始状态
+- `npm install`: ✅ 0 vulnerabilities
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (664.18KB JS)
+
+### 审计发现
+1. **当前 Settings 测试按钮**：只有 1 个「测试并保存 API」按钮（V5.3 已简化）
+2. **当前 smoke test payload**：单一 payload，使用中文 prompt + max_tokens + temperature
+3. **问题**：MiMo 等第三方网关可能不支持 max_tokens/temperature 参数，导致 HTTP 500
+4. **Long JSON 是否仍会 markApiFailed**：否，V5.3 已移除 Long JSON 测试
+
+### 本轮修改文件
+1. `src/api/smokeTestPayloads.ts` - 新增，定义 6 种 payload variants
+2. `src/api/providerSmokeTest.ts` - 新增，实现多 variant 自动尝试逻辑
+3. `src/pages/SettingsPage.tsx` - 更新 smoke test 使用多 variant，添加 MiMo preset，更新 Debug Panel
+4. `src/api/apiHealth.ts` - 添加 variantId 字段到 smokeTest 类型
+5. `CHANGELOG.md` - 新增 V5.4 条目
+6. `API_CONNECTION_DIAGNOSIS.md` - 重写为 V5.4 版本
+7. `IMPLEMENTATION_LOG.md` - 本文件
+
+### 本轮不改 Agent Runtime
+- 不修改 `src/agent-v4/` 目录
+- 不修改 `src/api/evaluate.ts` 核心逻辑
+- 不恢复 mock/local-rule fallback
+- 不破坏现有 localStorage 历史数据
+
+### 最终验证
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功 (668.82KB JS)
+- 新增文件: 2 (`src/api/smokeTestPayloads.ts`, `src/api/providerSmokeTest.ts`)
+- 修改文件: 4 (`src/pages/SettingsPage.tsx`, `src/api/apiHealth.ts`, `CHANGELOG.md`, `API_CONNECTION_DIAGNOSIS.md`)
+- 无新增 npm 依赖
+- 无破坏 Agent Runtime / Handoff / localStorage / ProductBrief
+
+---
+
 ## V5.3 Single API Smoke Test Patch (2026-06-02)
 
 ### 初始状态

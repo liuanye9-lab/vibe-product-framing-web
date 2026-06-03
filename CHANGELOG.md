@@ -1,5 +1,36 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V5.4 — Provider-Compatible Smoke Test Patch (2026-06-03)
+
+### Added
+- **Multi-variant smoke test**: 6 different payload variants for maximum provider compatibility
+- `src/api/smokeTestPayloads.ts` — defines 6 variants (user_json_minimal, user_plain_minimal, user_json_no_temperature, user_json_no_max_tokens, user_json_max_completion_tokens, messages_plain_no_extra_params)
+- `src/api/providerSmokeTest.ts` — orchestrates multi-variant testing with early stop on fatal errors
+- **MiMo / 小米 preset** in Settings quick config
+- **Attempts table** in Debug Panel showing all variant results
+- `variantId` field in apiHealth smokeTest type
+- Model name hint when all variants fail (404/500)
+
+### Changed
+- Smoke test now tries multiple payload variants automatically (UI shows single button)
+- Debug Panel shows all attempts with variant name, HTTP status, error category, duration, preview
+- URL self-test moved to collapsed "高级诊断" section
+- Error messages now explain provider compatibility issues for HTTP 500
+
+### Fixed
+- HTTP 500 from third-party gateways (MiMo etc.) caused by incompatible max_tokens/temperature parameters
+- Single payload variant failing on provider-specific API quirks
+- Chinese prompt in smoke test causing compatibility issues
+
+### Not Changed
+- Agent Runtime
+- API Required policy
+- ProductBrief schema
+- localStorage project history
+- No mock/local-rule fallback
+
+---
+
 ## V5.3 — Single API Smoke Test Patch (2026-06-02)
 
 ### Added

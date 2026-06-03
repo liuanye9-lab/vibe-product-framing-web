@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import {
   clearAIConfig,
-  extractAIContent,
   getAIConfig,
   getAIConnectionStatus,
   normalizeApiUrl,
@@ -39,15 +38,11 @@ import {
   type EndpointSelfTestCase,
 } from '../api/endpointNormalizer';
 import {
-  parseApiProxyError,
-} from '../api/apiErrorParser';
+  runProviderSmokeTest,
+  type ProviderSmokeAttempt,
+} from '../api/providerSmokeTest';
 import { PageReveal, LiquidCard, LiquidBadge } from '../components/liquid';
 import ThemeToggle from '../components/ThemeToggle';
-
-/** Safe timer wrapper to avoid React purity lint rules */
-function getTime(): number {
-  return Date.now();
-}
 
 const PRESETS = [
   {
@@ -61,6 +56,13 @@ const PRESETS = [
     apiUrl: 'https://api.deepseek.com',
     model: 'deepseek-chat',
     docUrl: 'https://platform.deepseek.com/api_keys',
+  },
+  {
+    name: 'MiMo / 小米',
+    apiUrl: 'https://token-plan-cn.xiaomimo.com',
+    model: '',
+    docUrl: '',
+    note: '请填写小米后台显示的精确模型名，例如 mimo-v2.5-pro，以服务商后台为准。',
   },
   {
     name: 'GLM (智谱)',
@@ -91,9 +93,9 @@ interface TestResult {
   error?: string;
 }
 
-/** V5.2: API Debug Info for detailed error display */
+/** V5.4: API Debug Info with multi-variant attempts */
 interface ApiDebugInfo {
-  testName: 'proxy_health' | 'quick_ping' | 'json_test' | 'long_json' | 'raw_chat'
+  testName: 'smoke_test'
   inputApiUrl: string
   normalizedEndpoint?: string
   endpointKind?: string
@@ -109,6 +111,10 @@ interface ApiDebugInfo {
   timeoutMs?: number
   rawResponsePreview?: string
   timestamp: string
+  /** V5.4: All smoke test attempts */
+  attempts?: ProviderSmokeAttempt[]
+  passedVariantId?: string
+  overallOk?: boolean
 }
 
 export default function SettingsPage() {
@@ -171,135 +177,71 @@ export default function SettingsPage() {
     setApiDebugInfo(null);
   };
 
-  // ---- V5.3: Single API Smoke Test ----
+  // ---- V5.4: Provider-Compatible Smoke Test ----
   const handleApiSmokeTest = async () => {
     if (!hasConfig) return;
     setSmokeTest({ status: 'running' });
     setApiDebugInfo(null);
 
-    // Step 1: Validate endpoint
-    const normalized = normalizeOpenAICompatibleEndpoint(apiUrl);
-    if (normalized.kind === 'invalid' || normalized.errors.length > 0) {
-      const errMsg = `Endpoint 无效：${normalized.errors.join('；') || 'URL 格式不正确'}`;
-      setSmokeTest({ status: 'fail', error: errMsg });
-      markApiFailed('not_configured', errMsg);
-      setStatus('failed');
+    try {
+      const result = await runProviderSmokeTest({
+        apiUrl: normalizeApiUrl(apiUrl),
+        apiKey: apiKey.trim(),
+        model: model.trim(),
+        timeoutMs: 30000,
+      });
+
+      // Build debug info from result
+      const normalized = normalizeOpenAICompatibleEndpoint(apiUrl);
       setApiDebugInfo({
-        testName: 'quick_ping',
-        inputApiUrl: apiUrl,
-        normalizedEndpoint: normalized.endpoint,
-        endpointKind: normalized.kind,
+        testName: 'smoke_test',
+        inputApiUrl: normalizeApiUrl(apiUrl),
+        normalizedEndpoint: result.normalizedEndpoint || normalized.endpoint,
+        endpointKind: result.endpointKind || normalized.kind,
         endpointWarnings: normalized.warnings,
         endpointErrors: normalized.errors,
         model: model.trim(),
-        errorCategory: 'bad_request',
-        errorMessage: errMsg,
+        httpStatus: result.attempts[result.attempts.length - 1]?.httpStatus,
+        errorCategory: result.attempts[result.attempts.length - 1]?.errorCategory,
+        errorMessage: result.finalError,
+        rawResponsePreview: result.attempts[result.attempts.length - 1]?.rawResponsePreview,
         timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-
-    // Step 2: Send minimal smoke test request
-    const startedAt = getTime();
-    try {
-      const signal = AbortSignal?.timeout?.(45000) || undefined;
-      const response = await fetch('/api/ai-proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal,
-        body: JSON.stringify({
-          apiUrl: normalizeApiUrl(apiUrl),
-          apiKey: apiKey.trim(),
-          timeoutMs: 30000,
-          body: {
-            model: model.trim(),
-            messages: [
-              {
-                role: 'user' as const,
-                content: '请只回复一个很短的 JSON：{"ok":true,"pong":"vibe"}',
-              },
-            ],
-            max_tokens: 80,
-            temperature: 0,
-          },
-        }),
+        attempts: result.attempts,
+        passedVariantId: result.passedVariantId,
+        overallOk: result.ok,
       });
 
-      const durationMs = getTime() - startedAt;
-      const rawText = await response.text();
-
-      // Step 3: Handle non-OK response
-      if (!response.ok) {
-        const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
-        const errMsg = buildSmokeTestErrorMessage(parsed.errorCategory, response.status, parsed.message);
-        setSmokeTest({ status: 'fail', durationMs, error: errMsg });
-        markApiFailed('quick_ping_failed', errMsg);
+      if (result.ok) {
+        // SUCCESS
+        setSmokeTest({ status: 'pass', durationMs: result.durationMs });
         saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
+        saveAIConnectionStatus('connected');
+        markApiReady({
+          model: model.trim(),
+          apiUrl: normalizeApiUrl(apiUrl),
+          tests: {
+            smokeTest: {
+              status: 'pass',
+              durationMs: result.durationMs,
+              checkedAt: new Date().toISOString(),
+              variantId: result.passedVariantId,
+            },
+          },
+        });
+        setStatus('connected');
+      } else {
+        // FAILED
+        setSmokeTest({ status: 'fail', durationMs: result.durationMs, error: result.finalError });
+        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
+        saveAIConnectionStatus('failed');
+        markApiFailed('quick_ping_failed', result.finalError || 'API Smoke Test 失败');
         setStatus('failed');
-        saveDebugFromProxyResponse('quick_ping', response, rawText, durationMs, 30000);
-        return;
       }
-
-      // Step 4: Parse response and extract content
-      let data: Record<string, unknown>;
-      try { data = JSON.parse(rawText); } catch {
-        const errMsg = '代理返回的不是标准 OpenAI-compatible JSON。请检查该网关是否兼容 Chat Completions 格式。';
-        setSmokeTest({ status: 'fail', durationMs, error: errMsg });
-        markApiFailed('quick_ping_failed', errMsg);
-        setStatus('failed');
-        return;
-      }
-
-      const content = extractAIContent(data);
-      if (!content || content.trim().length === 0) {
-        const errMsg = '模型返回为空。请检查模型名是否正确，或服务商是否支持该模型。';
-        setSmokeTest({ status: 'fail', durationMs, error: errMsg });
-        markApiFailed('json_failed', errMsg);
-        setStatus('failed');
-        return;
-      }
-
-      // Step 5: Success — content is non-empty, API is ready
-      setSmokeTest({ status: 'pass', durationMs });
-      saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
-      saveAIConnectionStatus('connected');
-      markApiReady({
-        model: model.trim(),
-        apiUrl: normalizeApiUrl(apiUrl),
-        tests: {
-          smokeTest: { status: 'pass', durationMs, checkedAt: new Date().toISOString() },
-        },
-      });
-      setStatus('connected');
     } catch (err) {
-      const durationMs = getTime() - startedAt;
-      const isTimeout = err && typeof err === 'object' && 'name' in err && (err as { name?: string }).name === 'TimeoutError';
-      const errorMsg = isTimeout
-        ? `请求超时（>45s）。请检查模型速度、网关稳定性或 timeout 设置。`
-        : `请求失败：${err instanceof Error ? err.message : String(err)}`;
-      setSmokeTest({ status: 'fail', durationMs, error: errorMsg });
+      const errorMsg = `请求失败：${err instanceof Error ? err.message : String(err)}`;
+      setSmokeTest({ status: 'fail', error: errorMsg });
       markApiFailed('quick_ping_failed', errorMsg);
       setStatus('failed');
-    }
-  };
-
-  // V5.3: Build user-friendly error message based on error category
-  const buildSmokeTestErrorMessage = (category: string, httpStatus: number, rawMessage: string): string => {
-    switch (category) {
-      case 'auth_error':
-        return `API Key 无效或没有权限（HTTP ${httpStatus}）。请检查 API Key 是否正确。`;
-      case 'permission_error':
-        return `API Key 无权限访问该模型（HTTP ${httpStatus}）。请在服务商后台确认权限。`;
-      case 'model_not_found':
-        return `Endpoint 或模型名错误（HTTP ${httpStatus}）。请检查模型名称是否正确。`;
-      case 'quota_or_rate_limit':
-        return `额度不足或触发限流（HTTP ${httpStatus}）。请检查账户余额或稍后重试。`;
-      case 'provider_internal_error':
-        return `上游服务商返回 HTTP ${httpStatus}。API 请求已到达服务商，但服务商内部处理失败。建议检查模型名、服务商后台状态，或使用更简单的 Smoke Test 请求。`;
-      case 'upstream_unavailable':
-        return `上游服务商暂时不可用（HTTP ${httpStatus}）。请稍后重试或检查服务商状态。`;
-      default:
-        return rawMessage || `HTTP ${httpStatus} 请求失败。`;
     }
   };
 
@@ -323,35 +265,6 @@ export default function SettingsPage() {
   const handleRunSelfTest = () => {
     const results = runEndpointNormalizerSelfTest();
     setSelfTestResults(results);
-  };
-
-  // V5.2: Helper to build debug info from a test result
-  const saveDebugFromProxyResponse = (
-    testName: ApiDebugInfo['testName'],
-    response: Response,
-    rawText: string,
-    _durationMs: number,
-    timeoutMs: number,
-  ) => {
-    const parsed = parseApiProxyError({ status: response.status, rawText, headers: response.headers });
-    setApiDebugInfo({
-      testName,
-      inputApiUrl: normalizeApiUrl(apiUrl),
-      normalizedEndpoint: parsed.normalizedEndpoint,
-      endpointKind: parsed.endpointKind,
-      endpointWarnings: parsed.endpointWarnings,
-      endpointErrors: parsed.endpointErrors,
-      model: model.trim(),
-      httpStatus: response.status,
-      errorCategory: parsed.errorCategory,
-      errorMessage: parsed.message,
-      upstreamBodyPreview: parsed.upstreamBodyPreview,
-      proxyDurationMs: parsed.proxyDurationMs,
-      upstreamDurationMs: parsed.upstreamDurationMs,
-      timeoutMs,
-      rawResponsePreview: parsed.rawPreview,
-      timestamp: new Date().toISOString(),
-    });
   };
 
   const isApiReady = connectionStatus === 'connected' && smokeTest.status === 'pass';
@@ -610,15 +523,24 @@ export default function SettingsPage() {
                   '测试并保存 API'
                 )}
               </button>
-              <button className="vp-btn vp-btn-ghost" onClick={handleRunSelfTest} style={{ fontSize: 13 }}>
-                <Search size={14} /> URL 自检
-              </button>
               {storedConfig && (
                 <button className="vp-btn vp-btn-danger-text" onClick={handleClear} style={{ fontSize: 13, color: 'var(--color-danger)' }}>
                   <Trash2 size={14} /> 清除配置
                 </button>
               )}
             </div>
+
+            {/* Advanced Diagnostics (collapsed) */}
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-hint)' }}>
+                高级诊断（URL 自检）
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                <button className="vp-btn vp-btn-ghost" onClick={handleRunSelfTest} style={{ fontSize: 12 }}>
+                  运行 URL 兼容性自检
+                </button>
+              </div>
+            </details>
           </LiquidCard>
 
           {/* V5.3: Smoke Test Result */}
@@ -660,7 +582,7 @@ export default function SettingsPage() {
             </LiquidCard>
           )}
 
-          {/* V5.3: Collapsible Debug Panel */}
+          {/* V5.4: Collapsible Debug Panel with Attempts */}
           {apiDebugInfo && (
             <details style={{ marginBottom: 16 }}>
               <summary style={{
@@ -669,16 +591,21 @@ export default function SettingsPage() {
                 display: 'flex', alignItems: 'center', gap: 6,
               }}>
                 <Activity size={14} />
-                API Debug 详情
-                {apiDebugInfo.httpStatus && (
-                  <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--color-danger)', fontFamily: 'monospace' }}>
-                    HTTP {apiDebugInfo.httpStatus}
+                API Debug — Smoke Test
+                {apiDebugInfo.overallOk ? (
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--color-success)', fontFamily: 'monospace' }}>
+                    PASSED ({apiDebugInfo.passedVariantId})
                   </span>
-                )}
+                ) : apiDebugInfo.httpStatus ? (
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--color-danger)', fontFamily: 'monospace' }}>
+                    FAILED (HTTP {apiDebugInfo.httpStatus})
+                  </span>
+                ) : null}
               </summary>
               <div style={{ marginTop: 8 }}>
-                <LiquidCard style={{ borderColor: 'rgba(255,59,48,0.15)' }}>
-                  <div style={{ fontSize: 12, lineHeight: 1.8, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
+                <LiquidCard style={{ borderColor: apiDebugInfo.overallOk ? 'rgba(52,199,89,0.15)' : 'rgba(255,59,48,0.15)' }}>
+                  {/* Basic info */}
+                  <div style={{ fontSize: 12, lineHeight: 1.8, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px', marginBottom: 16 }}>
                     <span style={{ color: 'var(--color-text-hint)' }}>Input API URL</span>
                     <span style={{ fontFamily: 'monospace', fontSize: 10, wordBreak: 'break-all' }}>{apiDebugInfo.inputApiUrl}</span>
 
@@ -699,47 +626,10 @@ export default function SettingsPage() {
                     <span style={{ color: 'var(--color-text-hint)' }}>Model</span>
                     <span>{apiDebugInfo.model}</span>
 
-                    {apiDebugInfo.httpStatus != null && (
-                      <>
-                        <span style={{ color: 'var(--color-text-hint)' }}>HTTP Status</span>
-                        <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{apiDebugInfo.httpStatus}</span>
-                      </>
-                    )}
-
-                    {apiDebugInfo.errorCategory && (
-                      <>
-                        <span style={{ color: 'var(--color-text-hint)' }}>Error Category</span>
-                        <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>{apiDebugInfo.errorCategory}</span>
-                      </>
-                    )}
-
-                    {apiDebugInfo.errorMessage && (
-                      <>
-                        <span style={{ color: 'var(--color-text-hint)' }}>Error Message</span>
-                        <span style={{ color: 'var(--color-danger)' }}>{apiDebugInfo.errorMessage}</span>
-                      </>
-                    )}
-
-                    {apiDebugInfo.timeoutMs != null && (
-                      <>
-                        <span style={{ color: 'var(--color-text-hint)' }}>Timeout</span>
-                        <span>{apiDebugInfo.timeoutMs}ms ({Math.round(apiDebugInfo.timeoutMs / 1000)}s)</span>
-                      </>
-                    )}
-
-                    {apiDebugInfo.proxyDurationMs != null && (
-                      <>
-                        <span style={{ color: 'var(--color-text-hint)' }}>Proxy Duration</span>
-                        <span>{apiDebugInfo.proxyDurationMs}ms</span>
-                      </>
-                    )}
-
-                    {apiDebugInfo.upstreamDurationMs != null && (
-                      <>
-                        <span style={{ color: 'var(--color-text-hint)' }}>Upstream Duration</span>
-                        <span>{apiDebugInfo.upstreamDurationMs}ms</span>
-                      </>
-                    )}
+                    <span style={{ color: 'var(--color-text-hint)' }}>Overall Result</span>
+                    <span style={{ color: apiDebugInfo.overallOk ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
+                      {apiDebugInfo.overallOk ? `PASSED (${apiDebugInfo.passedVariantId})` : 'FAILED'}
+                    </span>
 
                     {apiDebugInfo.endpointWarnings && apiDebugInfo.endpointWarnings.length > 0 && (
                       <>
@@ -752,40 +642,87 @@ export default function SettingsPage() {
                     <span style={{ fontSize: 10 }}>{new Date(apiDebugInfo.timestamp).toLocaleTimeString()}</span>
                   </div>
 
-                  {/* Upstream body preview */}
-                  {apiDebugInfo.upstreamBodyPreview && (
-                    <details style={{ marginTop: 12 }}>
-                      <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                        Upstream Body Preview ({apiDebugInfo.upstreamBodyPreview.length} chars)
-                      </summary>
-                      <pre style={{
-                        marginTop: 8, padding: '8px 12px', borderRadius: 6,
-                        background: 'var(--color-bg-secondary)', fontSize: 10,
-                        lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
-                        whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                        fontFamily: 'monospace',
-                      }}>
-                        {apiDebugInfo.upstreamBodyPreview}
-                      </pre>
-                    </details>
+                  {/* Attempts table */}
+                  {apiDebugInfo.attempts && apiDebugInfo.attempts.length > 0 && (
+                    <div>
+                      <h4 style={{ fontSize: 12, fontWeight: 500, marginBottom: 8, color: 'var(--color-text-secondary)' }}>
+                        Attempts ({apiDebugInfo.attempts.length})
+                      </h4>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', fontFamily: 'monospace' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--vp-border)', textAlign: 'left' }}>
+                              <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Variant</th>
+                              <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Status</th>
+                              <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>HTTP</th>
+                              <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Error Category</th>
+                              <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Duration</th>
+                              <th style={{ padding: '4px 8px', color: 'var(--color-text-hint)' }}>Preview</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {apiDebugInfo.attempts.map((attempt, i) => (
+                              <tr
+                                key={i}
+                                style={{
+                                  borderBottom: '1px solid var(--vp-border)',
+                                  background: attempt.ok ? 'rgba(52,199,89,0.06)' : undefined,
+                                }}
+                              >
+                                <td style={{ padding: '4px 8px', maxWidth: 120 }}>
+                                  <div style={{ fontWeight: 500 }}>{attempt.variantId}</div>
+                                  <div style={{ fontSize: 10, color: 'var(--color-text-hint)' }}>{attempt.label}</div>
+                                </td>
+                                <td style={{ padding: '4px 8px' }}>
+                                  {attempt.ok ? '✅' : '❌'}
+                                </td>
+                                <td style={{ padding: '4px 8px', color: attempt.httpStatus && attempt.httpStatus >= 400 ? 'var(--color-danger)' : undefined }}>
+                                  {attempt.httpStatus || '-'}
+                                </td>
+                                <td style={{ padding: '4px 8px', fontSize: 10, color: attempt.errorCategory ? 'var(--color-danger)' : undefined }}>
+                                  {attempt.errorCategory || '-'}
+                                </td>
+                                <td style={{ padding: '4px 8px' }}>
+                                  {attempt.durationMs}ms
+                                </td>
+                                <td style={{ padding: '4px 8px', maxWidth: 200 }}>
+                                  {attempt.contentPreview ? (
+                                    <span style={{ color: 'var(--color-success)', fontSize: 10 }}>{attempt.contentPreview}</span>
+                                  ) : attempt.rawResponsePreview ? (
+                                    <details>
+                                      <summary style={{ fontSize: 10, cursor: 'pointer' }}>
+                                        {attempt.rawResponsePreview.length} chars
+                                      </summary>
+                                      <pre style={{
+                                        marginTop: 4, padding: '4px 8px', borderRadius: 4,
+                                        background: 'var(--color-bg-secondary)', fontSize: 9,
+                                        lineHeight: 1.4, overflow: 'auto', maxHeight: 120,
+                                        whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                                        fontFamily: 'monospace',
+                                      }}>
+                                        {attempt.rawResponsePreview}
+                                      </pre>
+                                    </details>
+                                  ) : attempt.errorMessage ? (
+                                    <span style={{ color: 'var(--color-danger)', fontSize: 10 }}>{attempt.errorMessage}</span>
+                                  ) : '-'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   )}
 
-                  {/* Raw response preview */}
-                  {apiDebugInfo.rawResponsePreview && (
-                    <details style={{ marginTop: 8 }}>
-                      <summary style={{ fontSize: 12, cursor: 'pointer', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                        Raw Response Preview ({apiDebugInfo.rawResponsePreview.length} chars)
-                      </summary>
-                      <pre style={{
-                        marginTop: 8, padding: '8px 12px', borderRadius: 6,
-                        background: 'var(--color-bg-secondary)', fontSize: 10,
-                        lineHeight: 1.6, overflow: 'auto', maxHeight: 200,
-                        whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                        fontFamily: 'monospace',
-                      }}>
-                        {apiDebugInfo.rawResponsePreview}
-                      </pre>
-                    </details>
+                  {/* Final error message */}
+                  {apiDebugInfo.errorMessage && (
+                    <div style={{ marginTop: 12, padding: '8px 12px', borderRadius: 6, background: 'rgba(255,59,48,0.08)', fontSize: 12, lineHeight: 1.6 }}>
+                      <strong style={{ color: 'var(--color-danger)' }}>最终错误：</strong>
+                      <p style={{ marginTop: 4, color: 'var(--color-text-secondary)', whiteSpace: 'pre-wrap' }}>
+                        {apiDebugInfo.errorMessage}
+                      </p>
+                    </div>
                   )}
                 </LiquidCard>
               </div>

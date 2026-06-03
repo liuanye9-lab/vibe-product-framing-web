@@ -37,7 +37,7 @@ export interface ApiHealthState {
   details?: string;
   /** V4.9: per-test results */
   tests?: {
-    smokeTest?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string; checkedAt?: string };
+    smokeTest?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string; checkedAt?: string; variantId?: string };
     quickPing?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string };
     jsonTest?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string };
     longJson?: { status: 'pass' | 'fail' | 'pending'; durationMs?: number; error?: string };
