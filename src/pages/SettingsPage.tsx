@@ -115,6 +115,8 @@ interface ApiDebugInfo {
   attempts?: ProviderSmokeAttempt[]
   passedVariantId?: string
   overallOk?: boolean
+  /** V5.5: Upstream body samples for quick diagnosis */
+  upstreamBodySamples?: Array<{ variantId: string; preview: string }>
 }
 
 export default function SettingsPage() {
@@ -209,6 +211,7 @@ export default function SettingsPage() {
         attempts: result.attempts,
         passedVariantId: result.passedVariantId,
         overallOk: result.ok,
+        upstreamBodySamples: result.upstreamBodySamples?.map(s => ({ variantId: s.variantId, preview: s.preview })),
       });
 
       if (result.ok) {
@@ -641,6 +644,69 @@ export default function SettingsPage() {
                     <span style={{ color: 'var(--color-text-hint)' }}>Time</span>
                     <span style={{ fontSize: 10 }}>{new Date(apiDebugInfo.timestamp).toLocaleTimeString()}</span>
                   </div>
+
+                  {/* V5.5: Upstream Response Body — visible at a glance */}
+                  {!apiDebugInfo.overallOk && apiDebugInfo.attempts && apiDebugInfo.attempts.length > 0 && (() => {
+                    // Find first attempt with raw response preview
+                    const firstWithBody = apiDebugInfo.attempts.find(a => a.rawResponsePreview);
+                    const distinctSamples = apiDebugInfo.upstreamBodySamples
+                      ? Array.from(new Map(apiDebugInfo.upstreamBodySamples.map(s => [s.preview.slice(0, 500), s])).values())
+                      : [];
+                    return (
+                    <div style={{
+                      marginBottom: 16, padding: '10px 14px', borderRadius: 6,
+                      background: 'var(--color-bg-secondary)', border: '1px solid rgba(255,59,48,0.15)',
+                    }}>
+                      <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--color-danger)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <AlertTriangle size={12} />
+                        上游原始响应
+                      </h4>
+                      {distinctSamples.length > 0 ? (
+                        distinctSamples.map((sample, idx) => (
+                          <details key={sample.variantId} open={idx === 0} style={{ marginBottom: idx < distinctSamples.length - 1 ? 8 : 0 }}>
+                            <summary style={{ fontSize: 10, cursor: 'pointer', color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>
+                              {sample.variantId}
+                            </summary>
+                            <pre style={{
+                              marginTop: 4, padding: '8px 10px', borderRadius: 4,
+                              background: 'rgba(0,0,0,0.04)', fontSize: 10,
+                              lineHeight: 1.5, overflow: 'auto', maxHeight: 200,
+                              whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+                              color: 'var(--color-text-primary)',
+                            }}>
+                              {sample.preview}
+                            </pre>
+                          </details>
+                        ))
+                      ) : firstWithBody ? (
+                        <pre style={{
+                          margin: 0, padding: '8px 10px', borderRadius: 4,
+                          background: 'rgba(0,0,0,0.04)', fontSize: 10,
+                          lineHeight: 1.5, overflow: 'auto', maxHeight: 240,
+                          whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+                          color: 'var(--color-text-primary)',
+                        }}>
+                          {firstWithBody.rawResponsePreview}
+                        </pre>
+                      ) : (
+                        <div style={{ fontSize: 11, color: 'var(--color-text-hint)' }}>
+                          HTTP {apiDebugInfo.attempts[0]?.httpStatus || '?'} — {apiDebugInfo.attempts[0]?.errorCategory || '未知错误'}
+                          {apiDebugInfo.attempts[0]?.errorMessage && (
+                            <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
+                              {apiDebugInfo.attempts[0].errorMessage}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 8, fontSize: 10, color: 'var(--color-text-hint)' }}>
+                        在上游原始响应中查找模型名、权限、额度、参数格式等错误原因。
+                        如果响应仅有 HTTP 500 且无 body，说明请求格式或模型名不被接受。
+                      </div>
+                    </div>
+                    );
+                  })()}
 
                   {/* Attempts table */}
                   {apiDebugInfo.attempts && apiDebugInfo.attempts.length > 0 && (

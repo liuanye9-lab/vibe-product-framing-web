@@ -12,7 +12,12 @@ export type SmokeTestVariantId =
   | 'user_json_no_temperature'
   | 'user_json_no_max_tokens'
   | 'user_json_max_completion_tokens'
-  | 'messages_plain_no_extra_params';
+  | 'messages_plain_no_extra_params'
+  | 'system_with_user_minimal'
+  | 'system_user_no_extra'
+  | 'content_array_format'
+  | 'omit_stream_field'
+  | 'user_no_stream_minimal';
 
 export interface SmokeTestPayloadVariant {
   id: SmokeTestVariantId;
@@ -20,7 +25,7 @@ export interface SmokeTestPayloadVariant {
   description: string;
   body: {
     model: string;
-    messages: Array<{ role: 'user'; content: string }>;
+    messages: Array<{ role: 'system' | 'user'; content: string | Array<{ type: 'text'; text: string }> }>;
     max_tokens?: number;
     max_completion_tokens?: number;
     temperature?: number;
@@ -112,6 +117,76 @@ export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVa
         messages: [
           { role: 'user', content: 'pong' },
         ],
+      },
+    },
+    {
+      id: 'system_with_user_minimal',
+      label: 'System + User + max_tokens + temperature',
+      description: 'System message + user message (some APIs require system role)',
+      body: {
+        model,
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant. Reply concisely.' },
+          { role: 'user', content: 'Reply with exactly one word: pong' },
+        ],
+        max_tokens: 20,
+        temperature: 0,
+        stream: false,
+      },
+    },
+    {
+      id: 'system_user_no_extra',
+      label: 'System + User (no extra params)',
+      description: 'System + user, no max_tokens/temperature/stream',
+      body: {
+        model,
+        messages: [
+          { role: 'system', content: 'You are helpful.' },
+          { role: 'user', content: 'pong' },
+        ],
+      },
+    },
+    {
+      id: 'content_array_format',
+      label: 'User content array format',
+      description: 'Content as array of text parts (Vision API format)',
+      body: {
+        model,
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'Reply with exactly one word: pong' }],
+          },
+        ],
+        max_tokens: 20,
+        temperature: 0,
+        stream: false,
+      },
+    },
+    {
+      id: 'omit_stream_field',
+      label: 'User + JSON (omit stream field)',
+      description: 'No stream field at all (not even stream: false)',
+      body: {
+        model,
+        messages: [
+          { role: 'user', content: 'Return exactly: {"ok":true}' },
+        ],
+        max_tokens: 60,
+        temperature: 0,
+      },
+    },
+    {
+      id: 'user_no_stream_minimal',
+      label: 'User plain text + max_tokens + temp (no stream)',
+      description: 'Plain text, max_tokens + temperature, omit stream field',
+      body: {
+        model,
+        messages: [
+          { role: 'user', content: 'Reply with exactly one word: pong' },
+        ],
+        max_tokens: 20,
+        temperature: 0,
       },
     },
   ];

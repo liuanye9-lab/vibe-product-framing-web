@@ -32,6 +32,8 @@ export interface ProviderSmokeTestResult {
   endpointKind?: string;
   model: string;
   durationMs: number;
+  /** V5.5: Collect upstream body previews from all attempts for diagnosis */
+  upstreamBodySamples?: Array<{ variantId: SmokeTestVariantId; preview: string }>;
 }
 
 /** Fatal errors that should stop trying further variants */
@@ -219,6 +221,11 @@ export async function runProviderSmokeTest(input: {
   // All variants failed
   const finalError = buildFinalErrorMessage(attempts, model);
 
+  // V5.5: Collect upstream body samples for diagnosis
+  const upstreamBodySamples = attempts
+    .filter((a) => a.rawResponsePreview)
+    .map((a) => ({ variantId: a.variantId, preview: a.rawResponsePreview! }));
+
   return {
     ok: false,
     attempts,
@@ -227,6 +234,7 @@ export async function runProviderSmokeTest(input: {
     endpointKind: normalized.kind,
     model,
     durationMs: Date.now() - startedAt,
+    upstreamBodySamples: upstreamBodySamples.length > 0 ? upstreamBodySamples : undefined,
   };
 }
 
@@ -260,11 +268,13 @@ function buildFinalErrorMessage(attempts: ProviderSmokeAttempt[], model: string)
   );
   if (all500) {
     return (
-      `上游服务商在最小请求下仍返回 HTTP 500。` +
-      `系统已尝试 ${attempts.length} 种不同 payload variant（含无 temperature、无 max_tokens、无额外参数），全部失败。` +
-      `大概率不是本项目 prompt 太复杂，而是模型名、Key 权限、网关兼容性或服务商内部状态问题。` +
-      `\n\n当前模型名：${model}。请确认服务商后台要求的精确模型名。` +
-      `常见问题包括大小写、版本号、横线格式、模型未开通或当前 key 无权限访问该模型。`
+      `上游服务商在 ${attempts.length} 种 payload variant（含最简化仅 model+messages）下全部返回 HTTP 500。` +
+      `\n\n这不是参数兼容性问题——最简请求也失败说明请求本身已到达服务商但被拒绝处理。` +
+      `\n\n请展开下方"API Debug — Smoke Test"面板，查看"上游原始响应"中的 body 内容，通常包含具体错误原因（如模型不存在、权限不足、参数不支持等）。` +
+      `\n\n当前模型名：${model}。常见排查：` +
+      `\n1. 模型名是否与服务商后台完全一致（大小写、版本号、横线格式）` +
+      `\n2. API Key 是否已开通该模型的访问权限` +
+      `\n3. 账户余额是否充足`
     );
   }
 
