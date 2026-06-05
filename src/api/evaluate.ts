@@ -29,6 +29,7 @@ import { buildKnowledgeEnhancedCodexPrompt } from '../knowledge/templates/codexP
 import { evaluateHandoff } from '../evaluation/evaluateHandoff';
 import { buildStructuredDevSpec } from '../spec/buildStructuredDevSpec';
 import { formatStructuredDevSpecMarkdown } from '../spec/formatStructuredDevSpecMarkdown';
+import { adaptOpenAICompatibleBodyForProfile, clearAIRequestProfile } from './aiRequestProfile';
 
 // --- AI Error Types ---
 
@@ -161,6 +162,7 @@ export function saveAIConfig(config: AIConfig): void {
 
 export function clearAIConfig(): void {
   localStorage.removeItem(AI_CONFIG_KEY);
+  clearAIRequestProfile();
   saveAIConnectionStatus('unconfigured');
 }
 
@@ -386,6 +388,7 @@ function abortSignalTimeout(timeoutMs: number): AbortSignal {
 async function callAIProxy(config: AIConfig, body: Record<string, unknown>, timeoutMs = DEFAULT_AI_TIMEOUT_MS): Promise<Record<string, unknown>> {
   const startedAt = performance.now();
   const model = String(body.model || config.model || 'unknown');
+  const adaptedBody = adaptOpenAICompatibleBodyForProfile(body);
   console.log('[VibePilot] AI Proxy Request:', { apiUrl: config.apiUrl, model, timeoutMs });
   const clientTimeoutMs = timeoutMs + 15000;
 
@@ -402,7 +405,7 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
         body: JSON.stringify({
           apiUrl: config.apiUrl,
           apiKey: config.apiKey,
-          body,
+          body: adaptedBody,
           timeoutMs,
         }),
       });

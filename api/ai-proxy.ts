@@ -25,6 +25,9 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
     ...init,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       ...(init?.headers || {}),
     },
   });
@@ -376,6 +379,15 @@ async function handleProxyRequest(request: Request): Promise<Response> {
  */
 export default async function handler(request: Request): Promise<Response> {
   try {
+    if (request.method === 'OPTIONS') {
+      return jsonResponse({
+        ok: true,
+        service: 'vibe-ai-proxy',
+        method: 'OPTIONS',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     // V5.2: GET health check
     if (request.method === 'GET') {
       return handleHealthCheck();

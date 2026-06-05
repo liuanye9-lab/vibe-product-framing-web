@@ -58,6 +58,22 @@ function localAiProxy(): Plugin {
     name: 'local-ai-proxy',
     configureServer(server) {
       server.middlewares.use('/api/ai-proxy', async (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
+        if (req.method === 'OPTIONS') {
+          res.statusCode = 200
+          res.setHeader('Content-Type', 'application/json; charset=utf-8')
+          res.end(JSON.stringify({
+            ok: true,
+            service: 'vibe-ai-proxy-local',
+            method: 'OPTIONS',
+            timestamp: new Date().toISOString(),
+          }))
+          return
+        }
+
         // V5.2: GET health check
         if (req.method === 'GET') {
           const selfTest = runEndpointNormalizerSelfTest()
@@ -107,7 +123,7 @@ function localAiProxy(): Plugin {
             if (!apiUrl || !apiKey || !payload.body) {
               res.statusCode = 400
               res.setHeader('Content-Type', 'application/json; charset=utf-8')
-              res.end(JSON.stringify({ error: 'Missing apiUrl, apiKey, or body' }))
+              res.end(JSON.stringify({ error: 'Missing apiUrl, apiKey, or body', errorCategory: 'bad_request' }))
               return
             }
 
@@ -119,6 +135,7 @@ function localAiProxy(): Plugin {
               res.setHeader('Content-Type', 'application/json; charset=utf-8')
               res.end(JSON.stringify({
                 error: normalized.errors.join('；') || 'API URL 无效。',
+                errorCategory: 'bad_request',
                 endpointDiagnostics: normalized,
               }))
               return
@@ -130,6 +147,7 @@ function localAiProxy(): Plugin {
               res.setHeader('Content-Type', 'application/json; charset=utf-8')
               res.end(JSON.stringify({
                 error: 'Endpoint normalizer 出错：endpoint 仍包含 /v1/v1。请更新代码或使用 root URL。',
+                errorCategory: 'bad_request',
                 endpointDiagnostics: normalized,
               }))
               return
@@ -208,9 +226,23 @@ function localAiProxy(): Plugin {
             res.setHeader('X-Vibe-Endpoint-Warnings', normalized.warnings.join('; '))
             res.end(text)
           } catch (error) {
+            const errorCategory = String(error instanceof Error ? error.name : error).toLowerCase().includes('timeout')
+              || String(error instanceof Error ? error.message : error).toLowerCase().includes('abort')
+              ? 'timeout'
+              : 'upstream_unavailable'
             res.statusCode = 502
             res.setHeader('Content-Type', 'application/json; charset=utf-8')
-            res.end(JSON.stringify({ error: getUpstreamErrorMessage(error, endpoint, timeoutMs) }))
+            res.end(JSON.stringify({
+              error: getUpstreamErrorMessage(error, endpoint, timeoutMs),
+              errorCategory,
+              upstreamBodyPreview: `已尝试请求：${endpoint}。timeoutMs: ${timeoutMs}`,
+              endpointDiagnostics: {
+                endpoint,
+              },
+              requestDiagnostics: {
+                timeoutMs,
+              },
+            }))
           }
         })
       })

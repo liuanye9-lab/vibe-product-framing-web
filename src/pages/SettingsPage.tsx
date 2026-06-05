@@ -41,6 +41,10 @@ import {
   runProviderSmokeTest,
   type ProviderSmokeAttempt,
 } from '../api/providerSmokeTest';
+import {
+  clearAIRequestProfile,
+  saveAIRequestProfileFromSmokeVariant,
+} from '../api/aiRequestProfile';
 import type { ProviderModelDiagnosis } from '../api/providerProfiles';
 import type { ModelNameDiagnostics } from '../api/modelNameUtils';
 import type { ModelListProbeResult } from '../api/modelListProbe';
@@ -189,6 +193,7 @@ export default function SettingsPage() {
   };
 
   const markConfigChanged = (nextApiUrl: string, nextApiKey: string, nextModel: string) => {
+    clearAIRequestProfile();
     setStatus(nextApiUrl.trim() && nextApiKey.trim() && nextModel.trim() ? 'failed' : 'unconfigured');
   };
 
@@ -237,6 +242,9 @@ export default function SettingsPage() {
       });
 
       if (result.ok) {
+        if (result.passedVariantId) {
+          saveAIRequestProfileFromSmokeVariant(result.passedVariantId);
+        }
         // SUCCESS
         setSmokeTest({ status: 'pass', durationMs: result.durationMs });
         saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
@@ -283,6 +291,7 @@ export default function SettingsPage() {
   const applyPreset = (preset: typeof PRESETS[0]) => {
     setApiUrl(preset.apiUrl);
     setModel(preset.model);
+    clearAIRequestProfile();
     markConfigChanged(preset.apiUrl, apiKey, preset.model);
   };
 
