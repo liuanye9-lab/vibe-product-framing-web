@@ -262,12 +262,6 @@ Idea Validation Agent [███████---] 70%
 
 项目中有一个前端 Agent Graph Runtime。它不是"聊天框套 API"，而是维护一套可追踪的决策状态：
 
----
-
-## Agent Graph Runtime
-
-项目中有一个前端 Agent Graph Runtime。它不是"聊天框套 API"，而是维护一套可追踪的决策状态：
-
 ```mermaid
 sequenceDiagram
     actor U as User
