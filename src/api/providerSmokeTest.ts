@@ -9,6 +9,7 @@
  * - 9 payload variants (was 11), strictly minimal-first ordering
  * - modelListProbe receives currentModel, returns currentModelFound + similarModels
  * - Final error message prioritizes provider mismatch > model not found > HTTP 500
+ * - Success also calls modelListProbe and computes requestBodyShape
  */
 
 import { normalizeOpenAICompatibleEndpoint } from './endpointNormalizer';
@@ -18,6 +19,19 @@ import { buildSmokeTestPayloadVariants, type SmokeTestVariantId } from './smokeT
 import { diagnoseProviderModelMismatch, type ProviderModelDiagnosis } from './providerProfiles';
 import { diagnoseModelName, type ModelNameDiagnostics } from './modelNameUtils';
 import { probeProviderModels, findSimilarModels, type ModelListProbeResult } from './modelListProbe';
+
+/** V5.6: Request body shape diagnostics */
+export interface RequestBodyShape {
+  model: string;
+  messageCount: number;
+  roles: string[];
+  hasSystemRole: boolean;
+  hasTemperature: boolean;
+  hasMaxTokens: boolean;
+  hasMaxCompletionTokens: boolean;
+  hasStreamField: boolean;
+  topLevelKeys: string[];
+}
 
 export interface ProviderSmokeAttempt {
   variantId: SmokeTestVariantId;
@@ -49,10 +63,28 @@ export interface ProviderSmokeTestResult {
   modelDiagnostics?: ModelNameDiagnostics;
   /** Model list probe result (only on failure) */
   modelListProbe?: ModelListProbeResult;
+  /** V5.6: Request body shape diagnostics */
+  requestBodyShape?: RequestBodyShape;
 }
 
 /** Fatal errors that should stop trying further variants */
 const FATAL_CATEGORIES = new Set(['auth_error', 'permission_error', 'quota_or_rate_limit']);
+
+/** V5.6: Extract request body shape from payload variant */
+function extractRequestBodyShapeFromVariant(body: Record<string, unknown>): RequestBodyShape {
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  return {
+    model: typeof body.model === 'string' ? body.model : 'unknown',
+    messageCount: messages.length,
+    roles: messages.map((m: { role?: string }) => m?.role).filter((r): r is string => Boolean(r)),
+    hasSystemRole: messages.some((m: { role?: string }) => m?.role === 'system'),
+    hasTemperature: 'temperature' in body,
+    hasMaxTokens: 'max_tokens' in body,
+    hasMaxCompletionTokens: 'max_completion_tokens' in body,
+    hasStreamField: 'stream' in body,
+    topLevelKeys: Object.keys(body),
+  };
+}
 
 /**
  * Run provider-compatible smoke test with multiple payload variants.
@@ -151,6 +183,22 @@ export async function runProviderSmokeTest(input: {
             durationMs,
           });
 
+          // V5.6: Probe model list even on success to verify model availability
+          let successModelProbe: ModelListProbeResult | undefined;
+          try {
+            successModelProbe = await probeProviderModels({
+              apiUrl,
+              apiKey: apiKey.trim(),
+              currentModel: normalizedModel,
+              timeoutMs: 10000,
+            });
+          } catch {
+            // Probe failed — not critical
+          }
+
+          // V5.6: Extract request body shape from the passed variant
+          const requestBodyShape = extractRequestBodyShapeFromVariant(variant.body);
+
           return {
             ok: true,
             passedVariantId: variant.id,
@@ -162,6 +210,8 @@ export async function runProviderSmokeTest(input: {
             durationMs: Date.now() - startedAt,
             providerDiagnosis: providerDiag,
             modelDiagnostics: modelDiag,
+            modelListProbe: successModelProbe,
+            requestBodyShape,
           };
         } else {
           // Empty content

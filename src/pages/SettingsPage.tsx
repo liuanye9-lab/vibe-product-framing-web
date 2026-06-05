@@ -48,6 +48,7 @@ import {
 import type { ProviderModelDiagnosis } from '../api/providerProfiles';
 import type { ModelNameDiagnostics } from '../api/modelNameUtils';
 import type { ModelListProbeResult } from '../api/modelListProbe';
+import type { RequestBodyShape } from '../api/providerSmokeTest';
 import { diagnoseProviderModelMismatch } from '../api/providerProfiles';
 import { diagnoseModelName } from '../api/modelNameUtils';
 import { PageReveal, LiquidCard, LiquidBadge } from '../components/liquid';
@@ -141,6 +142,8 @@ interface ApiDebugInfo {
   modelListProbe?: ModelListProbeResult
   /** Normalized model name */
   normalizedModel?: string
+  /** V5.6: Request body shape diagnostics */
+  requestBodyShape?: RequestBodyShape
 }
 
 export default function SettingsPage() {
@@ -249,6 +252,7 @@ export default function SettingsPage() {
         providerDiagnosis: result.providerDiagnosis,
         modelDiagnostics: result.modelDiagnostics,
         modelListProbe: result.modelListProbe,
+        requestBodyShape: result.requestBodyShape,
       });
 
       // V5.6: Use normalized model for saving
@@ -733,6 +737,22 @@ export default function SettingsPage() {
                       响应耗时：{smokeTest.durationMs}ms
                     </p>
                   )}
+                  {/* V5.6: Show provider warnings even when test passes */}
+                  {apiDebugInfo?.providerDiagnosis?.warnings && apiDebugInfo.providerDiagnosis.warnings.length > 0 && (
+                    <div style={{ marginTop: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(255,149,0,0.06)', fontSize: 12 }}>
+                      {apiDebugInfo.providerDiagnosis.warnings.map((w, i) => (
+                        <p key={i} style={{ color: 'var(--color-warning)', margin: '2px 0' }}>
+                          ⚡ {w}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {/* V5.6: Show model list probe success info */}
+                  {apiDebugInfo?.modelListProbe?.ok && apiDebugInfo.modelListProbe.currentModelFound === true && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: 'var(--color-text-secondary)' }}>
+                      ✅ 模型 "{apiDebugInfo.normalizedModel ?? apiDebugInfo.model}" 已在服务商模型列表中确认
+                    </div>
+                  )}
                 </div>
               </div>
             </LiquidCard>
@@ -1013,6 +1033,37 @@ export default function SettingsPage() {
                           </div>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* V5.6: Request Body Shape */}
+                  {apiDebugInfo.requestBodyShape && (
+                    <div style={{
+                      marginBottom: 16, padding: '10px 14px', borderRadius: 6,
+                      background: 'var(--color-bg-secondary)', border: '1px solid var(--vp-border)',
+                    }}>
+                      <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Activity size={12} style={{ color: 'var(--color-text-hint)' }} />
+                        请求结构
+                      </h4>
+                      <div style={{ fontSize: 11, lineHeight: 1.8, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Model</span>
+                        <span style={{ fontFamily: 'monospace' }}>{apiDebugInfo.requestBodyShape.model}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Messages</span>
+                        <span>{apiDebugInfo.requestBodyShape.messageCount}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Roles</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{apiDebugInfo.requestBodyShape.roles.join(', ') || '-'}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>System Role</span>
+                        <span>{apiDebugInfo.requestBodyShape.hasSystemRole ? '是' : '否'}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Temperature</span>
+                        <span>{apiDebugInfo.requestBodyShape.hasTemperature ? '是' : '否'}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Max Tokens</span>
+                        <span>{apiDebugInfo.requestBodyShape.hasMaxTokens ? '是' : '否'}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Stream</span>
+                        <span>{apiDebugInfo.requestBodyShape.hasStreamField ? '是' : '否'}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Top Keys</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 10 }}>{apiDebugInfo.requestBodyShape.topLevelKeys.join(', ')}</span>
+                      </div>
                     </div>
                   )}
 

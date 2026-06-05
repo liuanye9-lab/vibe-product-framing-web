@@ -1,5 +1,27 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V5.6.1 Deep API Provider Diagnosis Hotfix (2026-06-05)
+
+### 目标
+修复真实 API 测试中发现的问题：当 API 测试成功时，诊断信息不完整。
+
+### 发现的问题
+1. API 测试成功时，不会调用 modelListProbe 验证模型可用性
+2. Provider Diagnosis 的 warnings 在测试成功时不显示
+3. Debug Panel 缺少 Request Body Shape 诊断
+4. TypeScript 类型错误
+
+### 修复
+- `providerSmokeTest.ts`：成功时也调用 modelListProbe，添加 extractRequestBodyShapeFromVariant 函数
+- `SettingsPage.tsx`：成功时显示 Provider warnings、Model List 确认、Request Body Shape
+- 修复 TypeScript 类型错误：roles 过滤、RequestBodyShape 类型定义
+
+### 验证
+- `npm run lint` ✅ 0 errors
+- `npm run build` ✅ 753.92KB JS
+
+---
+
 ## V5.6 Deep API Provider Diagnosis Patch (2026-06-05)
 
 ### 目标

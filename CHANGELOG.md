@@ -1,5 +1,18 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V5.6.1 — Deep API Provider Diagnosis Hotfix (2026-06-05)
+
+### Fixed
+- **Success also calls modelListProbe** — When smoke test passes, model list is still probed to verify model availability
+- **Provider warnings show on success** — Provider Diagnosis warnings now display even when test passes
+- **Model list confirmation on success** — Shows "✅ 模型已在服务商模型列表中确认" when model found in list
+- **Request Body Shape in Debug Panel** — Shows model, messages, roles, system role, temperature, max_tokens, stream, top keys
+
+### Changed
+- **Debug Panel shows all diagnostics on success** — Provider Diagnosis, Model Diagnostics, Model List Probe, and Request Body Shape all visible regardless of test outcome
+
+---
+
 ## V5.6 — Deep API Provider Diagnosis Patch (2026-06-05)
 
 ### Added
