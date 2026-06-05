@@ -1,5 +1,89 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V6.0 — Idea Validation Agent Workflow (2026-06-04)
+
+### Added
+- **Idea Validation Task Model** — `src/types/ideaValidation.ts` with full type definitions for validation workflow
+- **Idea Validation Storage** — `src/storage/ideaValidationStorage.ts` with localStorage persistence (max 100 tasks)
+- **Research Query Planner** — LLM-powered query generation for GitHub/Paper/Company searches
+- **GitHub Research Agent** — `src/research/githubResearch.ts` with scoring and deduplication
+- **Paper Research Agent** — `src/research/paperResearch.ts` with Semantic Scholar and arXiv support
+- **Competitor Research Agent** — `src/research/competitorResearch.ts` with Tavily/Brave/SerpAPI support
+- **Research Scoring** — `src/research/researchScoring.ts` with relevance scoring algorithms
+- **Research Proxy API** — `api/research-proxy.ts` (Vercel Serverless) for GitHub/Paper/Web search
+- **Idea Validation Runtime** — `src/agent-v4/ideaValidationRuntime.ts` with 9-node workflow
+- **Idea Validation Prompts** — `src/prompts/ideaValidationPrompts.ts` with 7 prompt builders
+- **Opportunity Evaluator** — `src/evaluators/opportunityEvaluator.ts` with 8-dimension scoring
+- **IdeaValidationPage** — `src/pages/IdeaValidationPage.tsx` with conversational interface
+- **IdeaValidationResultPage** — `src/pages/IdeaValidationResultPage.tsx` with full report view
+- **New Routes** — `/validate`, `/validate/:id`, `/validate/:id/report`
+- **HistoryPage Integration** — Idea Validation tasks now shown in history list
+- **LandingPage Entry** — "验证一个想法" button on home page
+- **IDEA_VALIDATION_AGENT.md** — Full product documentation
+- **TypeScript Interfaces** — IdeaValidationTask, IdeaValidationNode, ResearchBundle, GitHubReference, PaperReference, CompetitorReference, OpportunityEvaluation, FinalValidationDecision
+
+### Changed
+- **Product Flow** — Now starts with opportunity validation before DEV_SPEC generation
+- **Agent Capabilities** — Can search evidence before recommending build/no-build
+- **HistoryPage** — Now shows both ProductBrief and Idea Validation tasks
+- **LandingPage** — Added "验证一个想法" as secondary CTA
+- **Version** — Updated to V6.0
+
+### Not Done
+- No database (localStorage only)
+- No vector RAG
+- No guaranteed web search if SEARCH_API_KEY missing
+- No fake company/paper generation
+- No automatic commercial guarantee
+- No deep competitor analysis (only search + basic scoring)
+- No user interview simulation
+- No financial model generation
+- No market size estimation
+
+### Technical Details
+- **Research Proxy** — Supports GitHub (optional GITHUB_TOKEN), Semantic Scholar/arXiv (no key required), Tavily/Brave (optional SEARCH_API_KEY)
+- **Error Handling** — Never fabricates results; returns clear error states when APIs unavailable
+- **Scoring** — GitHub (stars, recency, keyword), Paper (year, keyword), Competitor (keyword, URL credibility)
+- **Evaluation** — 8 dimensions with weighted average; local rule-based fallback when LLM fails
+- **Decision Rules** — Score >= 70 + few missing evidence → do; Score >= 50 → validate_first; Score < 40 → do_not_do
+
+---
+
+## V5.5 — Provider Model Compatibility Diagnosis Patch (2026-06-05)
+
+### Added
+- **Provider profile inference** (`src/api/providerProfiles.ts`): infers provider from URL (Xiaomi MiMo, Moonshot/Kimi, DeepSeek, OpenAI, GLM)
+- **Provider/model mismatch diagnosis**: detects when API URL and model name belong to different providers
+- **Model name normalization** (`src/api/modelNameUtils.ts`): detects hidden zero-width characters, special dashes (en/em dash), trailing spaces
+- **Model list probe** (`src/api/modelListProbe.ts`): probes /v1/models to check if the current model exists in the provider's model list
+- **Models proxy** (`api/models-proxy.ts`): Vercel Serverless proxy for /v1/models (never exposes API keys)
+- **Provider Diagnosis panel** in Settings Debug Panel: shows inferred provider, confidence, errors, warnings, suggestions
+- **Model Name Diagnostics panel**: shows original vs normalized model name and any warnings
+- **Model List Probe panel**: shows whether /v1/models is supported and if current model is in the list
+- **Request body shape diagnostics** in ai-proxy: reports model, messageCount, hasSystemRole, hasTemperature, etc.
+- **Kimi / Moonshot preset** in Settings quick config
+
+### Changed
+- **Smoke test variant order**: most minimal payload first (model + messages only), then progressively add parameters
+- **Settings error copy**: prioritizes provider/model mismatch before generic HTTP 500 messages
+- **MiMo preset note**: warns against using Kimi model names with MiMo endpoint
+- **Custom Gateway preset note**: clarified to use gateway's own endpoint and model id
+
+### Fixed
+- Users entering Xiaomi endpoint with Kimi model name now see specific mismatch warning instead of generic HTTP 500
+- Hidden unicode dash / zero-width characters in model names are now detected and normalized
+- Debug panel now shows model availability checks via /v1/models
+- HTTP 500 error messages now include provider-specific context
+
+### Not Changed
+- Agent Runtime (`src/agent-v4/`)
+- ProductBrief schema
+- API Required policy
+- localStorage project history
+- No mock/local-rule fallback
+
+---
+
 ## V5.4 — Provider-Compatible Smoke Test Patch (2026-06-03)
 
 ### Added

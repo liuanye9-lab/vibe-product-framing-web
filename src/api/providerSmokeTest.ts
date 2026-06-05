@@ -1,15 +1,24 @@
 /**
- * V5.4: Provider-Compatible Smoke Test
+ * V5.5: Provider-Compatible Smoke Test
  *
  * Attempts multiple payload variants to find one that works with the target provider.
  * Stops early on success or on fatal errors (401/403/429).
  * Continues on 500/404/timeout to try simpler variants.
+ *
+ * V5.5 additions:
+ * - Model name normalization (hidden chars, special dashes)
+ * - Provider/model mismatch diagnosis
+ * - /v1/models model list probe (on failure only)
+ * - Request body shape diagnostics
  */
 
 import { normalizeOpenAICompatibleEndpoint } from './endpointNormalizer';
 import { normalizeApiUrl, extractAIContent } from './evaluate';
 import { parseApiProxyError } from './apiErrorParser';
 import { buildSmokeTestPayloadVariants, type SmokeTestVariantId } from './smokeTestPayloads';
+import { diagnoseProviderModelMismatch, type ProviderModelDiagnosis } from './providerProfiles';
+import { diagnoseModelName, type ModelNameDiagnostics } from './modelNameUtils';
+import { probeProviderModels, findSimilarModels, type ModelListProbeResult } from './modelListProbe';
 
 export interface ProviderSmokeAttempt {
   variantId: SmokeTestVariantId;
@@ -31,9 +40,16 @@ export interface ProviderSmokeTestResult {
   normalizedEndpoint?: string;
   endpointKind?: string;
   model: string;
+  normalizedModel: string;
   durationMs: number;
   /** V5.5: Collect upstream body previews from all attempts for diagnosis */
   upstreamBodySamples?: Array<{ variantId: SmokeTestVariantId; preview: string }>;
+  /** V5.5: Provider/model mismatch diagnosis */
+  providerDiagnosis?: ProviderModelDiagnosis;
+  /** V5.5: Model name diagnostics */
+  modelDiagnostics?: ModelNameDiagnostics;
+  /** V5.5: Model list probe result (only on failure) */
+  modelListProbe?: ModelListProbeResult;
 }
 
 /** Fatal errors that should stop trying further variants */
@@ -52,6 +68,16 @@ export async function runProviderSmokeTest(input: {
   const { apiUrl, apiKey, model, timeoutMs = 30000 } = input;
   const startedAt = Date.now();
 
+  // V5.5: Step 0 — Normalize model name
+  const modelDiag = diagnoseModelName(model);
+  const normalizedModel = modelDiag.normalized;
+
+  // V5.5: Step 0.5 — Provider/model mismatch diagnosis
+  const providerDiag = diagnoseProviderModelMismatch({
+    apiUrl,
+    model: normalizedModel,
+  });
+
   // Step 1: Validate endpoint
   const normalized = normalizeOpenAICompatibleEndpoint(apiUrl);
   if (normalized.kind === 'invalid' || normalized.errors.length > 0) {
@@ -62,12 +88,15 @@ export async function runProviderSmokeTest(input: {
       normalizedEndpoint: normalized.endpoint,
       endpointKind: normalized.kind,
       model,
+      normalizedModel,
       durationMs: Date.now() - startedAt,
+      providerDiagnosis: providerDiag,
+      modelDiagnostics: modelDiag,
     };
   }
 
-  // Step 2: Build variants
-  const variants = buildSmokeTestPayloadVariants(model);
+  // Step 2: Build variants with normalized model
+  const variants = buildSmokeTestPayloadVariants(normalizedModel);
   const attempts: ProviderSmokeAttempt[] = [];
   let timeoutCount = 0;
 
@@ -130,7 +159,10 @@ export async function runProviderSmokeTest(input: {
             normalizedEndpoint: normalized.endpoint,
             endpointKind: normalized.kind,
             model,
+            normalizedModel,
             durationMs: Date.now() - startedAt,
+            providerDiagnosis: providerDiag,
+            modelDiagnostics: modelDiag,
           };
         } else {
           // Empty content
@@ -173,7 +205,6 @@ export async function runProviderSmokeTest(input: {
 
       // 404: likely model name issue, try one more minimal variant then stop
       if (response.status === 404) {
-        // Continue to next variant (which is simpler)
         continue;
       }
 
@@ -219,12 +250,35 @@ export async function runProviderSmokeTest(input: {
   }
 
   // All variants failed
-  const finalError = buildFinalErrorMessage(attempts, model);
-
-  // V5.5: Collect upstream body samples for diagnosis
+  // V5.5: Collect upstream body samples
   const upstreamBodySamples = attempts
     .filter((a) => a.rawResponsePreview)
     .map((a) => ({ variantId: a.variantId, preview: a.rawResponsePreview! }));
+
+  // V5.5: If all failed with 500/404, probe model list
+  let modelListProbeResult: ModelListProbeResult | undefined;
+  const hasServerError = attempts.some(
+    (a) => a.httpStatus === 500 || a.httpStatus === 404 || a.errorCategory === 'provider_internal_error',
+  );
+  if (hasServerError && apiKey.trim()) {
+    try {
+      modelListProbeResult = await probeProviderModels({
+        apiUrl,
+        apiKey: apiKey.trim(),
+        timeoutMs: 15000,
+      });
+    } catch {
+      // Probe failed — not critical
+    }
+  }
+
+  // Build final error with provider/model diagnosis
+  const finalError = buildFinalErrorMessage({
+    attempts,
+    model: normalizedModel,
+    providerDiag,
+    modelListProbe: modelListProbeResult,
+  });
 
   return {
     ok: false,
@@ -233,15 +287,26 @@ export async function runProviderSmokeTest(input: {
     normalizedEndpoint: normalized.endpoint,
     endpointKind: normalized.kind,
     model,
+    normalizedModel,
     durationMs: Date.now() - startedAt,
     upstreamBodySamples: upstreamBodySamples.length > 0 ? upstreamBodySamples : undefined,
+    providerDiagnosis: providerDiag,
+    modelDiagnostics: modelDiag,
+    modelListProbe: modelListProbeResult,
   };
 }
 
 /**
- * Build user-friendly final error message based on all attempts.
+ * Build user-friendly final error message based on all attempts + diagnostics.
  */
-function buildFinalErrorMessage(attempts: ProviderSmokeAttempt[], model: string): string {
+function buildFinalErrorMessage(input: {
+  attempts: ProviderSmokeAttempt[];
+  model: string;
+  providerDiag: ProviderModelDiagnosis;
+  modelListProbe?: ModelListProbeResult;
+}): string {
+  const { attempts, model, providerDiag, modelListProbe } = input;
+
   if (attempts.length === 0) {
     return '没有可用的测试请求。';
   }
@@ -262,20 +327,52 @@ function buildFinalErrorMessage(attempts: ProviderSmokeAttempt[], model: string)
     return `额度不足或触发限流（HTTP ${quotaError.httpStatus}）。请检查账户余额或稍后重试。`;
   }
 
+  // V5.5: Provider/model mismatch takes priority
+  if (providerDiag.errors.length > 0) {
+    let msg = providerDiag.errors.join('\n');
+    if (providerDiag.suggestions.length > 0) {
+      msg += '\n\n' + providerDiag.suggestions.join('\n');
+    }
+    return msg;
+  }
+
   // Check for 500 on all variants
   const all500 = attempts.every(
     (a) => a.httpStatus === 500 || a.errorCategory === 'provider_internal_error',
   );
   if (all500) {
-    return (
+    let msg =
       `上游服务商在 ${attempts.length} 种 payload variant（含最简化仅 model+messages）下全部返回 HTTP 500。` +
       `\n\n这不是参数兼容性问题——最简请求也失败说明请求本身已到达服务商但被拒绝处理。` +
-      `\n\n请展开下方"API Debug — Smoke Test"面板，查看"上游原始响应"中的 body 内容，通常包含具体错误原因（如模型不存在、权限不足、参数不支持等）。` +
-      `\n\n当前模型名：${model}。常见排查：` +
+      `\n\n当前模型名：${model}。`;
+
+    // V5.5: Add model list probe info
+    if (modelListProbe?.ok) {
+      const found = modelListProbe.models.some((m) => m.toLowerCase() === model.toLowerCase());
+      if (!found) {
+        msg += `\n\n⚠️ 模型列表中未找到 "${model}"。`;
+        const similar = findSimilarModels(model, modelListProbe.models);
+        if (similar.length > 0) {
+          msg += `\n相似模型：${similar.join('、')}`;
+        }
+        msg += `\n请从服务商后台复制精确 model id。`;
+      }
+    } else if (modelListProbe && !modelListProbe.ok) {
+      msg += `\n\n模型列表探测：${modelListProbe.errorMessage ?? '不支持'}`;
+    }
+
+    // Add provider warnings
+    if (providerDiag.warnings.length > 0) {
+      msg += '\n\n' + providerDiag.warnings.join('\n');
+    }
+
+    msg +=
+      `\n\n常见排查：` +
       `\n1. 模型名是否与服务商后台完全一致（大小写、版本号、横线格式）` +
       `\n2. API Key 是否已开通该模型的访问权限` +
-      `\n3. 账户余额是否充足`
-    );
+      `\n3. 账户余额是否充足`;
+
+    return msg;
   }
 
   // Check for 404

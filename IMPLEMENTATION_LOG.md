@@ -1,5 +1,109 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V5.5 Provider Model Compatibility Diagnosis Patch (2026-06-05)
+
+### 目标
+增强 API 连接诊断，解决 Xiaomi MiMo + Kimi model mismatch 问题，让用户能明确知道问题所在。
+
+### 初始状态
+- `npm run lint` ✅ 0 errors
+- `npm run build` ✅ 731.54KB JS
+- 当前 endpoint preview 正确：`https://token-plan-cn.xiaomimo.com/v1/chat/completions`
+- 当前 smoke payload variant 数量：11
+- 当前 HTTP 500 处理：全部失败时给通用文案
+- 当前无 provider/model mismatch 诊断
+
+### 本轮新增文件（5 个）
+1. `src/api/providerProfiles.ts` — provider 推断 + mismatch 诊断
+2. `src/api/modelNameUtils.ts` — model name 清洗 + 隐藏字符检查
+3. `src/api/modelListProbe.ts` — /v1/models 探测
+4. `api/models-proxy.ts` — 后端代理（Vercel Serverless）
+
+### 本轮修改文件（4 个）
+1. `src/api/smokeTestPayloads.ts` — 重排 variant 顺序，最简请求优先
+2. `src/api/providerSmokeTest.ts` — 集成 provider/model 诊断 + model list probe
+3. `src/pages/SettingsPage.tsx` — Debug Panel 增强 + 新 presets
+4. `api/ai-proxy.ts` — 请求体诊断
+
+### 核心逻辑
+1. **Provider 推断**：从 URL 推断服务商（MiMo/Kimi/DeepSeek/OpenAI/GLM/Custom）
+2. **Mismatch 诊断**：检查 model 是否属于推断出的服务商
+3. **Model 清洗**：移除零宽字符、特殊横线、前后空格
+4. **Model List Probe**：仅在 smoke test 全部失败时才探测 /v1/models
+5. **错误优先级**：provider mismatch > model list > HTTP 500 通用文案
+
+### 验证
+- `npm run lint` ✅ 0 errors
+- `npm run build` ✅ 742.53KB JS
+
+---
+
+## V6.0 Idea Validation Agent Workflow (2026-06-04)
+
+### 目标
+将项目从"AI Coding 前的提示词 / DEV_SPEC 生成工具"升级为"引导式想法验证 Agent"。
+
+### 初始状态
+- `npm install`: ✅ 0 vulnerabilities
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功
+
+### 本轮新增文件 (17 个)
+1. `src/types/ideaValidation.ts` — 所有类型定义
+2. `src/storage/ideaValidationStorage.ts` — localStorage 存储
+3. `src/research/researchTypes.ts` — 研究类型
+4. `src/research/githubResearch.ts` — GitHub 研究适配器
+5. `src/research/paperResearch.ts` — 论文研究适配器
+6. `src/research/competitorResearch.ts` — 竞品研究适配器
+7. `src/research/researchScoring.ts` — 研究评分
+8. `api/research-proxy.ts` — 后端代理
+9. `src/agent-v4/ideaValidationRuntime.ts` — Agent 工作流运行时
+10. `src/prompts/ideaValidationPrompts.ts` — Prompt 构建器
+11. `src/evaluators/opportunityEvaluator.ts` — 机会评估器
+12. `src/pages/IdeaValidationPage.tsx` — 验证交互页面
+13. `src/pages/IdeaValidationResultPage.tsx` — 结果页面
+14. `IDEA_VALIDATION_AGENT.md` — 产品文档
+
+### 本轮修改文件 (4 个)
+1. `src/App.tsx` — 添加 /validate, /validate/:id, /validate/:id/report 路由
+2. `src/pages/HistoryPage.tsx` — 添加 Idea Validation 历史记录显示
+3. `src/pages/LandingPage.tsx` — 添加"验证一个想法"入口，更新版本号
+4. `CHANGELOG.md` — 新增 V6.0 条目
+5. `README.md` — 新增 Idea Validation Agent 章节
+6. `IMPLEMENTATION_LOG.md` — 本文件
+
+### 技术实现
+1. **类型系统** — 完整的 TypeScript 接口定义，所有类型可序列化
+2. **存储层** — localStorage，最多 100 个任务，坏数据不白屏
+3. **研究适配器** — GitHub/Paper/Competitor 三个独立适配器
+4. **后端代理** — Vercel Serverless，统一处理搜索请求
+5. **评分系统** — 本地规则 + LLM 双重评估
+6. **Agent 运行时** — 9 节点工作流，支持状态转换和错误处理
+7. **UI 页面** — 对话式交互 + 结果报告页
+
+### 关键设计决策
+1. **不编造来源** — 没有搜索结果时明确说明，不凭空生成
+2. **API Key 安全** — 后端代理不返回任何 API Key
+3. **优雅降级** — LLM 失败时使用本地规则评估
+4. **证据驱动** — 所有评估基于实际搜索结果
+5. **决策透明** — 显示理由、风险、缺失证据
+
+### 不改的文件
+- `src/agent-v4/graphRuntime.ts` — 现有 Agent 不动
+- `src/api/evaluate.ts` — AI 调用层不动
+- `src/pages/AgentWorkspacePageV4.tsx` — 现有页面不动
+- `src/types.ts` — 全局类型不动
+
+### 最终验证
+- `npm run lint`: ✅ 0 errors
+- `npm run build`: ✅ 构建成功
+- 新增文件: 14
+- 修改文件: 6
+- 无新增 npm 依赖
+- 无破坏现有功能
+
+---
+
 ## V5.4 Provider-Compatible Smoke Test Patch (2026-06-03)
 
 ### 初始状态

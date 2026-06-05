@@ -205,6 +205,65 @@ CODEX_TASK_PACK
 
 ---
 
+## Idea Validation Agent (V6.0)
+
+### 为什么需要先验证想法？
+
+很多 vibe coding 项目失败，不是因为 AI 不会写代码，而是因为**想法本身有问题**：
+
+- 市场上已经有成熟竞品
+- 目标用户不明确或不存在
+- 技术方向不可行
+- 商业模式不成立
+
+**Idea Validation Agent** 在你开始写代码之前，先帮你验证想法是否值得做。
+
+### 工作流
+
+```
+Raw Idea → Clarification → Research → Competitor Analysis → Opportunity Evaluation → Decision → DEV_SPEC
+```
+
+### 支持搜索
+
+1. **GitHub 开源项目** — 找到相关开源项目，分析可借鉴的点
+2. **学术论文 / 技术方向** — 了解技术前沿和研究方向
+3. **公司 / 竞品** — 了解市场上的竞品和商业模式
+
+### 不会编造来源
+
+- 没有搜索结果时，明确说明"未找到"
+- 不会凭空编造公司、论文或项目
+- 缺失证据会在 `missingEvidence` 中列出
+
+### 没有搜索 key 时
+
+- **GitHub** — 使用公共 API，但有限流
+- **论文** — 使用 Semantic Scholar / arXiv，不需要 key
+- **竞品** — 需要 `SEARCH_API_KEY`（Tavily / Brave / SerpAPI），否则不可用
+
+### 当前版本限制
+
+- 搜索结果质量依赖 provider
+- 不做商业结论保证
+- 不替代真实用户访谈
+- 不做深度竞品分析（仅搜索 + 基础评分）
+- 不做财务模型预测
+
+### 进度条
+
+```
+Idea Validation Agent [███████---] 70%
+```
+
+---
+
+## Agent Graph Runtime
+
+项目中有一个前端 Agent Graph Runtime。它不是"聊天框套 API"，而是维护一套可追踪的决策状态：
+
+---
+
 ## Agent Graph Runtime
 
 项目中有一个前端 Agent Graph Runtime。它不是"聊天框套 API"，而是维护一套可追踪的决策状态：

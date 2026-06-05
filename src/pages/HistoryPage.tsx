@@ -23,6 +23,8 @@ import {
   Home,
   Brain,
   GitBranch,
+  Lightbulb,
+  BarChart3,
 } from 'lucide-react';
 import type { ProductBrief } from '../types';
 import { getAgentWorkflowSummary, deleteAgentWorkflow } from '../agent/workflowStore';
@@ -32,6 +34,9 @@ import { getPhaseLabel } from '../agent/phaseUtils';
 import { getGraphSessionSummary, deleteGraphSession } from '../agent-v4/graphStore';
 import { getNodeLabel } from '../agent-v4/graph';
 import { PageReveal, LiquidCard } from '../components/liquid';
+import type { IdeaValidationTask } from '../types/ideaValidation';
+import { IDEA_GOAL_LABELS, VALIDATION_DECISION_LABELS } from '../types/ideaValidation';
+import { listIdeaValidationTasks, deleteIdeaValidationTask } from '../storage/ideaValidationStorage';
 
 const STORAGE_KEY = 'vibepilot_briefs';
 
@@ -67,11 +72,13 @@ function formatDate(iso: string): string {
 export default function HistoryPage() {
   const navigate = useNavigate();
   const [briefs, setBriefs] = useState<ProductBrief[]>([]);
+  const [validationTasks, setValidationTasks] = useState<IdeaValidationTask[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     setBriefs(loadAllBriefs().sort((a, b) =>
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+    setValidationTasks(listIdeaValidationTasks());
   }, []);
 
   useEffect(() => {
@@ -86,6 +93,12 @@ export default function HistoryPage() {
     deleteAgentWorkflow(id);
     deleteAgentSession(id);
     deleteGraphSession(id);
+    setDeleteConfirm(null);
+    refresh();
+  };
+
+  const handleDeleteValidation = (id: string) => {
+    deleteIdeaValidationTask(id);
     setDeleteConfirm(null);
     refresh();
   };
@@ -258,6 +271,118 @@ export default function HistoryPage() {
                 </LiquidCard>
               );
             })}
+
+            {/* Idea Validation Tasks */}
+            {validationTasks.length > 0 && (
+              <>
+                <div style={{ marginTop: 24, marginBottom: 8 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Lightbulb size={18} style={{ color: 'var(--vp-primary)' }} />
+                    Idea Validation
+                    <span style={{ fontSize: 12, color: 'var(--color-text-hint)', fontWeight: 400 }}>({validationTasks.length})</span>
+                  </h2>
+                </div>
+                {validationTasks.map((task) => {
+                  const isPending = deleteConfirm === task.id;
+                  const hasDecision = !!task.decision;
+                  const hasEvaluation = !!task.evaluation;
+
+                  return (
+                    <LiquidCard
+                      key={task.id}
+                      onClick={() => {
+                        if (!isPending) {
+                          if (task.status === 'completed') {
+                            navigate(`/validate/${task.id}/report`);
+                          } else {
+                            navigate(`/validate/${task.id}`);
+                          }
+                        }
+                      }}
+                      style={{
+                        cursor: isPending ? 'default' : 'pointer',
+                        padding: '18px 22px',
+                        ...(isPending ? { borderColor: 'var(--color-danger)' } : {}),
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                            <Lightbulb size={14} style={{ color: 'var(--vp-primary)', flexShrink: 0 }} />
+                            <h3 style={{ fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {task.clarifiedIdea ?? (task.rawIdea || '未命名想法')}
+                            </h3>
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '1px 6px',
+                              borderRadius: 8,
+                              background: task.status === 'completed' ? 'var(--vp-success)' : 'var(--vp-primary)',
+                              color: '#fff',
+                              flexShrink: 0,
+                            }}>
+                              {task.status === 'completed' ? '已完成' : '进行中'}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-hint)' }}>
+                              <Clock size={12} /> {formatDate(task.updatedAt)}
+                            </span>
+                            <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
+                              {IDEA_GOAL_LABELS[task.goalType]}
+                            </span>
+                            {hasEvaluation && (
+                              <span style={{ fontSize: 12, color: 'var(--color-text-hint)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <BarChart3 size={12} /> {task.evaluation!.overallScore}分
+                              </span>
+                            )}
+                            {hasDecision && (
+                              <span style={{ fontSize: 12, color: 'var(--vp-primary)' }}>
+                                {VALIDATION_DECISION_LABELS[task.decision!.decision]}
+                              </span>
+                            )}
+                            <span style={{ fontSize: 12, color: 'var(--color-text-hint)' }}>
+                              {task.research.githubRepos.length} GitHub · {task.research.papers.length} 论文 · {task.research.competitors.length} 竞品
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      {isPending ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+                          <AlertTriangle size={14} style={{ color: 'var(--color-danger)' }} />
+                          <span style={{ fontSize: 13, color: 'var(--color-danger)', flex: 1 }}>确定删除？验证记录也会一并删除。</span>
+                          <button className="vp-btn vp-btn-ghost" onClick={() => setDeleteConfirm(null)} style={{ padding: '6px 12px', fontSize: 12 }}>取消</button>
+                          <button className="vp-btn vp-btn-primary" onClick={() => handleDeleteValidation(task.id)} style={{ padding: '6px 12px', fontSize: 12, background: 'var(--color-danger)' }}>确认删除</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap', marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+                          {task.status !== 'completed' && (
+                            <button className="vp-btn vp-btn-primary" onClick={() => navigate(`/validate/${task.id}`)} style={{ fontSize: 12, padding: '6px 12px' }}>
+                              <RotateCcw size={12} /> 继续验证
+                            </button>
+                          )}
+                          {task.status === 'completed' && (
+                            <button className="vp-btn vp-btn-primary" onClick={() => navigate(`/validate/${task.id}/report`)} style={{ fontSize: 12, padding: '6px 12px' }}>
+                              <BarChart3 size={12} /> 查看报告
+                            </button>
+                          )}
+                          {hasDecision && task.decision!.shouldGenerateDevSpec && (
+                            <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/output/${task.id}`)} style={{ fontSize: 12, padding: '6px 12px' }}>
+                              <FileText size={12} /> DEV_SPEC
+                            </button>
+                          )}
+                          <button className="vp-btn vp-btn-ghost" onClick={() => setDeleteConfirm(task.id)} style={{ fontSize: 12, padding: '6px 12px', color: 'var(--color-danger)' }}>
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
+                    </LiquidCard>
+                  );
+                })}
+              </>
+            )}
           </div>
         </div>
       </main>

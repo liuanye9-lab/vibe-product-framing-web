@@ -65,6 +65,27 @@ function extractModelFromPayload(body: unknown): string {
 }
 
 /**
+ * V5.5: Extract request body shape diagnostics for debugging.
+ * Never returns user content — only structural info.
+ */
+function extractRequestBodyShape(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== 'object') {
+    return { valid: false };
+  }
+  const b = body as Record<string, unknown>;
+  const messages = Array.isArray(b.messages) ? b.messages : [];
+  return {
+    model: typeof b.model === 'string' ? b.model : 'unknown',
+    messageCount: messages.length,
+    hasSystemRole: messages.some((m: { role?: string }) => m?.role === 'system'),
+    hasTemperature: 'temperature' in b,
+    hasMaxTokens: 'max_tokens' in b,
+    hasMaxCompletionTokens: 'max_completion_tokens' in b,
+    hasStreamField: 'stream' in b,
+  };
+}
+
+/**
  * V5.2: Extract a human-readable error message from upstream response.
  */
 function extractUpstreamErrorMessage(
@@ -280,6 +301,7 @@ async function handleProxyRequest(request: Request): Promise<Response> {
           timeoutMs,
           proxyDurationMs,
           upstreamDurationMs,
+          requestBodyShape: extractRequestBodyShape(payload.body),
         },
       }, {
         status: upstream.status,

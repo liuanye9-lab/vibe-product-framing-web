@@ -13,6 +13,8 @@ import AgentWorkspacePageV4 from './pages/AgentWorkspacePageV4';
 import DecisionOutputPage from './pages/DecisionOutputPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
+import IdeaValidationPage from './pages/IdeaValidationPage';
+import IdeaValidationResultPage from './pages/IdeaValidationResultPage';
 
 class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
@@ -114,6 +116,9 @@ export default function App() {
           <Route path="/blind-spot/:id" element={<BlindSpotReviewPage />} />
           <Route path="/handoff/:id" element={<DeveloperHandoffPage />} />
           <Route path="/agent/:id" element={<AgentWorkspacePageV4 />} />
+          <Route path="/validate" element={<IdeaValidationPage />} />
+          <Route path="/validate/:id" element={<IdeaValidationPage />} />
+          <Route path="/validate/:id/report" element={<IdeaValidationResultPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/guide/:id" element={<LegacyRedirect to="product" />} />

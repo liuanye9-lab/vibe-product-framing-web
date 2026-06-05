@@ -41,6 +41,9 @@ import {
   runProviderSmokeTest,
   type ProviderSmokeAttempt,
 } from '../api/providerSmokeTest';
+import type { ProviderModelDiagnosis } from '../api/providerProfiles';
+import type { ModelNameDiagnostics } from '../api/modelNameUtils';
+import type { ModelListProbeResult } from '../api/modelListProbe';
 import { PageReveal, LiquidCard, LiquidBadge } from '../components/liquid';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -62,7 +65,14 @@ const PRESETS = [
     apiUrl: 'https://token-plan-cn.xiaomimo.com',
     model: '',
     docUrl: '',
-    note: '请填写小米后台显示的精确模型名，例如 mimo-v2.5-pro，以服务商后台为准。',
+    note: '请填写小米后台显示的精确 MiMo model id。不要填写 Kimi / Moonshot 模型名，除非该网关明确支持。',
+  },
+  {
+    name: 'Kimi / Moonshot',
+    apiUrl: '',
+    model: '',
+    docUrl: 'https://platform.moonshot.cn',
+    note: '请填写 Moonshot / Kimi 官方 API 地址和后台展示的精确 model id。',
   },
   {
     name: 'GLM (智谱)',
@@ -76,7 +86,7 @@ const PRESETS = [
     apiUrl: 'https://gpt-agent.cc',
     model: '',
     docUrl: '',
-    note: 'OpenAI-compatible 网关，支持 root 或 /v1 写法。模型名以服务商后台为准。',
+    note: '如果第三方网关同时代理多家模型，请以该网关后台显示的 endpoint 和 model id 为准。',
   },
   {
     name: 'LLM Token',
@@ -117,6 +127,14 @@ interface ApiDebugInfo {
   overallOk?: boolean
   /** V5.5: Upstream body samples for quick diagnosis */
   upstreamBodySamples?: Array<{ variantId: string; preview: string }>
+  /** V5.5: Provider/model mismatch diagnosis */
+  providerDiagnosis?: ProviderModelDiagnosis
+  /** V5.5: Model name diagnostics */
+  modelDiagnostics?: ModelNameDiagnostics
+  /** V5.5: Model list probe result */
+  modelListProbe?: ModelListProbeResult
+  /** V5.5: Normalized model name */
+  normalizedModel?: string
 }
 
 export default function SettingsPage() {
@@ -203,6 +221,7 @@ export default function SettingsPage() {
         endpointWarnings: normalized.warnings,
         endpointErrors: normalized.errors,
         model: model.trim(),
+        normalizedModel: result.normalizedModel,
         httpStatus: result.attempts[result.attempts.length - 1]?.httpStatus,
         errorCategory: result.attempts[result.attempts.length - 1]?.errorCategory,
         errorMessage: result.finalError,
@@ -212,6 +231,9 @@ export default function SettingsPage() {
         passedVariantId: result.passedVariantId,
         overallOk: result.ok,
         upstreamBodySamples: result.upstreamBodySamples?.map(s => ({ variantId: s.variantId, preview: s.preview })),
+        providerDiagnosis: result.providerDiagnosis,
+        modelDiagnostics: result.modelDiagnostics,
+        modelListProbe: result.modelListProbe,
       });
 
       if (result.ok) {
@@ -573,13 +595,18 @@ export default function SettingsPage() {
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <AlertTriangle size={18} style={{ color: 'var(--color-danger)', flexShrink: 0, marginTop: 2 }} />
-                <div>
+                <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-danger)' }}>
-                    API 不可用 — 查看下方 Debug 详情。
+                    API 不可用
                   </p>
-                  <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                  <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                     {smokeTest.error}
                   </p>
+                  {apiDebugInfo?.providerDiagnosis && apiDebugInfo.providerDiagnosis.errors.length > 0 && (
+                    <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 8, padding: '6px 10px', borderRadius: 4, background: 'rgba(255,59,48,0.06)' }}>
+                      💡 请先检查 API URL 和模型名是否属于同一服务商（详见下方 Debug 面板）。
+                    </p>
+                  )}
                 </div>
               </div>
             </LiquidCard>
@@ -644,6 +671,137 @@ export default function SettingsPage() {
                     <span style={{ color: 'var(--color-text-hint)' }}>Time</span>
                     <span style={{ fontSize: 10 }}>{new Date(apiDebugInfo.timestamp).toLocaleTimeString()}</span>
                   </div>
+
+                  {/* V5.5: Provider Diagnosis */}
+                  {apiDebugInfo.providerDiagnosis && (
+                    <div style={{
+                      marginBottom: 16, padding: '10px 14px', borderRadius: 6,
+                      background: apiDebugInfo.providerDiagnosis.errors.length > 0
+                        ? 'rgba(255,59,48,0.08)'
+                        : 'var(--color-bg-secondary)',
+                      border: `1px solid ${apiDebugInfo.providerDiagnosis.errors.length > 0 ? 'rgba(255,59,48,0.2)' : 'var(--vp-border)'}`,
+                    }}>
+                      <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {apiDebugInfo.providerDiagnosis.errors.length > 0 ? (
+                          <AlertTriangle size={12} style={{ color: 'var(--color-danger)' }} />
+                        ) : (
+                          <Activity size={12} style={{ color: 'var(--color-text-hint)' }} />
+                        )}
+                        Provider 诊断
+                        <span style={{ fontWeight: 400, color: 'var(--color-text-hint)', fontSize: 11 }}>
+                          {apiDebugInfo.providerDiagnosis.providerLabel} (confidence: {Math.round(apiDebugInfo.providerDiagnosis.confidence * 100)}%)
+                        </span>
+                      </h4>
+                      {apiDebugInfo.providerDiagnosis.errors.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          {apiDebugInfo.providerDiagnosis.errors.map((err, i) => (
+                            <p key={i} style={{ fontSize: 12, color: 'var(--color-danger)', lineHeight: 1.6, margin: '4px 0' }}>
+                              ⚠️ {err}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      {apiDebugInfo.providerDiagnosis.warnings.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          {apiDebugInfo.providerDiagnosis.warnings.map((w, i) => (
+                            <p key={i} style={{ fontSize: 12, color: 'var(--color-warning)', lineHeight: 1.6, margin: '4px 0' }}>
+                              ⚡ {w}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      {apiDebugInfo.providerDiagnosis.suggestions.length > 0 && (
+                        <div>
+                          {apiDebugInfo.providerDiagnosis.suggestions.map((s, i) => (
+                            <p key={i} style={{ fontSize: 11, color: 'var(--color-text-secondary)', lineHeight: 1.6, margin: '4px 0' }}>
+                              💡 {s}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* V5.5: Model Name Diagnostics */}
+                  {apiDebugInfo.modelDiagnostics && apiDebugInfo.modelDiagnostics.changed && (
+                    <div style={{
+                      marginBottom: 16, padding: '10px 14px', borderRadius: 6,
+                      background: 'rgba(255,149,0,0.06)', border: '1px solid rgba(255,149,0,0.15)',
+                    }}>
+                      <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <AlertTriangle size={12} />
+                        模型名诊断
+                      </h4>
+                      <div style={{ fontSize: 11, lineHeight: 1.8, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Original</span>
+                        <span style={{ fontFamily: 'monospace' }}>{apiDebugInfo.modelDiagnostics.original}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Normalized</span>
+                        <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{apiDebugInfo.modelDiagnostics.normalized}</span>
+                      </div>
+                      {apiDebugInfo.modelDiagnostics.warnings.map((w, i) => (
+                        <p key={i} style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 4 }}>
+                          ⚡ {w}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* V5.5: Model List Probe */}
+                  {apiDebugInfo.modelListProbe && (
+                    <div style={{
+                      marginBottom: 16, padding: '10px 14px', borderRadius: 6,
+                      background: apiDebugInfo.modelListProbe.ok ? 'var(--color-bg-secondary)' : 'rgba(255,59,48,0.06)',
+                      border: `1px solid ${apiDebugInfo.modelListProbe.ok ? 'var(--vp-border)' : 'rgba(255,59,48,0.15)'}`,
+                    }}>
+                      <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Search size={12} style={{ color: 'var(--color-text-hint)' }} />
+                        模型列表探测 (/v1/models)
+                      </h4>
+                      {apiDebugInfo.modelListProbe.ok ? (
+                        <div style={{ fontSize: 11, lineHeight: 1.8 }}>
+                          <div>✅ 探测成功 — 返回 {apiDebugInfo.modelListProbe.models.length} 个模型</div>
+                          <div style={{ fontSize: 10, color: 'var(--color-text-hint)' }}>
+                            Endpoint: {apiDebugInfo.modelListProbe.endpoint}
+                          </div>
+                          {(() => {
+                            const normalized = apiDebugInfo.normalizedModel ?? apiDebugInfo.model;
+                            const found = apiDebugInfo.modelListProbe.models.some(m => m.toLowerCase() === normalized.toLowerCase());
+                            if (!found) {
+                              const similar = apiDebugInfo.modelListProbe.models
+                                .filter(m => {
+                                  const ml = m.toLowerCase();
+                                  const tl = normalized.toLowerCase();
+                                  return ml.includes(tl) || tl.includes(ml);
+                                })
+                                .slice(0, 5);
+                              return (
+                                <div style={{ marginTop: 6 }}>
+                                  <span style={{ color: 'var(--color-danger)' }}>
+                                    ⚠️ 模型列表中未找到 "{normalized}"
+                                  </span>
+                                  {similar.length > 0 && (
+                                    <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
+                                      相似模型：{similar.join('、')}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            }
+                            return <div style={{ marginTop: 4, color: 'var(--color-success)' }}>✅ 模型 "{normalized}" 在列表中</div>;
+                          })()}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11, lineHeight: 1.6 }}>
+                          <div style={{ color: 'var(--color-text-secondary)' }}>
+                            ❌ 探测失败：{apiDebugInfo.modelListProbe.errorMessage ?? '不支持 /v1/models'}
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--color-text-hint)', marginTop: 4 }}>
+                            部分服务商不支持 /v1/models，不影响 Smoke Test 判断。
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* V5.5: Upstream Response Body — visible at a glance */}
                   {!apiDebugInfo.overallOk && apiDebugInfo.attempts && apiDebugInfo.attempts.length > 0 && (() => {

@@ -53,7 +53,7 @@ export default function LandingPage() {
               background: 'var(--vp-surface-inset)',
               padding: '2px 7px', borderRadius: 999,
             }}>
-              V4.9
+              V6.0
             </span>
           </div>
 
@@ -106,7 +106,7 @@ export default function LandingPage() {
             marginBottom: 28,
           }}>
             <Sparkles size={13} style={{ color: 'var(--vp-accent)' }} />
-            AI 辅助 · Vibe Decision Copilot V4.9
+            AI 辅助 · Vibe Decision Copilot V6.0
           </div>
 
           {/* Main Heading */}
@@ -206,6 +206,14 @@ export default function LandingPage() {
 
           {/* Secondary CTA */}
           <div style={{ marginBottom: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <button
+              className="vp-btn vp-btn-ghost"
+              onClick={() => navigate('/validate')}
+              style={{ fontSize: 14, padding: '12px 24px' }}
+            >
+              <Lightbulb size={16} />
+              验证一个想法
+            </button>
             <button
               className="vp-btn vp-btn-ghost"
               onClick={() => navigate('/new', { state: { fromHome: true } })}
