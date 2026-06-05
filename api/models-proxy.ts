@@ -126,22 +126,31 @@ export default async function handler(
       return;
     }
 
-    // Parse models list
+    // Parse models list — supports multiple provider response formats
     let models: string[] = [];
     try {
       const data = JSON.parse(bodyText);
       if (Array.isArray(data.data)) {
+        // OpenAI standard: { data: [{ id: "model" }] }
         models = data.data
           .map((item: { id?: string }) => item.id)
           .filter((id: string | undefined): id is string => typeof id === 'string');
       } else if (Array.isArray(data.models)) {
-        // Some providers return { models: [...] }
+        // Some providers: { models: [{ id: "...", name: "..." }] }
         models = data.models
           .map((item: { id?: string; name?: string }) => item.id ?? item.name)
           .filter((id: string | undefined): id is string => typeof id === 'string');
+      } else if (Array.isArray(data)) {
+        // Some providers: ["model1", "model2"]
+        models = data.filter((item: unknown): item is string => typeof item === 'string');
       }
     } catch {
       // Not valid JSON — provider might not support /v1/models properly
+    }
+
+    // Limit to 200 models
+    if (models.length > 200) {
+      models = models.slice(0, 200);
     }
 
     res.status(200).json({

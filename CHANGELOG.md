@@ -1,5 +1,50 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V5.6 — Deep API Provider Diagnosis Patch (2026-06-05)
+
+### Added
+- **Provider profile inference** — `inferProviderFromApiUrl()` infers provider from URL patterns (MiMo/Kimi/DeepSeek/OpenAI/GLM/Custom)
+- **Provider/model mismatch diagnosis** — `diagnoseProviderModelMismatch()` detects when URL and model name belong to different providers
+- **Model name normalization** — `normalizeModelName()` removes zero-width chars, replaces Unicode dashes, trims
+- **Model name diagnostics** — `diagnoseModelName()` reports hidden characters and special dashes
+- **Model list probe** — `probeProviderModels()` checks /v1/models endpoint with `currentModelFound` and `similarModels`
+- **Backend models proxy** — `api/models-proxy.ts` (Vercel Serverless) supports OpenAI, models array, and string array formats
+- **Settings provider diagnosis panel** — Shows inferred provider, confidence, errors, warnings, suggestions
+- **Settings model diagnostics panel** — Always visible (not just on change), shows original/normalized/warnings
+- **Settings model list probe panel** — Shows probe result, model count, current model found status, similar models
+- **Settings live mismatch warning** — Real-time provider/model mismatch warning above config form
+- **Settings live model name warning** — Real-time hidden character/special dash warning above config form
+- **Request body shape diagnostics** — `extractRequestBodyShape()` now includes `roles` and `topLevelKeys`
+- **Dynamic main error card** — Priority-based: provider mismatch > model not found > auth > quota > all-500 > generic
+
+### Changed
+- **Smoke test payload ordering** — Exactly 9 variants, strictly minimal-first (was 11 with less strict ordering)
+- **Smoke test saves normalized model** — After test, saves `result.normalizedModel` instead of raw input
+- **savedConfig as state** — `storedConfig = getAIConfig()` replaced with `useState(() => getAIConfig())` to prevent stale UI
+- **Model diagnostics panel always visible** — Shows ✓ when clean, ⚠ when changed (was hidden when unchanged)
+- **HTTP 500 error copy** — Now prioritizes provider/model mismatch and model list probe results over generic "all variants failed"
+- **MiMo preset warning** — Explicitly warns against using Kimi/Moonshot model names
+- **FAQ updated** — HTTP 500 explanation now mentions provider mismatch and Debug panel diagnostics
+- **models-proxy.ts** — Supports `string[]` direct array format, limits to 200 models
+- **ai-proxy.ts** — `requestBodyShape` now includes `roles` and `topLevelKeys` fields
+
+### Fixed
+- Users could enter Xiaomi endpoint with Kimi model and only see generic HTTP 500
+- Debug panel lacked model availability checking
+- Model names with hidden characters were not diagnosed before test
+- UI could display stale saved config after testing
+- Model diagnostics panel was hidden when no changes detected
+- Main error card showed generic message even when provider mismatch was detected
+
+### Not Changed
+- Agent Runtime
+- ProductBrief schema
+- API Required policy
+- localStorage project history
+- No mock/local-rule fallback
+
+---
+
 ## V6.0 — Idea Validation Agent Workflow (2026-06-04)
 
 ### Added

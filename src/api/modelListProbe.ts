@@ -1,8 +1,12 @@
 /**
- * Model List Probe — V5.5
+ * Model List Probe — V5.6
  *
  * Probes the provider's /v1/models endpoint to check model availability.
  * Goes through /api/models-proxy to avoid exposing API keys.
+ *
+ * V5.6 changes:
+ * - Added currentModel parameter to check if model exists in list
+ * - Added currentModelFound and similarModels to result
  */
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -16,6 +20,10 @@ export interface ModelListProbeResult {
   errorCategory?: string;
   errorMessage?: string;
   durationMs: number;
+  /** V5.6: Whether the current model was found in the list */
+  currentModelFound?: boolean;
+  /** V5.6: Similar model names to the current model */
+  similarModels?: string[];
 }
 
 // ─── Probe ────────────────────────────────────────────────────────────────────
@@ -23,9 +31,10 @@ export interface ModelListProbeResult {
 export async function probeProviderModels(input: {
   apiUrl: string;
   apiKey: string;
+  currentModel?: string;
   timeoutMs?: number;
 }): Promise<ModelListProbeResult> {
-  const { apiUrl, apiKey, timeoutMs = 15000 } = input;
+  const { apiUrl, apiKey, currentModel, timeoutMs = 15000 } = input;
   const start = Date.now();
 
   try {
@@ -62,16 +71,32 @@ export async function probeProviderModels(input: {
     }
 
     const data = await res.json();
+    const models: string[] = data.models ?? [];
+
+    // V5.6: Check if current model is in the list
+    let currentModelFound: boolean | undefined;
+    let similarModels: string[] | undefined;
+
+    if (currentModel && models.length > 0) {
+      const currentLower = currentModel.toLowerCase();
+      currentModelFound = models.some((m: string) => m.toLowerCase() === currentLower);
+
+      if (!currentModelFound) {
+        similarModels = findSimilarModels(currentModel, models);
+      }
+    }
 
     return {
       ok: data.ok ?? false,
       httpStatus: data.httpStatus ?? res.status,
       endpoint: data.endpoint,
-      models: data.models ?? [],
+      models,
       rawPreview: data.rawPreview,
       errorCategory: data.errorCategory,
       errorMessage: data.errorMessage,
       durationMs,
+      currentModelFound,
+      similarModels,
     };
   } catch (err) {
     return {
@@ -93,6 +118,9 @@ export function findSimilarModels(
   const targetLower = target.toLowerCase();
   const similar: string[] = [];
 
+  // Strip separators for fuzzy matching
+  const targetStripped = targetLower.replace(/[-_.]/g, '');
+
   for (const model of available) {
     const modelLower = model.toLowerCase();
     // Exact match
@@ -100,6 +128,15 @@ export function findSimilarModels(
     // Partial match
     if (modelLower.includes(targetLower) || targetLower.includes(modelLower)) {
       similar.push(model);
+      continue;
+    }
+    // Fuzzy: strip separators and check inclusion
+    const modelStripped = modelLower.replace(/[-_.]/g, '');
+    if (modelStripped.length >= 4 && targetStripped.length >= 4) {
+      if (modelStripped.includes(targetStripped) || targetStripped.includes(modelStripped)) {
+        if (!similar.includes(model)) similar.push(model);
+        continue;
+      }
     }
     // Shared prefix (at least 4 chars)
     const prefixLen = Math.min(4, targetLower.length, modelLower.length);

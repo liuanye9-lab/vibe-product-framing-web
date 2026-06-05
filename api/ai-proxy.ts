@@ -80,11 +80,13 @@ function extractRequestBodyShape(body: unknown): Record<string, unknown> {
   return {
     model: typeof b.model === 'string' ? b.model : 'unknown',
     messageCount: messages.length,
+    roles: messages.map((m: { role?: string }) => m?.role).filter(Boolean),
     hasSystemRole: messages.some((m: { role?: string }) => m?.role === 'system'),
     hasTemperature: 'temperature' in b,
     hasMaxTokens: 'max_tokens' in b,
     hasMaxCompletionTokens: 'max_completion_tokens' in b,
     hasStreamField: 'stream' in b,
+    topLevelKeys: Object.keys(b),
   };
 }
 

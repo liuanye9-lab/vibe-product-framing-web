@@ -1,25 +1,26 @@
 /**
- * V5.5: Provider-Compatible Smoke Test Payloads
+ * V5.6: Provider-Compatible Smoke Test Payloads
  *
- * Different AI providers/gateways have varying levels of OpenAI API compatibility.
- * Some reject system roles, max_tokens, temperature, stream, or other parameters.
+ * V5.6 change: Exactly 9 variants, strictly ordered from most minimal to
+ * progressively more complex. Principles:
  *
- * V5.5 change: Most minimal payload first. Many gateways reject extra fields
- * like temperature/stream/max_tokens on the first request.
+ * 1. Minimal request first (model + messages only)
+ * 2. No temperature on first attempt
+ * 3. No stream=false on first attempt
+ * 4. No JSON requirement on first attempt
+ * 5. No system role on first attempt
  */
 
 export type SmokeTestVariantId =
   | 'messages_plain_no_extra_params'
-  | 'user_plain_minimal'
+  | 'user_plain_no_extra_params'
+  | 'user_plain_with_max_tokens'
   | 'user_json_no_extra_params'
-  | 'user_json_no_temperature'
+  | 'user_json_with_max_tokens'
   | 'user_json_max_completion_tokens'
-  | 'user_json_minimal'
+  | 'user_json_with_temperature'
   | 'system_user_no_extra'
-  | 'content_array_format'
-  | 'omit_stream_field'
-  | 'user_no_stream_minimal'
-  | 'system_with_user_minimal';
+  | 'content_array_format';
 
 export interface SmokeTestPayloadVariant {
   id: SmokeTestVariantId;
@@ -37,12 +38,12 @@ export interface SmokeTestPayloadVariant {
 
 /**
  * Build ordered list of smoke test payload variants.
- * V5.5 order: most minimal first (model + messages only), then progressively add parameters.
+ * V5.6 order: strictly minimal first, then progressively add parameters.
  * The goal is to find ANY variant that works, not to test them all.
  */
 export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVariant[] {
   return [
-    // ── Tier 1: Absolute minimum ──────────────────────────────────────────
+    // ── Tier 1: Absolute minimum — model + messages only ────────────────
     {
       id: 'messages_plain_no_extra_params',
       label: 'Minimal (model + messages only)',
@@ -54,47 +55,59 @@ export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVa
         ],
       },
     },
-    // ── Tier 2: + max_tokens only ──────────────────────────────────────────
+    // ── Tier 2: Plain text, no max_tokens ────────────────────────────────
     {
-      id: 'user_plain_minimal',
-      label: 'User plain + max_tokens',
-      description: 'Plain text response + max_tokens, no temperature/stream',
+      id: 'user_plain_no_extra_params',
+      label: 'User plain (no extra params)',
+      description: 'Plain user message with explicit instruction, no max_tokens/temperature/stream',
       body: {
         model,
         messages: [
-          { role: 'user', content: 'Reply with exactly one word: pong' },
+          { role: 'user', content: 'Reply with one word: pong' },
+        ],
+      },
+    },
+    // ── Tier 3: Plain text + max_tokens ──────────────────────────────────
+    {
+      id: 'user_plain_with_max_tokens',
+      label: 'User plain + max_tokens',
+      description: 'Plain text + max_tokens, no temperature/stream',
+      body: {
+        model,
+        messages: [
+          { role: 'user', content: 'Reply with one word: pong' },
         ],
         max_tokens: 20,
       },
     },
-    // ── Tier 3: JSON + max_tokens ──────────────────────────────────────────
+    // ── Tier 4: JSON + no extra params ───────────────────────────────────
     {
       id: 'user_json_no_extra_params',
-      label: 'User JSON + max_tokens',
-      description: 'JSON response + max_tokens, no temperature/stream',
+      label: 'User JSON (no extra params)',
+      description: 'JSON request + max_tokens only',
       body: {
         model,
         messages: [
-          { role: 'user', content: 'Return exactly: {"ok":true}' },
+          { role: 'user', content: 'Return {"ok":true}' },
         ],
         max_tokens: 60,
       },
     },
-    // ── Tier 4: + stream: false ────────────────────────────────────────────
+    // ── Tier 5: JSON + max_tokens ────────────────────────────────────────
     {
-      id: 'user_json_no_temperature',
+      id: 'user_json_with_max_tokens',
       label: 'User JSON + max_tokens + stream:false',
-      description: 'Add stream: false explicitly',
+      description: 'JSON + max_tokens + explicit stream: false',
       body: {
         model,
         messages: [
-          { role: 'user', content: 'Return exactly: {"ok":true}' },
+          { role: 'user', content: 'Return {"ok":true}' },
         ],
         max_tokens: 60,
         stream: false,
       },
     },
-    // ── Tier 5: max_completion_tokens variant ──────────────────────────────
+    // ── Tier 6: max_completion_tokens variant ────────────────────────────
     {
       id: 'user_json_max_completion_tokens',
       label: 'User JSON + max_completion_tokens',
@@ -102,28 +115,28 @@ export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVa
       body: {
         model,
         messages: [
-          { role: 'user', content: 'Return exactly: {"ok":true}' },
+          { role: 'user', content: 'Return {"ok":true}' },
         ],
         max_completion_tokens: 60,
         stream: false,
       },
     },
-    // ── Tier 6: + temperature ──────────────────────────────────────────────
+    // ── Tier 7: + temperature ─────────────────────────────────────────────
     {
-      id: 'user_json_minimal',
+      id: 'user_json_with_temperature',
       label: 'User JSON + max_tokens + temperature',
-      description: 'Standard minimal request with temperature',
+      description: 'Standard minimal request with temperature: 0',
       body: {
         model,
         messages: [
-          { role: 'user', content: 'Return exactly: {"ok":true}' },
+          { role: 'user', content: 'Return {"ok":true}' },
         ],
         max_tokens: 60,
         temperature: 0,
         stream: false,
       },
     },
-    // ── Tier 7: System role variants ───────────────────────────────────────
+    // ── Tier 8: System role ───────────────────────────────────────────────
     {
       id: 'system_user_no_extra',
       label: 'System + User (no extra params)',
@@ -136,22 +149,7 @@ export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVa
         ],
       },
     },
-    {
-      id: 'system_with_user_minimal',
-      label: 'System + User + max_tokens + temperature',
-      description: 'System message + user message with all params',
-      body: {
-        model,
-        messages: [
-          { role: 'system', content: 'You are a helpful assistant. Reply concisely.' },
-          { role: 'user', content: 'Reply with exactly one word: pong' },
-        ],
-        max_tokens: 20,
-        temperature: 0,
-        stream: false,
-      },
-    },
-    // ── Tier 8: Special formats ────────────────────────────────────────────
+    // ── Tier 9: Content array format ─────────────────────────────────────
     {
       id: 'content_array_format',
       label: 'User content array format',
@@ -161,39 +159,10 @@ export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVa
         messages: [
           {
             role: 'user',
-            content: [{ type: 'text', text: 'Reply with exactly one word: pong' }],
+            content: [{ type: 'text', text: 'Reply with one word: pong' }],
           },
         ],
         max_tokens: 20,
-        temperature: 0,
-        stream: false,
-      },
-    },
-    // ── Tier 9: Omit stream field entirely ─────────────────────────────────
-    {
-      id: 'omit_stream_field',
-      label: 'User + JSON (omit stream field)',
-      description: 'No stream field at all (not even stream: false)',
-      body: {
-        model,
-        messages: [
-          { role: 'user', content: 'Return exactly: {"ok":true}' },
-        ],
-        max_tokens: 60,
-        temperature: 0,
-      },
-    },
-    {
-      id: 'user_no_stream_minimal',
-      label: 'User plain + max_tokens + temp (no stream)',
-      description: 'Plain text, max_tokens + temperature, omit stream field',
-      body: {
-        model,
-        messages: [
-          { role: 'user', content: 'Reply with exactly one word: pong' },
-        ],
-        max_tokens: 20,
-        temperature: 0,
       },
     },
   ];

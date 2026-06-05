@@ -48,6 +48,8 @@ import {
 import type { ProviderModelDiagnosis } from '../api/providerProfiles';
 import type { ModelNameDiagnostics } from '../api/modelNameUtils';
 import type { ModelListProbeResult } from '../api/modelListProbe';
+import { diagnoseProviderModelMismatch } from '../api/providerProfiles';
+import { diagnoseModelName } from '../api/modelNameUtils';
 import { PageReveal, LiquidCard, LiquidBadge } from '../components/liquid';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -69,7 +71,7 @@ const PRESETS = [
     apiUrl: 'https://token-plan-cn.xiaomimo.com',
     model: '',
     docUrl: '',
-    note: '请填写小米后台显示的精确 MiMo model id。不要填写 Kimi / Moonshot 模型名，除非该网关明确支持。',
+    note: '请填写小米后台展示的精确 MiMo model id。不要填写 Kimi / Moonshot 模型名，除非该网关明确支持。',
   },
   {
     name: 'Kimi / Moonshot',
@@ -107,7 +109,7 @@ interface TestResult {
   error?: string;
 }
 
-/** V5.4: API Debug Info with multi-variant attempts */
+/** V5.6: API Debug Info with provider/model diagnostics */
 interface ApiDebugInfo {
   testName: 'smoke_test'
   inputApiUrl: string
@@ -125,19 +127,19 @@ interface ApiDebugInfo {
   timeoutMs?: number
   rawResponsePreview?: string
   timestamp: string
-  /** V5.4: All smoke test attempts */
+  /** All smoke test attempts */
   attempts?: ProviderSmokeAttempt[]
   passedVariantId?: string
   overallOk?: boolean
-  /** V5.5: Upstream body samples for quick diagnosis */
+  /** Upstream body samples for quick diagnosis */
   upstreamBodySamples?: Array<{ variantId: string; preview: string }>
-  /** V5.5: Provider/model mismatch diagnosis */
+  /** Provider/model mismatch diagnosis */
   providerDiagnosis?: ProviderModelDiagnosis
-  /** V5.5: Model name diagnostics */
+  /** Model name diagnostics */
   modelDiagnostics?: ModelNameDiagnostics
-  /** V5.5: Model list probe result */
+  /** Model list probe result */
   modelListProbe?: ModelListProbeResult
-  /** V5.5: Normalized model name */
+  /** Normalized model name */
   normalizedModel?: string
 }
 
@@ -148,6 +150,9 @@ export default function SettingsPage() {
   const [model, setModel] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<AIConnectionStatus>(getAIConnectionStatus());
+
+  // V5.6: savedConfig as state instead of reading localStorage on every render
+  const [savedConfig, setSavedConfig] = useState(() => getAIConfig());
 
   // V5.3: Single smoke test result
   const [smokeTest, setSmokeTest] = useState<TestResult>({ status: 'idle' });
@@ -184,7 +189,6 @@ export default function SettingsPage() {
   }, [apiUrl]);
 
   const hasConfig = apiUrl.trim() && apiKey.trim() && model.trim();
-  const storedConfig = getAIConfig();
   const isTesting = smokeTest.status === 'running';
 
   const setStatus = (status: AIConnectionStatus) => {
@@ -202,7 +206,13 @@ export default function SettingsPage() {
     setApiDebugInfo(null);
   };
 
-  // ---- V5.4: Provider-Compatible Smoke Test ----
+  // V5.6: Real-time provider/model mismatch preview
+  const liveProviderDiag = apiUrl.trim() && model.trim()
+    ? diagnoseProviderModelMismatch({ apiUrl, model: diagnoseModelName(model).normalized })
+    : null;
+  const liveModelDiag = model.trim() ? diagnoseModelName(model) : null;
+
+  // ---- V5.6: Provider-Compatible Smoke Test ----
   const handleApiSmokeTest = async () => {
     if (!hasConfig) return;
     setSmokeTest({ status: 'running' });
@@ -241,16 +251,21 @@ export default function SettingsPage() {
         modelListProbe: result.modelListProbe,
       });
 
+      // V5.6: Use normalized model for saving
+      const modelToSave = result.normalizedModel || model.trim();
+
       if (result.ok) {
         if (result.passedVariantId) {
           saveAIRequestProfileFromSmokeVariant(result.passedVariantId);
         }
         // SUCCESS
         setSmokeTest({ status: 'pass', durationMs: result.durationMs });
-        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
+        const configToSave = { apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: modelToSave };
+        saveAIConfig(configToSave);
+        setSavedConfig(configToSave);
         saveAIConnectionStatus('connected');
         markApiReady({
-          model: model.trim(),
+          model: modelToSave,
           apiUrl: normalizeApiUrl(apiUrl),
           tests: {
             smokeTest: {
@@ -265,7 +280,9 @@ export default function SettingsPage() {
       } else {
         // FAILED
         setSmokeTest({ status: 'fail', durationMs: result.durationMs, error: result.finalError });
-        saveAIConfig({ apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: model.trim() });
+        const configToSave = { apiUrl: normalizeApiUrl(apiUrl), apiKey: apiKey.trim(), model: modelToSave };
+        saveAIConfig(configToSave);
+        setSavedConfig(configToSave);
         saveAIConnectionStatus('failed');
         markApiFailed('quick_ping_failed', result.finalError || 'API Smoke Test 失败');
         setStatus('failed');
@@ -281,6 +298,7 @@ export default function SettingsPage() {
   const handleClear = () => {
     clearAIConfig();
     clearApiHealth();
+    setSavedConfig(null);
     setStatus('unconfigured');
     setApiUrl('');
     setApiKey('');
@@ -302,6 +320,75 @@ export default function SettingsPage() {
   };
 
   const isApiReady = connectionStatus === 'connected' && smokeTest.status === 'pass';
+
+  /**
+   * V5.6: Build dynamic main error message with priority:
+   * 1. Provider mismatch
+   * 2. Model not found in list
+   * 3. Auth/permission/quota
+   * 4. All-500
+   * 5. Generic
+   */
+  const getMainErrorHighlight = (): { title: string; detail: string; isMismatch: boolean } | null => {
+    if (smokeTest.status !== 'fail' || !apiDebugInfo) return null;
+
+    // Priority 1: Provider mismatch
+    if (apiDebugInfo.providerDiagnosis && apiDebugInfo.providerDiagnosis.errors.length > 0) {
+      return {
+        title: 'API URL 与模型名疑似不匹配',
+        detail: apiDebugInfo.providerDiagnosis.errors[0],
+        isMismatch: true,
+      };
+    }
+
+    // Priority 2: Model not found in list
+    if (apiDebugInfo.modelListProbe?.ok && apiDebugInfo.modelListProbe.currentModelFound === false) {
+      const similar = apiDebugInfo.modelListProbe.similarModels;
+      return {
+        title: '模型列表中未找到该模型名',
+        detail: similar && similar.length > 0
+          ? `相似模型：${similar.join('、')}。请从服务商后台复制精确 model id。`
+          : '请从服务商后台复制精确 model id。',
+        isMismatch: false,
+      };
+    }
+
+    // Priority 3: Auth errors
+    const authAttempt = apiDebugInfo.attempts?.find(a => a.errorCategory === 'auth_error' || a.errorCategory === 'permission_error');
+    if (authAttempt) {
+      return {
+        title: 'API Key 或模型权限错误',
+        detail: authAttempt.errorCategory === 'auth_error'
+          ? 'API Key 无效或没有权限。请检查 Key 是否正确。'
+          : 'API Key 无权限访问该模型。请在服务商后台确认权限。',
+        isMismatch: false,
+      };
+    }
+
+    // Priority 4: Quota
+    const quotaAttempt = apiDebugInfo.attempts?.find(a => a.errorCategory === 'quota_or_rate_limit');
+    if (quotaAttempt) {
+      return {
+        title: '额度不足或限流',
+        detail: '请检查账户余额或稍后重试。',
+        isMismatch: false,
+      };
+    }
+
+    // Priority 5: All 500
+    const all500 = apiDebugInfo.attempts?.every(a => a.httpStatus === 500 || a.errorCategory === 'provider_internal_error');
+    if (all500 && apiDebugInfo.attempts && apiDebugInfo.attempts.length > 0) {
+      return {
+        title: '上游在最小请求下仍返回 HTTP 500',
+        detail: '大概率不是参数兼容性问题，而是模型名、权限、账户或服务商内部状态问题。',
+        isMismatch: false,
+      };
+    }
+
+    return null;
+  };
+
+  const mainError = getMainErrorHighlight();
 
   return (
     <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -396,8 +483,8 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {/* Current status */}
-          {storedConfig ? (
+          {/* Current status — V5.6: use savedConfig state */}
+          {savedConfig ? (
             <LiquidCard
               style={{ marginBottom: 24, borderColor: 'rgba(52,199,89,0.15)' }}
             >
@@ -408,9 +495,9 @@ export default function SettingsPage() {
                 </span>
               </div>
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
-                当前模型：<strong>{storedConfig.model}</strong>
+                当前模型：<strong>{savedConfig.model}</strong>
                 &nbsp;·&nbsp;
-                {storedConfig.apiUrl}
+                {savedConfig.apiUrl}
               </p>
             </LiquidCard>
           ) : (
@@ -426,6 +513,59 @@ export default function SettingsPage() {
               <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>
                 生产环境必须连接并测试 AI 模型成功后，才能生成有效分析。
               </p>
+            </LiquidCard>
+          )}
+
+          {/* V5.6: Live Provider/Model mismatch warning */}
+          {liveProviderDiag && liveProviderDiag.errors.length > 0 && (
+            <LiquidCard
+              style={{ marginBottom: 16, borderColor: 'rgba(255,59,48,0.25)', background: 'rgba(255,59,48,0.04)' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <AlertTriangle size={16} style={{ color: 'var(--color-danger)', flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-danger)' }}>
+                    强烈怀疑：API URL 与模型名不匹配
+                  </p>
+                  {liveProviderDiag.errors.map((err, i) => (
+                    <p key={i} style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4, lineHeight: 1.6 }}>
+                      {err}
+                    </p>
+                  ))}
+                  {liveProviderDiag.suggestions.map((s, i) => (
+                    <p key={i} style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 4 }}>
+                      💡 {s}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </LiquidCard>
+          )}
+
+          {/* V5.6: Live Model name diagnostics warning */}
+          {liveModelDiag && liveModelDiag.changed && (
+            <LiquidCard
+              style={{ marginBottom: 16, borderColor: 'rgba(255,149,0,0.20)', background: 'rgba(255,149,0,0.04)' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <AlertTriangle size={16} style={{ color: 'var(--color-warning)', flexShrink: 0, marginTop: 2 }} />
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-warning)' }}>
+                    模型名包含隐藏字符或特殊格式
+                  </p>
+                  <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                    原始：{liveModelDiag.original} → 清洗后：{liveModelDiag.normalized}
+                  </p>
+                  {liveModelDiag.warnings.map((w, i) => (
+                    <p key={i} style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 2 }}>
+                      ⚡ {w}
+                    </p>
+                  ))}
+                  <p style={{ fontSize: 11, color: 'var(--color-text-hint)', marginTop: 4 }}>
+                    测试时将使用清洗后的模型名。
+                  </p>
+                </div>
+              </div>
             </LiquidCard>
           )}
 
@@ -557,7 +697,7 @@ export default function SettingsPage() {
                   '测试并保存 API'
                 )}
               </button>
-              {storedConfig && (
+              {savedConfig && (
                 <button className="vp-btn vp-btn-danger-text" onClick={handleClear} style={{ fontSize: 13, color: 'var(--color-danger)' }}>
                   <Trash2 size={14} /> 清除配置
                 </button>
@@ -598,30 +738,61 @@ export default function SettingsPage() {
             </LiquidCard>
           )}
 
-          {smokeTest.status === 'fail' && smokeTest.error && (
+          {smokeTest.status === 'fail' && (
             <LiquidCard
               style={{ marginBottom: 16, borderColor: 'rgba(255,59,48,0.2)' }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <AlertTriangle size={18} style={{ color: 'var(--color-danger)', flexShrink: 0, marginTop: 2 }} />
                 <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-danger)' }}>
-                    API 不可用
-                  </p>
-                  <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                    {smokeTest.error}
-                  </p>
-                  {apiDebugInfo?.providerDiagnosis && apiDebugInfo.providerDiagnosis.errors.length > 0 && (
-                    <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 8, padding: '6px 10px', borderRadius: 4, background: 'rgba(255,59,48,0.06)' }}>
-                      💡 请先检查 API URL 和模型名是否属于同一服务商（详见下方 Debug 面板）。
-                    </p>
+                  {/* V5.6: Dynamic error title with priority */}
+                  {mainError ? (
+                    <>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-danger)' }}>
+                        {mainError.title}
+                      </p>
+                      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                        {mainError.detail}
+                      </p>
+                      {mainError.isMismatch && apiDebugInfo?.providerDiagnosis?.suggestions && (
+                        <div style={{ marginTop: 8 }}>
+                          {apiDebugInfo.providerDiagnosis.suggestions.map((s, i) => (
+                            <p key={i} style={{ fontSize: 12, color: 'var(--color-text-hint)', marginTop: 2 }}>
+                              💡 {s}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      {/* Show model list probe info inline if available */}
+                      {apiDebugInfo?.modelListProbe?.ok && apiDebugInfo.modelListProbe.currentModelFound === false && !mainError.isMismatch && (
+                        <div style={{ marginTop: 8, padding: '6px 10px', borderRadius: 6, background: 'rgba(255,59,48,0.06)', fontSize: 12 }}>
+                          <span style={{ color: 'var(--color-danger)' }}>
+                            ⚠️ 模型列表中未找到 "{apiDebugInfo.normalizedModel ?? apiDebugInfo.model}"
+                          </span>
+                          {apiDebugInfo.modelListProbe.similarModels && apiDebugInfo.modelListProbe.similarModels.length > 0 && (
+                            <div style={{ color: 'var(--color-text-secondary)', marginTop: 4 }}>
+                              相似模型：{apiDebugInfo.modelListProbe.similarModels.join('、')}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-danger)' }}>
+                        API 不可用
+                      </p>
+                      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                        {smokeTest.error}
+                      </p>
+                    </>
                   )}
                 </div>
               </div>
             </LiquidCard>
           )}
 
-          {/* V5.4: Collapsible Debug Panel with Attempts */}
+          {/* V5.6: Collapsible Debug Panel with Attempts */}
           {apiDebugInfo && (
             <details style={{ marginBottom: 16 }}>
               <summary style={{
@@ -665,6 +836,13 @@ export default function SettingsPage() {
                     <span style={{ color: 'var(--color-text-hint)' }}>Model</span>
                     <span>{apiDebugInfo.model}</span>
 
+                    {apiDebugInfo.normalizedModel && apiDebugInfo.normalizedModel !== apiDebugInfo.model && (
+                      <>
+                        <span style={{ color: 'var(--color-warning)' }}>Normalized Model</span>
+                        <span style={{ color: 'var(--color-warning)', fontWeight: 600 }}>{apiDebugInfo.normalizedModel}</span>
+                      </>
+                    )}
+
                     <span style={{ color: 'var(--color-text-hint)' }}>Overall Result</span>
                     <span style={{ color: apiDebugInfo.overallOk ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>
                       {apiDebugInfo.overallOk ? `PASSED (${apiDebugInfo.passedVariantId})` : 'FAILED'}
@@ -681,7 +859,7 @@ export default function SettingsPage() {
                     <span style={{ fontSize: 10 }}>{new Date(apiDebugInfo.timestamp).toLocaleTimeString()}</span>
                   </div>
 
-                  {/* V5.5: Provider Diagnosis */}
+                  {/* V5.6: Provider Diagnosis — always show if available */}
                   {apiDebugInfo.providerDiagnosis && (
                     <div style={{
                       marginBottom: 16, padding: '10px 14px', borderRadius: 6,
@@ -731,14 +909,19 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {/* V5.5: Model Name Diagnostics */}
-                  {apiDebugInfo.modelDiagnostics && apiDebugInfo.modelDiagnostics.changed && (
+                  {/* V5.6: Model Name Diagnostics — always show if available */}
+                  {apiDebugInfo.modelDiagnostics && (
                     <div style={{
                       marginBottom: 16, padding: '10px 14px', borderRadius: 6,
-                      background: 'rgba(255,149,0,0.06)', border: '1px solid rgba(255,149,0,0.15)',
+                      background: apiDebugInfo.modelDiagnostics.changed ? 'rgba(255,149,0,0.06)' : 'var(--color-bg-secondary)',
+                      border: `1px solid ${apiDebugInfo.modelDiagnostics.changed ? 'rgba(255,149,0,0.15)' : 'var(--vp-border)'}`,
                     }}>
-                      <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--color-warning)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <AlertTriangle size={12} />
+                      <h4 style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {apiDebugInfo.modelDiagnostics.changed ? (
+                          <AlertTriangle size={12} style={{ color: 'var(--color-warning)' }} />
+                        ) : (
+                          <Check size={12} style={{ color: 'var(--color-success)' }} />
+                        )}
                         模型名诊断
                       </h4>
                       <div style={{ fontSize: 11, lineHeight: 1.8, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px' }}>
@@ -746,6 +929,8 @@ export default function SettingsPage() {
                         <span style={{ fontFamily: 'monospace' }}>{apiDebugInfo.modelDiagnostics.original}</span>
                         <span style={{ color: 'var(--color-text-hint)' }}>Normalized</span>
                         <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{apiDebugInfo.modelDiagnostics.normalized}</span>
+                        <span style={{ color: 'var(--color-text-hint)' }}>Changed</span>
+                        <span>{apiDebugInfo.modelDiagnostics.changed ? '是' : '否'}</span>
                       </div>
                       {apiDebugInfo.modelDiagnostics.warnings.map((w, i) => (
                         <p key={i} style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 4 }}>
@@ -755,7 +940,7 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {/* V5.5: Model List Probe */}
+                  {/* V5.6: Model List Probe */}
                   {apiDebugInfo.modelListProbe && (
                     <div style={{
                       marginBottom: 16, padding: '10px 14px', borderRadius: 6,
@@ -772,31 +957,50 @@ export default function SettingsPage() {
                           <div style={{ fontSize: 10, color: 'var(--color-text-hint)' }}>
                             Endpoint: {apiDebugInfo.modelListProbe.endpoint}
                           </div>
+                          {/* V5.6: Use probe result's currentModelFound */}
                           {(() => {
-                            const normalized = apiDebugInfo.normalizedModel ?? apiDebugInfo.model;
-                            const found = apiDebugInfo.modelListProbe.models.some(m => m.toLowerCase() === normalized.toLowerCase());
-                            if (!found) {
-                              const similar = apiDebugInfo.modelListProbe.models
-                                .filter(m => {
-                                  const ml = m.toLowerCase();
-                                  const tl = normalized.toLowerCase();
-                                  return ml.includes(tl) || tl.includes(ml);
-                                })
-                                .slice(0, 5);
+                            const normalizedModel = apiDebugInfo.normalizedModel ?? apiDebugInfo.model;
+                            if (apiDebugInfo.modelListProbe.currentModelFound === false) {
                               return (
                                 <div style={{ marginTop: 6 }}>
                                   <span style={{ color: 'var(--color-danger)' }}>
-                                    ⚠️ 模型列表中未找到 "{normalized}"
+                                    ⚠️ 模型列表中未找到 "{normalizedModel}"
                                   </span>
-                                  {similar.length > 0 && (
+                                  {apiDebugInfo.modelListProbe.similarModels && apiDebugInfo.modelListProbe.similarModels.length > 0 && (
                                     <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
-                                      相似模型：{similar.join('、')}
+                                      相似模型：{apiDebugInfo.modelListProbe.similarModels.join('、')}
                                     </div>
                                   )}
                                 </div>
                               );
+                            } else if (apiDebugInfo.modelListProbe.currentModelFound === true) {
+                              return <div style={{ marginTop: 4, color: 'var(--color-success)' }}>✅ 模型 "{normalizedModel}" 在列表中</div>;
+                            } else {
+                              // Fallback: check manually
+                              const found = apiDebugInfo.modelListProbe.models.some(m => m.toLowerCase() === normalizedModel.toLowerCase());
+                              if (!found) {
+                                const similar = apiDebugInfo.modelListProbe.models
+                                  .filter(m => {
+                                    const ml = m.toLowerCase();
+                                    const tl = normalizedModel.toLowerCase();
+                                    return ml.includes(tl) || tl.includes(ml);
+                                  })
+                                  .slice(0, 5);
+                                return (
+                                  <div style={{ marginTop: 6 }}>
+                                    <span style={{ color: 'var(--color-danger)' }}>
+                                      ⚠️ 模型列表中未找到 "{normalizedModel}"
+                                    </span>
+                                    {similar.length > 0 && (
+                                      <div style={{ marginTop: 4, color: 'var(--color-text-secondary)' }}>
+                                        相似模型：{similar.join('、')}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              return <div style={{ marginTop: 4, color: 'var(--color-success)' }}>✅ 模型 "{normalizedModel}" 在列表中</div>;
                             }
-                            return <div style={{ marginTop: 4, color: 'var(--color-success)' }}>✅ 模型 "{normalized}" 在列表中</div>;
                           })()}
                         </div>
                       ) : (
@@ -812,9 +1016,8 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {/* V5.5: Upstream Response Body — visible at a glance */}
+                  {/* Upstream Response Body — visible at a glance */}
                   {!apiDebugInfo.overallOk && apiDebugInfo.attempts && apiDebugInfo.attempts.length > 0 && (() => {
-                    // Find first attempt with raw response preview
                     const firstWithBody = apiDebugInfo.attempts.find(a => a.rawResponsePreview);
                     const distinctSamples = apiDebugInfo.upstreamBodySamples
                       ? Array.from(new Map(apiDebugInfo.upstreamBodySamples.map(s => [s.preview.slice(0, 500), s])).values())
@@ -1022,7 +1225,7 @@ export default function SettingsPage() {
               </p>
               <p>
                 <strong>Q: 测试报 HTTP 500 是什么意思？</strong><br />
-                A: 说明请求已到达上游服务商，但服务商内部处理失败。通常不是 URL 或 Key 的问题，而是模型名不兼容或服务商临时故障。请查看 Debug 详情中的 Error Category 和 Upstream Body Preview。
+                A: 说明请求已到达上游服务商，但服务商内部处理失败。很多服务商会把模型名错误、权限不足包装成 HTTP 500。请查看 Debug 面板中的 Provider 诊断和模型列表探测。
               </p>
             </div>
           </div>

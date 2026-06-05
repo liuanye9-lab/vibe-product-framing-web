@@ -1,5 +1,40 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V5.6 Deep API Provider Diagnosis Patch (2026-06-05)
+
+### 目标
+彻底修复 API 连接诊断问题——当用户在 Xiaomi MiMo endpoint 填写 Kimi 模型名时，不再只看到通用 HTTP 500 错误。
+
+### 初始状态
+- `npm run lint` ✅ 0 errors
+- `npm run build` ✅ 745.67KB JS
+- V5.5 已有: providerProfiles.ts, modelNameUtils.ts, modelListProbe.ts, models-proxy.ts
+- V5.5 已有: SettingsPage Provider/Model/Probe 诊断面板
+- 但 smoke test payload 有 11 种，排序不够严格
+- modelListProbe 缺少 currentModel/currentModelFound/similarModels
+- storedConfig 直接 getAIConfig() 读 localStorage，UI 可能显示旧配置
+- Model Diagnostics 面板仅在 changed 时显示
+- 主错误卡没有优先级区分
+
+### 本轮实际修改文件（6 个）
+1. `src/api/smokeTestPayloads.ts` — 重写为严格 9 variant，最小优先
+2. `src/api/modelListProbe.ts` — 新增 currentModel 参数，返回 currentModelFound + similarModels
+3. `src/api/providerSmokeTest.ts` — 传递 currentModel 给 probe，更新 finalError 优先级
+4. `src/pages/SettingsPage.tsx` — savedConfig state、实时 mismatch 预警、动态错误卡、诊断面板始终可见
+5. `api/ai-proxy.ts` — requestBodyShape 新增 roles + topLevelKeys
+6. `api/models-proxy.ts` — 支持 string[] 格式、200 model limit
+
+### 本轮未修改但确认无变化
+- `src/api/providerProfiles.ts` — V5.5 已完整
+- `src/api/modelNameUtils.ts` — V5.5 已完整
+- Agent Runtime、ProductBrief、localStorage、历史记录
+
+### 验证
+- `npm run lint` ✅ 0 errors
+- `npm run build` ✅ 750.95KB JS
+
+---
+
 ## V5.5 Provider Model Compatibility Diagnosis Patch (2026-06-05)
 
 ### 目标

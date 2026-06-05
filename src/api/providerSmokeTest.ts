@@ -1,15 +1,14 @@
 /**
- * V5.5: Provider-Compatible Smoke Test
+ * V5.6: Provider-Compatible Smoke Test
  *
  * Attempts multiple payload variants to find one that works with the target provider.
  * Stops early on success or on fatal errors (401/403/429).
  * Continues on 500/404/timeout to try simpler variants.
  *
- * V5.5 additions:
- * - Model name normalization (hidden chars, special dashes)
- * - Provider/model mismatch diagnosis
- * - /v1/models model list probe (on failure only)
- * - Request body shape diagnostics
+ * V5.6 changes:
+ * - 9 payload variants (was 11), strictly minimal-first ordering
+ * - modelListProbe receives currentModel, returns currentModelFound + similarModels
+ * - Final error message prioritizes provider mismatch > model not found > HTTP 500
  */
 
 import { normalizeOpenAICompatibleEndpoint } from './endpointNormalizer';
@@ -42,13 +41,13 @@ export interface ProviderSmokeTestResult {
   model: string;
   normalizedModel: string;
   durationMs: number;
-  /** V5.5: Collect upstream body previews from all attempts for diagnosis */
+  /** Upstream body previews from all attempts for diagnosis */
   upstreamBodySamples?: Array<{ variantId: SmokeTestVariantId; preview: string }>;
-  /** V5.5: Provider/model mismatch diagnosis */
+  /** Provider/model mismatch diagnosis */
   providerDiagnosis?: ProviderModelDiagnosis;
-  /** V5.5: Model name diagnostics */
+  /** Model name diagnostics */
   modelDiagnostics?: ModelNameDiagnostics;
-  /** V5.5: Model list probe result (only on failure) */
+  /** Model list probe result (only on failure) */
   modelListProbe?: ModelListProbeResult;
 }
 
@@ -68,11 +67,11 @@ export async function runProviderSmokeTest(input: {
   const { apiUrl, apiKey, model, timeoutMs = 30000 } = input;
   const startedAt = Date.now();
 
-  // V5.5: Step 0 — Normalize model name
+  // Step 0: Normalize model name
   const modelDiag = diagnoseModelName(model);
   const normalizedModel = modelDiag.normalized;
 
-  // V5.5: Step 0.5 — Provider/model mismatch diagnosis
+  // Step 0.5: Provider/model mismatch diagnosis
   const providerDiag = diagnoseProviderModelMismatch({
     apiUrl,
     model: normalizedModel,
@@ -250,21 +249,22 @@ export async function runProviderSmokeTest(input: {
   }
 
   // All variants failed
-  // V5.5: Collect upstream body samples
+  // Collect upstream body samples
   const upstreamBodySamples = attempts
     .filter((a) => a.rawResponsePreview)
     .map((a) => ({ variantId: a.variantId, preview: a.rawResponsePreview! }));
 
-  // V5.5: If all failed with 500/404, probe model list
+  // V5.6: If all failed with 500/404, probe model list
   let modelListProbeResult: ModelListProbeResult | undefined;
   const hasServerError = attempts.some(
-    (a) => a.httpStatus === 500 || a.httpStatus === 404 || a.errorCategory === 'provider_internal_error',
+    (a) => a.httpStatus === 500 || a.httpStatus === 404 || a.errorCategory === 'provider_internal_error' || a.errorCategory === 'model_not_found',
   );
   if (hasServerError && apiKey.trim()) {
     try {
       modelListProbeResult = await probeProviderModels({
         apiUrl,
         apiKey: apiKey.trim(),
+        currentModel: normalizedModel,
         timeoutMs: 15000,
       });
     } catch {
@@ -298,6 +298,14 @@ export async function runProviderSmokeTest(input: {
 
 /**
  * Build user-friendly final error message based on all attempts + diagnostics.
+ * V5.6 priority:
+ * 1. Provider/model mismatch
+ * 2. Model not found in list
+ * 3. Auth/permission/quota errors
+ * 4. All-500 specific message
+ * 5. 404
+ * 6. Timeout
+ * 7. Generic fallback
  */
 function buildFinalErrorMessage(input: {
   attempts: ProviderSmokeAttempt[];
@@ -311,7 +319,17 @@ function buildFinalErrorMessage(input: {
     return '没有可用的测试请求。';
   }
 
-  // Check for fatal errors first
+  // Priority 1: Provider/model mismatch
+  if (providerDiag.errors.length > 0) {
+    let msg = 'API URL 与模型名疑似不匹配。请先确认服务商和模型名是否属于同一平台。\n\n';
+    msg += providerDiag.errors.join('\n');
+    if (providerDiag.suggestions.length > 0) {
+      msg += '\n\n' + providerDiag.suggestions.join('\n');
+    }
+    return msg;
+  }
+
+  // Priority 2: Auth/permission/quota errors
   const authError = attempts.find((a) => a.errorCategory === 'auth_error');
   if (authError) {
     return `API Key 无效或没有权限（HTTP ${authError.httpStatus}）。请检查 API Key 是否正确。`;
@@ -327,11 +345,11 @@ function buildFinalErrorMessage(input: {
     return `额度不足或触发限流（HTTP ${quotaError.httpStatus}）。请检查账户余额或稍后重试。`;
   }
 
-  // V5.5: Provider/model mismatch takes priority
-  if (providerDiag.errors.length > 0) {
-    let msg = providerDiag.errors.join('\n');
-    if (providerDiag.suggestions.length > 0) {
-      msg += '\n\n' + providerDiag.suggestions.join('\n');
+  // Priority 3: Model not found in list
+  if (modelListProbe?.ok && modelListProbe.currentModelFound === false) {
+    let msg = `模型列表中没有找到当前模型名 "${model}"。请从服务商后台复制精确 model id。`;
+    if (modelListProbe.similarModels && modelListProbe.similarModels.length > 0) {
+      msg += `\n\n相似模型：${modelListProbe.similarModels.join('、')}`;
     }
     return msg;
   }
@@ -342,14 +360,13 @@ function buildFinalErrorMessage(input: {
   );
   if (all500) {
     let msg =
-      `上游服务商在 ${attempts.length} 种 payload variant（含最简化仅 model+messages）下全部返回 HTTP 500。` +
+      `上游在最小请求下仍返回 HTTP 500。` +
       `\n\n这不是参数兼容性问题——最简请求也失败说明请求本身已到达服务商但被拒绝处理。` +
       `\n\n当前模型名：${model}。`;
 
-    // V5.5: Add model list probe info
+    // Add model list probe info
     if (modelListProbe?.ok) {
-      const found = modelListProbe.models.some((m) => m.toLowerCase() === model.toLowerCase());
-      if (!found) {
+      if (modelListProbe.currentModelFound === false) {
         msg += `\n\n⚠️ 模型列表中未找到 "${model}"。`;
         const similar = findSimilarModels(model, modelListProbe.models);
         if (similar.length > 0) {
@@ -366,11 +383,17 @@ function buildFinalErrorMessage(input: {
       msg += '\n\n' + providerDiag.warnings.join('\n');
     }
 
+    // Add suggestions
+    if (providerDiag.suggestions.length > 0) {
+      msg += '\n\n' + providerDiag.suggestions.join('\n');
+    }
+
     msg +=
       `\n\n常见排查：` +
       `\n1. 模型名是否与服务商后台完全一致（大小写、版本号、横线格式）` +
       `\n2. API Key 是否已开通该模型的访问权限` +
-      `\n3. 账户余额是否充足`;
+      `\n3. 账户余额是否充足` +
+      `\n4. 服务商可能把模型不存在 / 权限不足包装成 HTTP 500`;
 
     return msg;
   }
@@ -378,11 +401,19 @@ function buildFinalErrorMessage(input: {
   // Check for 404
   const has404 = attempts.some((a) => a.httpStatus === 404);
   if (has404) {
-    return (
+    let msg =
       `Endpoint 或模型名错误（HTTP 404）。` +
       `\n当前模型名：${model}。请确认服务商后台要求的精确模型名。` +
-      `常见问题包括大小写、版本号、横线格式、模型未开通或当前 key 无权限访问该模型。`
-    );
+      `\n常见问题包括大小写、版本号、横线格式、模型未开通或当前 key 无权限访问该模型。`;
+
+    if (modelListProbe?.ok && modelListProbe.currentModelFound === false) {
+      const similar = findSimilarModels(model, modelListProbe.models);
+      if (similar.length > 0) {
+        msg += `\n\n相似模型：${similar.join('、')}`;
+      }
+    }
+
+    return msg;
   }
 
   // Timeout
