@@ -31,6 +31,7 @@ import {
   createIdeaValidationTask,
   getIdeaValidationTask,
 } from '../storage/ideaValidationStorage';
+import { ensureProductBriefFromIdeaValidationTask } from '../storage/ideaValidationHandoff';
 import { runIdeaValidationTurn } from '../agent-v4/ideaValidationRuntime';
 import type {
   IdeaValidationTask,
@@ -247,6 +248,11 @@ export default function IdeaValidationPage() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function openDevSpec(t: IdeaValidationTask) {
+    const briefId = ensureProductBriefFromIdeaValidationTask(t);
+    navigate(`/output/${briefId}`);
   }
 
   // ─── Handle Send ──────────────────────────────────────────────────────────
@@ -707,7 +713,7 @@ export default function IdeaValidationPage() {
             {task.decision.shouldGenerateDevSpec && (
               <button
                 className="vp-btn vp-btn-ghost"
-                onClick={() => navigate(`/output/${task.id}`)}
+                onClick={() => openDevSpec(task)}
                 style={{ fontSize: 12, padding: '4px 8px' }}
               >
                 <FileText size={12} style={{ marginRight: 4 }} />
@@ -716,7 +722,7 @@ export default function IdeaValidationPage() {
             )}
             <button
               className="vp-btn vp-btn-ghost"
-              onClick={() => navigate(`/validate/${task.id}/report`)}
+              onClick={() => navigate(`/validate/${task.id}/result`)}
               style={{ fontSize: 12, padding: '4px 8px' }}
             >
               <BarChart3 size={12} style={{ marginRight: 4 }} />

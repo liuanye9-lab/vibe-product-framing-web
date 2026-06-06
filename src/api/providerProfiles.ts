@@ -76,7 +76,7 @@ const PROVIDER_PROFILES: ProviderProfile[] = [
   {
     id: 'glm',
     label: 'GLM / 智谱',
-    hostPatterns: [/bigmodel/i, /zhipu/i],
+    hostPatterns: [/bigmodel/i, /zhipu/i, /glm/i],
     likelyModelPatterns: [/glm/i],
     unlikelyModelPatterns: [/mimo/i, /kimi/i, /deepseek/i, /gpt-/i],
     modelHint: '请填写智谱后台展示的精确 model id，如 glm-4-flash。',

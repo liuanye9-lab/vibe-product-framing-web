@@ -37,6 +37,7 @@ import { PageReveal, LiquidCard } from '../components/liquid';
 import type { IdeaValidationTask } from '../types/ideaValidation';
 import { IDEA_GOAL_LABELS, VALIDATION_DECISION_LABELS } from '../types/ideaValidation';
 import { listIdeaValidationTasks, deleteIdeaValidationTask } from '../storage/ideaValidationStorage';
+import { ensureProductBriefFromIdeaValidationTask } from '../storage/ideaValidationHandoff';
 
 const STORAGE_KEY = 'vibepilot_briefs';
 
@@ -103,7 +104,12 @@ export default function HistoryPage() {
     refresh();
   };
 
-  if (briefs.length === 0) {
+  const openValidationDevSpec = (task: IdeaValidationTask) => {
+    const briefId = ensureProductBriefFromIdeaValidationTask(task);
+    navigate(`/output/${briefId}`);
+  };
+
+  if (briefs.length === 0 && validationTasks.length === 0) {
     return (
       <PageReveal style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <header className="vp-header">
@@ -293,7 +299,7 @@ export default function HistoryPage() {
                       onClick={() => {
                         if (!isPending) {
                           if (task.status === 'completed') {
-                            navigate(`/validate/${task.id}/report`);
+                            navigate(`/validate/${task.id}/result`);
                           } else {
                             navigate(`/validate/${task.id}`);
                           }
@@ -364,12 +370,12 @@ export default function HistoryPage() {
                             </button>
                           )}
                           {task.status === 'completed' && (
-                            <button className="vp-btn vp-btn-primary" onClick={() => navigate(`/validate/${task.id}/report`)} style={{ fontSize: 12, padding: '6px 12px' }}>
+                            <button className="vp-btn vp-btn-primary" onClick={() => navigate(`/validate/${task.id}/result`)} style={{ fontSize: 12, padding: '6px 12px' }}>
                               <BarChart3 size={12} /> 查看报告
                             </button>
                           )}
                           {hasDecision && task.decision!.shouldGenerateDevSpec && (
-                            <button className="vp-btn vp-btn-ghost" onClick={() => navigate(`/output/${task.id}`)} style={{ fontSize: 12, padding: '6px 12px' }}>
+                            <button className="vp-btn vp-btn-ghost" onClick={() => openValidationDevSpec(task)} style={{ fontSize: 12, padding: '6px 12px' }}>
                               <FileText size={12} /> DEV_SPEC
                             </button>
                           )}

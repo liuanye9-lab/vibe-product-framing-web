@@ -118,6 +118,7 @@ export default function App() {
           <Route path="/agent/:id" element={<AgentWorkspacePageV4 />} />
           <Route path="/validate" element={<IdeaValidationPage />} />
           <Route path="/validate/:id" element={<IdeaValidationPage />} />
+          <Route path="/validate/:id/result" element={<IdeaValidationResultPage />} />
           <Route path="/validate/:id/report" element={<IdeaValidationResultPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />

@@ -71,10 +71,29 @@ DEV_SPEC / CODEX_TASK_PACK（开发交接）
    - 备选 arXiv API
    - 评分维度：year、keyword relevance
 
-3. **Competitor Research
+3. **Competitor Research**
    - 支持 Tavily / Brave / SerpAPI / Bing
    - 需要 SEARCH_API_KEY 配置
    - 评分维度：keyword relevance、URL 可信度
+
+### DEV_SPEC / CODEX_TASK_PACK 桥接
+
+Idea Validation 的数据单独存储在 `IdeaValidationTask` 中，不改变旧的 `ProductBrief` 结构。
+
+当用户点击“生成 DEV_SPEC”时，系统会把当前验证结果整理成一条兼容旧输出页的本地 `ProductBrief`：
+
+- 保留原始想法、目标用户、使用场景、成功标准。
+- 写入真实研究引用；没有结果时保持为空或写明缺失证据。
+- 不新增数据库，不改变历史数据结构。
+- 不伪造 GitHub 项目、论文或公司。
+- 然后进入现有 `DecisionOutputPage` 生成 DEV_SPEC / CODEX_TASK_PACK。
+
+### 搜索失败策略
+
+- GitHub 搜索失败：写入结构化错误，不编造 repo。
+- Paper 搜索失败：写入结构化错误，不编造 paper。
+- Company / Competitor 搜索缺少 `SEARCH_API_KEY`：节点标记为 `skipped`，报告中明确显示不可用。
+- Research query planning 失败：停止本轮研究并提示检查 AI API，不使用本地伪查询替代。
 
 ### 评估工具
 

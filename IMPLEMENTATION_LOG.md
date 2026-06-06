@@ -1,5 +1,49 @@
 # IMPLEMENTATION_LOG — Vibe Decision Copilot
 
+## V6.0 Idea Validation Agent + Deep API Diagnosis Upgrade (2026-06-06)
+
+### Phase 0 基线
+- `npm install`: 通过；依赖已是最新，提示 2 个 moderate audit vulnerabilities，未自动改依赖。
+- `npm run lint`: 通过。
+- `npm run build`: 通过；仅保留 Vite chunk size / ineffective dynamic import 警告。
+
+### 审计发现
+1. API 诊断主体已存在，但仍有几个底层偏差：
+   - GLM provider URL pattern 缺少 `/glm/i`。
+   - `user_json_no_extra_params` 实际仍带 `max_tokens`。
+   - 后续 JSON payload 过早携带 `stream:false`。
+   - proxy 连接错误路径缺少 `requestBodyShape`。
+   - Vite 本地开发只注册了 `/api/ai-proxy`，`/api/models-proxy` 和 `/api/research-proxy` 在本地返回 404。
+2. Idea Validation 主体已存在，但仍有交付闭环缺口：
+   - 规格要求 `/validate/:id/result`，当前只有 `/validate/:id/report`。
+   - 点击 DEV_SPEC 时直接跳 `/output/:id`，但没有把 IdeaValidationTask 转成旧输出页可读取的 ProductBrief。
+   - 只有 Idea Validation 历史记录、没有 ProductBrief 时，History 空状态会误判。
+   - 无 `SEARCH_API_KEY` 时竞品搜索应显示 skipped，不应被包装成普通 502 失败。
+   - Query planning 失败时不应用本地伪查询代替 LLM 规划。
+
+### 本轮修改文件
+1. `src/api/providerProfiles.ts` — GLM host pattern 补齐 `/glm/i`。
+2. `src/api/smokeTestPayloads.ts` — 修正 9 个 payload 的最小优先顺序，不在 JSON no-extra 里带额外参数。
+3. `src/api/providerSmokeTest.ts` — finalError 优先级调整为 provider mismatch > model list missing > auth/quota > all-500。
+4. `api/ai-proxy.ts` — 连接错误响应也返回 `requestBodyShape`，不返回 messages/API key。
+5. `api/research-proxy.ts` — `SEARCH_API_KEY` 缺失返回结构化 `search_api_unavailable`，供 UI 标记 skipped。
+6. `src/agent-v4/ideaValidationRuntime.ts` — query planning 失败时结构化失败，不生成本地伪查询；竞品搜索无 key 标记 skipped。
+7. `src/storage/ideaValidationHandoff.ts` — 新增 IdeaValidationTask -> ProductBrief 本地桥接，进入 DEV_SPEC/CODEX_TASK_PACK 前生成兼容旧输出页的数据。
+8. `src/pages/IdeaValidationPage.tsx` — DEV_SPEC 按钮使用桥接；报告跳转改用 `/result`。
+9. `src/pages/IdeaValidationResultPage.tsx` — DEV_SPEC 按钮使用桥接。
+10. `src/pages/HistoryPage.tsx` — 修复仅有 Idea Validation 记录时的空状态；DEV_SPEC 按钮使用桥接。
+11. `src/App.tsx` — 新增 `/validate/:id/result`，保留 `/report` 兼容旧链接。
+12. `vite.config.ts` — 新增本地 `/api/models-proxy` 和 `/api/research-proxy` middleware，对齐 Vercel API 路径。
+13. `README.md` / `CHANGELOG.md` / `API_CONNECTION_DIAGNOSIS.md` / `IDEA_VALIDATION_AGENT.md` — 更新本轮说明。
+
+### 最终验证
+- `npm run lint`: 通过。
+- `npm run build`: 通过；bundle `dist/assets/index-DqXMk6e1.js` 762.91KB，保留非阻断 Vite 警告。
+- Browser 本地验证：`/settings` 正常加载；MiMo URL + Kimi model 显示 provider/model mismatch；`/validate` 创建任务后先追问澄清；`/history` 在 0 个 ProductBrief + 1 个 IdeaValidationTask 时正常显示。
+- 本地 API 验证：`/api/research-proxy` 无 `SEARCH_API_KEY` 返回 200 + `search_api_unavailable`；`/api/models-proxy` 不再 404，连接失败返回结构化 JSON。
+
+---
+
 ## V5.6.1 Deep API Provider Diagnosis Hotfix (2026-06-05)
 
 ### 目标

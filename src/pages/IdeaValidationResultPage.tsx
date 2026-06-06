@@ -25,6 +25,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { getIdeaValidationTask } from '../storage/ideaValidationStorage';
+import { ensureProductBriefFromIdeaValidationTask } from '../storage/ideaValidationHandoff';
 import type {
   IdeaValidationTask,
   GitHubReference,
@@ -84,6 +85,11 @@ export default function IdeaValidationResultPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  }
+
+  function openDevSpec() {
+    const briefId = ensureProductBriefFromIdeaValidationTask(task!);
+    navigate(`/output/${briefId}`);
   }
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -217,7 +223,7 @@ export default function IdeaValidationResultPage() {
           {task.decision?.shouldGenerateDevSpec && (
             <button
               className="vp-btn vp-btn-primary"
-              onClick={() => navigate(`/output/${task.id}`)}
+              onClick={openDevSpec}
               style={{ display: 'flex', alignItems: 'center', gap: 6 }}
             >
               <FileText size={14} />

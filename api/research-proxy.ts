@@ -236,7 +236,7 @@ async function searchWeb(query: string, limit: number): Promise<ProxyResponse> {
       ok: false,
       items: [],
       provider: 'none',
-      error: 'SEARCH_API_KEY not configured. Web search unavailable.',
+      error: 'search_api_unavailable',
     };
   }
 
@@ -399,7 +399,8 @@ export default async function handler(
         };
     }
 
-    res.status(result.ok ? 200 : 502).json(result);
+    const status = result.ok || result.error === 'search_api_unavailable' ? 200 : 502;
+    res.status(status).json(result);
   } catch (err) {
     res.status(500).json({
       ok: false,

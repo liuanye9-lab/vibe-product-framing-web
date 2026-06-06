@@ -358,6 +358,7 @@ async function handleProxyRequest(request: Request): Promise<Response> {
           model: extractModelFromPayload(payload.body),
           timeoutMs,
           proxyDurationMs,
+          requestBodyShape: extractRequestBodyShape(payload.body),
         },
       },
       {

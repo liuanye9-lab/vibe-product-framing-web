@@ -329,14 +329,19 @@ async function handleResearch(
     const prompt = buildResearchQueryPlanPrompt(task);
     queryPlan = await callCopilotJson<ResearchQueryPlan>(prompt, '', 1500);
   } catch {
-    // Fallback: generate basic queries from the idea
-    const idea = task.clarifiedIdea ?? task.rawIdea;
-    queryPlan = {
-      githubQueries: [`${idea} tool`, `${idea} open source`],
-      paperQueries: [`${idea} research`, `${idea} paper`],
-      companyQueries: [`${idea} startup`, `${idea} product`],
-      keywords: idea.split(/\s+/).filter((w) => w.length > 1),
-      negativeKeywords: [],
+    const error: IdeaValidationError = {
+      code: 'api_unavailable',
+      message: '无法生成研究查询计划。请先在 Settings 中确认 AI API 已连接，然后重新运行研究。',
+      recoverable: true,
+      retryable: true,
+    };
+    updateNodeStatus(task, 'query_planning', 'failed', 0, undefined, error);
+    task.status = 'failed';
+    saveIdeaValidationTask(task);
+    return {
+      task,
+      reply: error.message,
+      requiresUserInput: false,
     };
   }
 
@@ -399,7 +404,11 @@ async function handleResearch(
   updateNodeStatus(
     task,
     'competitor_research',
-    competitorResult.error ? 'failed' : 'completed',
+    competitorResult.error?.code === 'search_api_unavailable'
+      ? 'skipped'
+      : competitorResult.error
+        ? 'failed'
+        : 'completed',
     competitorResult.error ? 0 : 100,
     { count: competitorResult.items.length },
     competitorResult.error,

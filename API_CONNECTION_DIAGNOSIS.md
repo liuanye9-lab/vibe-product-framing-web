@@ -1,6 +1,14 @@
 # API Connection Diagnosis Guide
 
-> V5.6 — Deep API Provider Diagnosis Patch
+> V6.0 — Deep API Provider Diagnosis Upgrade
+
+## V6.0：本轮修正
+
+- `user_json_no_extra_params` 现在真正只发送 `model + messages`，不再附带 `max_tokens`。
+- JSON + max tokens / max completion tokens / temperature 变体不再默认附带 `stream:false`。
+- GLM provider 推断同时识别 `bigmodel`、`zhipu`、`glm`。
+- proxy 在上游连接失败时也返回 `requestBodyShape`，只包含结构信息，不包含完整 messages 或 API key。
+- 主错误优先级保持：provider mismatch > model list missing > 401/403/429 > all attempts 500 > generic failure。
 
 ## V5.6：Provider / Model Mismatch 诊断
 
@@ -116,10 +124,10 @@ V5.3 使用单一 payload 进行 Smoke Test，但不同 AI 服务商对 OpenAI A
 | 1 | `messages_plain_no_extra_params` | 仅 model + messages | 无 |
 | 2 | `user_plain_no_extra_params` | 显式指令，无额外参数 | 无 |
 | 3 | `user_plain_with_max_tokens` | 纯文本 + max_tokens | max_tokens |
-| 4 | `user_json_no_extra_params` | JSON 请求 + max_tokens | max_tokens |
-| 5 | `user_json_with_max_tokens` | JSON + max_tokens + stream:false | max_tokens, stream |
-| 6 | `user_json_max_completion_tokens` | 使用 max_completion_tokens | max_completion_tokens, stream |
-| 7 | `user_json_with_temperature` | 标准 + temperature | max_tokens, temperature, stream |
+| 4 | `user_json_no_extra_params` | JSON 请求，无额外参数 | 无 |
+| 5 | `user_json_with_max_tokens` | JSON + max_tokens | max_tokens |
+| 6 | `user_json_max_completion_tokens` | 使用 max_completion_tokens | max_completion_tokens |
+| 7 | `user_json_with_temperature` | JSON + max_tokens + temperature | max_tokens, temperature |
 | 8 | `system_user_no_extra` | System + User 消息 | 无 |
 | 9 | `content_array_format` | Content 数组格式 | max_tokens |
 

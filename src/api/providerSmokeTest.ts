@@ -379,7 +379,16 @@ function buildFinalErrorMessage(input: {
     return msg;
   }
 
-  // Priority 2: Auth/permission/quota errors
+  // Priority 2: Model not found in list
+  if (modelListProbe?.ok && modelListProbe.currentModelFound === false) {
+    let msg = `模型列表中没有找到当前模型名 "${model}"。请从服务商后台复制精确 model id。`;
+    if (modelListProbe.similarModels && modelListProbe.similarModels.length > 0) {
+      msg += `\n\n相似模型：${modelListProbe.similarModels.join('、')}`;
+    }
+    return msg;
+  }
+
+  // Priority 3: Auth/permission/quota errors
   const authError = attempts.find((a) => a.errorCategory === 'auth_error');
   if (authError) {
     return `API Key 无效或没有权限（HTTP ${authError.httpStatus}）。请检查 API Key 是否正确。`;
@@ -393,15 +402,6 @@ function buildFinalErrorMessage(input: {
   const quotaError = attempts.find((a) => a.errorCategory === 'quota_or_rate_limit');
   if (quotaError) {
     return `额度不足或触发限流（HTTP ${quotaError.httpStatus}）。请检查账户余额或稍后重试。`;
-  }
-
-  // Priority 3: Model not found in list
-  if (modelListProbe?.ok && modelListProbe.currentModelFound === false) {
-    let msg = `模型列表中没有找到当前模型名 "${model}"。请从服务商后台复制精确 model id。`;
-    if (modelListProbe.similarModels && modelListProbe.similarModels.length > 0) {
-      msg += `\n\n相似模型：${modelListProbe.similarModels.join('、')}`;
-    }
-    return msg;
   }
 
   // Check for 500 on all variants

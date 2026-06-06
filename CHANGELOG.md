@@ -1,5 +1,35 @@
 # CHANGELOG — Vibe Decision Copilot
 
+## V6.0 — Idea Validation Agent + Deep API Diagnosis Upgrade (2026-06-06)
+
+### Added
+- `src/storage/ideaValidationHandoff.ts` bridges completed Idea Validation reports into the existing ProductBrief-compatible DEV_SPEC / CODEX_TASK_PACK output path.
+- `/validate/:id/result` route added while keeping `/validate/:id/report` as a compatibility alias.
+- Research proxy now returns structured `search_api_unavailable` when company/web search has no `SEARCH_API_KEY`.
+- Vite dev server now serves local `/api/models-proxy` and `/api/research-proxy` middleware, matching the Vercel API paths used by the browser app.
+
+### Changed
+- Smoke payload variants now follow strict minimal-first ordering with no extra params in `user_json_no_extra_params`.
+- Provider smoke test final error priority is now provider mismatch > model list missing > auth/quota > all-500.
+- Idea Validation query planning no longer creates local pseudo queries when the LLM query planner fails.
+- Company/competitor research without a search key is marked as skipped instead of fabricated or treated as a generic hard failure.
+- History works when only Idea Validation tasks exist and no ProductBrief records exist.
+
+### Fixed
+- GLM provider inference now also matches `glm` hosts.
+- `api/ai-proxy.ts` connection-error diagnostics include request body shape without leaking messages or API keys.
+- DEV_SPEC buttons from validation pages no longer navigate to an empty output page.
+- Local dev no longer returns 404 for model-list probing or research proxy calls.
+
+### Not Done
+- No database.
+- No vector RAG.
+- No real MCP server.
+- No fake GitHub, paper, company, or competitor generation.
+- No ProductBrief schema changes.
+
+---
+
 ## V5.6.1 — Deep API Provider Diagnosis Hotfix (2026-06-05)
 
 ### Fixed

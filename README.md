@@ -240,7 +240,7 @@ Raw Idea → Clarification → Research → Competitor Analysis → Opportunity 
 
 - **GitHub** — 使用公共 API，但有限流
 - **论文** — 使用 Semantic Scholar / arXiv，不需要 key
-- **竞品** — 需要 `SEARCH_API_KEY`（Tavily / Brave / SerpAPI），否则不可用
+- **竞品** — 需要 `SEARCH_API_KEY`（Tavily / Brave / SerpAPI），否则标记为 skipped，不编造公司
 
 ### 当前版本限制
 
@@ -255,6 +255,10 @@ Raw Idea → Clarification → Research → Competitor Analysis → Opportunity 
 ```
 Idea Validation Agent [███████---] 70%
 ```
+
+### 进入 DEV_SPEC / Codex Task Pack
+
+验证完成后，如果最终决策允许继续，系统会把 `IdeaValidationTask` 整理成兼容旧流程的本地 `ProductBrief`，再进入现有 `Decision Output` 页面生成 DEV_SPEC 和 CODEX_TASK_PACK。这个桥接只使用已有验证结果，不改变 ProductBrief 数据结构，不新增数据库。
 
 ---
 

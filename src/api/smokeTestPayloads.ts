@@ -84,27 +84,25 @@ export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVa
     {
       id: 'user_json_no_extra_params',
       label: 'User JSON (no extra params)',
-      description: 'JSON request + max_tokens only',
+      description: 'JSON request with no extra parameters',
       body: {
         model,
         messages: [
           { role: 'user', content: 'Return {"ok":true}' },
         ],
-        max_tokens: 60,
       },
     },
     // ── Tier 5: JSON + max_tokens ────────────────────────────────────────
     {
       id: 'user_json_with_max_tokens',
-      label: 'User JSON + max_tokens + stream:false',
-      description: 'JSON + max_tokens + explicit stream: false',
+      label: 'User JSON + max_tokens',
+      description: 'JSON + max_tokens, no temperature/stream',
       body: {
         model,
         messages: [
           { role: 'user', content: 'Return {"ok":true}' },
         ],
         max_tokens: 60,
-        stream: false,
       },
     },
     // ── Tier 6: max_completion_tokens variant ────────────────────────────
@@ -118,7 +116,6 @@ export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVa
           { role: 'user', content: 'Return {"ok":true}' },
         ],
         max_completion_tokens: 60,
-        stream: false,
       },
     },
     // ── Tier 7: + temperature ─────────────────────────────────────────────
@@ -133,7 +130,6 @@ export function buildSmokeTestPayloadVariants(model: string): SmokeTestPayloadVa
         ],
         max_tokens: 60,
         temperature: 0,
-        stream: false,
       },
     },
     // ── Tier 8: System role ───────────────────────────────────────────────
