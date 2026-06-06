@@ -66,8 +66,28 @@ function classifyUpstreamHttpStatus(
   if (status === 404) return 'model_not_found'
 
   if (status === 500) {
-    if (errorStr.includes('model') && (errorStr.includes('not found') || errorStr.includes('not exist'))) return 'model_not_found'
+    if (
+      errorStr.includes('model') &&
+      (
+        errorStr.includes('not found') ||
+        errorStr.includes('not exist') ||
+        errorStr.includes('does not exist') ||
+        errorStr.includes('invalid') ||
+        errorStr.includes('not support') ||
+        errorStr.includes('unsupported') ||
+        errorStr.includes('模型不存在') ||
+        errorStr.includes('模型名')
+      )
+    ) return 'model_not_found'
     if (errorStr.includes('insufficient') || errorStr.includes('quota') || errorStr.includes('balance')) return 'quota_or_rate_limit'
+    if (
+      errorStr.includes('permission') ||
+      errorStr.includes('forbidden') ||
+      errorStr.includes('not allowed') ||
+      errorStr.includes('access denied') ||
+      errorStr.includes('无权限') ||
+      errorStr.includes('未开通')
+    ) return 'permission_error'
     if (errorStr.includes('key') || errorStr.includes('token') || errorStr.includes('unauthorized')) return 'auth_error'
     return 'provider_internal_error'
   }
@@ -204,10 +224,14 @@ function localAiProxy(): Plugin {
                 const err = parsedError as Record<string, unknown>
                 if (err.error && typeof err.error === 'object' && typeof (err.error as Record<string, unknown>).message === 'string') {
                   errorMessage = (err.error as Record<string, unknown>).message as string
+                } else if (err.error && typeof err.error === 'object' && typeof (err.error as Record<string, unknown>).code === 'string') {
+                  errorMessage = `code: ${(err.error as Record<string, unknown>).code as string}`
                 } else if (typeof err.error === 'string') {
                   errorMessage = err.error
                 } else if (typeof err.message === 'string') {
                   errorMessage = err.message
+                } else if (typeof err.code === 'string') {
+                  errorMessage = `code: ${err.code}`
                 }
               }
 

@@ -12,6 +12,7 @@ export type ProviderId =
   | 'deepseek'
   | 'moonshot_kimi'
   | 'xiaomi_mimo'
+  | 'stepfun'
   | 'glm'
   | 'custom';
 
@@ -72,6 +73,15 @@ const PROVIDER_PROFILES: ProviderProfile[] = [
     unlikelyModelPatterns: [/mimo/i, /kimi/i, /deepseek/i, /glm/i, /qwen/i],
     modelHint: '请填写 OpenAI 支持的模型名，如 gpt-4o-mini、gpt-4o、o3-mini。',
     dashboardHint: 'https://platform.openai.com',
+  },
+  {
+    id: 'stepfun',
+    label: 'StepFun / 阶跃星辰',
+    hostPatterns: [/stepfun/i],
+    likelyModelPatterns: [/^step-[0-9]/i],
+    unlikelyModelPatterns: [/mimo/i, /kimi/i, /moonshot/i, /deepseek/i, /gpt-/i, /glm/i, /qwen/i, /claude/i],
+    modelHint: '请填写 StepFun 控制台或模型列表返回的精确 model id，例如 step-3.7-flash 或 step-3.5-flash。若 HTTP 500 持续出现，优先确认当前 API Key 是否开通该模型。',
+    dashboardHint: 'https://platform.stepfun.com',
   },
   {
     id: 'glm',
@@ -182,6 +192,7 @@ function extractMatchName(_model: string, pattern: RegExp): string {
   if (source.includes('kimi') || source.includes('moonshot')) return 'Kimi / Moonshot';
   if (source.includes('mimo')) return 'Xiaomi MiMo';
   if (source.includes('deepseek')) return 'DeepSeek';
+  if (source.includes('step')) return 'StepFun / 阶跃星辰';
   if (source.includes('gpt')) return 'OpenAI GPT';
   if (source.includes('glm')) return 'GLM / 智谱';
   if (source.includes('qwen')) return 'Qwen / 通义';

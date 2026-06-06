@@ -32,7 +32,25 @@ const VARIANT_PROFILES: Record<string, Omit<AIRequestProfile, 'sourceVariantId' 
     tokenParam: 'max_tokens',
     includeStreamFalse: false,
   },
+  user_plain_no_extra_params: {
+    supportsSystemRole: false,
+    supportsTemperature: false,
+    tokenParam: 'none',
+    includeStreamFalse: false,
+  },
+  user_plain_with_max_tokens: {
+    supportsSystemRole: false,
+    supportsTemperature: false,
+    tokenParam: 'max_tokens',
+    includeStreamFalse: false,
+  },
   user_json_no_extra_params: {
+    supportsSystemRole: false,
+    supportsTemperature: false,
+    tokenParam: 'none',
+    includeStreamFalse: false,
+  },
+  user_json_with_max_tokens: {
     supportsSystemRole: false,
     supportsTemperature: false,
     tokenParam: 'max_tokens',
@@ -48,7 +66,13 @@ const VARIANT_PROFILES: Record<string, Omit<AIRequestProfile, 'sourceVariantId' 
     supportsSystemRole: false,
     supportsTemperature: false,
     tokenParam: 'max_completion_tokens',
-    includeStreamFalse: true,
+    includeStreamFalse: false,
+  },
+  user_json_with_temperature: {
+    supportsSystemRole: false,
+    supportsTemperature: true,
+    tokenParam: 'max_tokens',
+    includeStreamFalse: false,
   },
   user_json_minimal: {
     supportsSystemRole: false,
@@ -72,7 +96,7 @@ const VARIANT_PROFILES: Record<string, Omit<AIRequestProfile, 'sourceVariantId' 
     supportsSystemRole: false,
     supportsTemperature: true,
     tokenParam: 'max_tokens',
-    includeStreamFalse: true,
+    includeStreamFalse: false,
   },
   omit_stream_field: {
     supportsSystemRole: false,

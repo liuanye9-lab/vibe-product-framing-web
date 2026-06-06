@@ -126,6 +126,48 @@ export async function runProviderSmokeTest(input: {
     };
   }
 
+  // Step 1.5: For providers with reliable model catalogs, verify the exact
+  // model before burning through chat variants. Some providers wrap model
+  // misses or missing entitlements as HTTP 500 on /chat/completions.
+  let modelListProbeResult: ModelListProbeResult | undefined;
+  const shouldPreflightModelList = providerDiag.providerId === 'stepfun';
+  if (shouldPreflightModelList && apiKey.trim()) {
+    try {
+      modelListProbeResult = await probeProviderModels({
+        apiUrl,
+        apiKey: apiKey.trim(),
+        currentModel: normalizedModel,
+        timeoutMs: 15000,
+      });
+      if (
+        modelListProbeResult.ok &&
+        modelListProbeResult.models.length > 0 &&
+        modelListProbeResult.currentModelFound === false
+      ) {
+        return {
+          ok: false,
+          attempts: [],
+          finalError: buildFinalErrorMessage({
+            attempts: [],
+            model: normalizedModel,
+            providerDiag,
+            modelListProbe: modelListProbeResult,
+          }),
+          normalizedEndpoint: normalized.endpoint,
+          endpointKind: normalized.kind,
+          model,
+          normalizedModel,
+          durationMs: Date.now() - startedAt,
+          providerDiagnosis: providerDiag,
+          modelDiagnostics: modelDiag,
+          modelListProbe: modelListProbeResult,
+        };
+      }
+    } catch {
+      // Continue to chat smoke test if the provider does not expose models.
+    }
+  }
+
   // Step 2: Build variants with normalized model
   const variants = buildSmokeTestPayloadVariants(normalizedModel);
   const attempts: ProviderSmokeAttempt[] = [];
@@ -305,11 +347,10 @@ export async function runProviderSmokeTest(input: {
     .map((a) => ({ variantId: a.variantId, preview: a.rawResponsePreview! }));
 
   // V5.6: If all failed with 500/404, probe model list
-  let modelListProbeResult: ModelListProbeResult | undefined;
   const hasServerError = attempts.some(
     (a) => a.httpStatus === 500 || a.httpStatus === 404 || a.errorCategory === 'provider_internal_error' || a.errorCategory === 'model_not_found',
   );
-  if (hasServerError && apiKey.trim()) {
+  if (hasServerError && apiKey.trim() && !modelListProbeResult) {
     try {
       modelListProbeResult = await probeProviderModels({
         apiUrl,
@@ -365,10 +406,6 @@ function buildFinalErrorMessage(input: {
 }): string {
   const { attempts, model, providerDiag, modelListProbe } = input;
 
-  if (attempts.length === 0) {
-    return '没有可用的测试请求。';
-  }
-
   // Priority 1: Provider/model mismatch
   if (providerDiag.errors.length > 0) {
     let msg = 'API URL 与模型名疑似不匹配。请先确认服务商和模型名是否属于同一平台。\n\n';
@@ -386,6 +423,13 @@ function buildFinalErrorMessage(input: {
       msg += `\n\n相似模型：${modelListProbe.similarModels.join('、')}`;
     }
     return msg;
+  }
+
+  if (attempts.length === 0) {
+    if (providerDiag.providerId === 'stepfun' && modelListProbe?.ok && modelListProbe.models.length === 0) {
+      return `StepFun 模型列表探测成功但没有返回模型。请在 StepFun 控制台确认当前 API Key 是否有模型访问权限，再复制精确 model id。当前模型名：${model}。`;
+    }
+    return '没有可用的测试请求。';
   }
 
   // Priority 3: Auth/permission/quota errors
@@ -411,8 +455,14 @@ function buildFinalErrorMessage(input: {
   if (all500) {
     let msg =
       `上游在最小请求下仍返回 HTTP 500。` +
-      `\n\n这不是参数兼容性问题——最简请求也失败说明请求本身已到达服务商但被拒绝处理。` +
+      `\n\n最简请求也失败，说明请求已到达服务商，但服务商没有接受当前模型/API Key/账户状态组合。` +
       `\n\n当前模型名：${model}。`;
+
+    if (providerDiag.providerId === 'stepfun') {
+      msg +=
+        `\n\nStepFun 专项判断：endpoint 已按 OpenAI-compatible 规则归一化到 /v1/chat/completions。` +
+        `持续 HTTP 500 时，优先检查该 API Key 是否开通当前模型，或改用 StepFun 控制台模型列表中可见的精确 model id。`;
+    }
 
     // Add model list probe info
     if (modelListProbe?.ok) {

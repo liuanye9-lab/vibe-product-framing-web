@@ -82,6 +82,13 @@ const PRESETS = [
     note: '请填写 Moonshot / Kimi 官方 API 地址和后台展示的精确 model id。',
   },
   {
+    name: 'StepFun / 阶跃星辰',
+    apiUrl: 'https://api.stepfun.com/v1',
+    model: 'step-3.7-flash',
+    docUrl: 'https://platform.stepfun.com',
+    note: 'StepFun 官方 OpenAI-compatible 接口。若测试返回 HTTP 500，请先确认 API Key 已开通当前模型，或从 /v1/models/控制台复制可见模型名。',
+  },
+  {
     name: 'GLM (智谱)',
     apiUrl: '',
     model: '',
@@ -384,7 +391,7 @@ export default function SettingsPage() {
     if (all500 && apiDebugInfo.attempts && apiDebugInfo.attempts.length > 0) {
       return {
         title: '上游在最小请求下仍返回 HTTP 500',
-        detail: '大概率不是参数兼容性问题，而是模型名、权限、账户或服务商内部状态问题。',
+        detail: apiDebugInfo.errorMessage || '大概率不是参数兼容性问题，而是模型名、权限、账户或服务商内部状态问题。',
         isMismatch: false,
       };
     }
@@ -771,7 +778,7 @@ export default function SettingsPage() {
                       <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-danger)' }}>
                         {mainError.title}
                       </p>
-                      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.6 }}>
+                      <p style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginTop: 6, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                         {mainError.detail}
                       </p>
                       {mainError.isMismatch && apiDebugInfo?.providerDiagnosis?.suggestions && (

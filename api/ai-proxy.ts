@@ -105,11 +105,13 @@ function extractUpstreamErrorMessage(
       const inner = err.error as Record<string, unknown>;
       if (typeof inner.message === 'string') return inner.message;
       if (typeof inner.type === 'string') return `type: ${inner.type}`;
+      if (typeof inner.code === 'string') return `code: ${inner.code}`;
     }
     // Simple: { error: "..." }
     if (typeof err.error === 'string') return err.error;
     // Generic: { message: "..." }
     if (typeof err.message === 'string') return err.message;
+    if (typeof err.code === 'string') return `code: ${err.code}`;
   }
 
   // Body preview for non-JSON
@@ -157,11 +159,33 @@ function classifyUpstreamHttpStatus(
 
   if (status === 500) {
     // Check body for specific error patterns
-    if (errorStr.includes('model') && (errorStr.includes('not found') || errorStr.includes('not exist') || errorStr.includes('invalid'))) {
+    if (
+      errorStr.includes('model') &&
+      (
+        errorStr.includes('not found') ||
+        errorStr.includes('not exist') ||
+        errorStr.includes('does not exist') ||
+        errorStr.includes('invalid') ||
+        errorStr.includes('not support') ||
+        errorStr.includes('unsupported') ||
+        errorStr.includes('模型不存在') ||
+        errorStr.includes('模型名')
+      )
+    ) {
       return 'model_not_found';
     }
     if (errorStr.includes('insufficient') || errorStr.includes('quota') || errorStr.includes('balance') || errorStr.includes('余额')) {
       return 'quota_or_rate_limit';
+    }
+    if (
+      errorStr.includes('permission') ||
+      errorStr.includes('forbidden') ||
+      errorStr.includes('not allowed') ||
+      errorStr.includes('access denied') ||
+      errorStr.includes('无权限') ||
+      errorStr.includes('未开通')
+    ) {
+      return 'permission_error';
     }
     if (errorStr.includes('key') || errorStr.includes('token') || errorStr.includes('unauthorized') || errorStr.includes('auth')) {
       return 'auth_error';
