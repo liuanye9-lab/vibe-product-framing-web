@@ -292,7 +292,7 @@ function classifyNetworkError(err: unknown): { category: string; retryable: bool
   if (msg.includes('abort') || msg.includes('timeout')) {
     return {
       category: 'TIMEOUT',
-      retryable: false,
+      retryable: true,
       userAdvice: '请求超时被中断。可能是模型响应时间过长或手动取消了操作。',
     };
   }
@@ -379,6 +379,52 @@ function abortSignalTimeout(timeoutMs: number): AbortSignal {
   return controller.signal;
 }
 
+function maskSecret(value: string): string {
+  if (!value) return '';
+  if (value.length <= 10) return '***';
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
+function buildRequestDebugSnapshot(input: {
+  config: AIConfig;
+  body: Record<string, unknown>;
+  timeoutMs: number;
+  attempt: number;
+}): {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  payload: Record<string, unknown>;
+  attempt: number;
+} {
+  const { config, body, timeoutMs, attempt } = input;
+  return {
+    url: '/api/ai-proxy',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    payload: {
+      apiUrl: config.apiUrl,
+      apiKey: maskSecret(config.apiKey),
+      timeoutMs,
+      body,
+    },
+    attempt,
+  };
+}
+
+function isRetryableProxyError(error: unknown): boolean {
+  if (!(error instanceof VibeAIError)) return true;
+  if (error.type === 'timeout' || error.type === 'connection') return true;
+  if (error.type !== 'http') return false;
+
+  const detail = error.detail;
+  if (!detail || typeof detail !== 'object') return false;
+  const category = (detail as { errorCategory?: string }).errorCategory;
+  return category === 'provider_internal_error' || category === 'upstream_unavailable';
+}
+
 /**
  * V4.9: Main AI proxy call. No preflight check on normal path (removed for speed).
  * Uses task-appropriate timeout profile via timeoutMs parameter.
@@ -395,6 +441,14 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_FETCH_RETRIES; attempt++) {
+    const requestDebug = buildRequestDebugSnapshot({
+      config,
+      body: adaptedBody,
+      timeoutMs,
+      attempt,
+    });
+    console.log('[VibePilot] AI Proxy Request Debug:', requestDebug);
+
     try {
       const response = await fetch('/api/ai-proxy', {
         method: 'POST',
@@ -458,6 +512,7 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
           ok: response.ok,
           responseChars: rawText.length,
           timestamp: new Date().toISOString(),
+          requestDebug,
         });
       } catch { /* diagnostic save non-critical */ }
 
@@ -489,6 +544,7 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
             errorMessage: parsed.message,
             upstreamBodyPreview: parsed.upstreamBodyPreview,
             rawResponsePreview: parsed.rawPreview,
+            requestDebug,
           });
         } catch { /* non-critical */ }
 
@@ -518,13 +574,13 @@ async function callAIProxy(config: AIConfig, body: Record<string, unknown>, time
 
       console.warn(`[VibePilot] AI Proxy attempt ${attempt}/${MAX_FETCH_RETRIES} failed [${diagnosis.category}]:`, err);
 
-      // Don't retry non-retryable errors (aborts, CORS)
-      if (!diagnosis.retryable || attempt >= MAX_FETCH_RETRIES) {
+      // Don't retry deterministic errors such as auth, permission, quota, or model-not-found.
+      if (!diagnosis.retryable || !isRetryableProxyError(err) || attempt >= MAX_FETCH_RETRIES) {
         break;
       }
 
-      // Exponential backoff before retry
-      const delay = RETRY_BASE_DELAY_MS * attempt;
+      // Bounded backoff: default retries use 1s, then 2s.
+      const delay = Math.min(2000, RETRY_BASE_DELAY_MS * attempt);
       console.warn(`[VibePilot] Retrying in ${delay}ms...`);
       await new Promise((r) => setTimeout(r, delay));
     }

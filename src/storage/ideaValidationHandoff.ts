@@ -157,7 +157,7 @@ function buildFinalHandoff(task: IdeaValidationTask): FinalHandoff {
     ...task.research.competitors.map((comp) => `- Company/Web: ${comp.name}${comp.url ? ` ${comp.url}` : ''}`),
   ];
   const decisionLabel = task.decision ? VALIDATION_DECISION_LABELS[task.decision.decision] : '未完成';
-  const missingEvidence = task.evaluation?.missingEvidence ?? [];
+  const missingEvidence = task.evaluatorReport?.missingInputs ?? task.evaluation?.missingEvidence ?? [];
 
   return {
     schemaVersion: 'idea-validation-v1',
@@ -187,6 +187,11 @@ function buildFinalHandoff(task: IdeaValidationTask): FinalHandoff {
       '研究引用：',
       ...(refs.length ? refs : ['- 暂无可用研究引用，需先补充证据。']),
       '',
+      'Evaluator 复核：',
+      task.evaluatorReport
+        ? `- 准备度：${task.evaluatorReport.overallScore}/100\n- 是否值得做：${task.evaluatorReport.worthDoingDecision}\n- 理由：${task.evaluatorReport.worthDoingReason}`
+        : '- 暂无 evaluator 报告。',
+      '',
       '缺失证据：',
       ...(missingEvidence.length ? missingEvidence.map((item) => `- ${item}`) : ['- 暂无']),
     ].join('\n'),
@@ -197,8 +202,9 @@ function buildFinalHandoff(task: IdeaValidationTask): FinalHandoff {
       '- 不新增数据库、向量数据库或真实 MCP Server。',
     ].join('\n'),
     dataStructure: [
-      'IdeaValidationTask { id, rawIdea, goalType, progressPercent, nodes, research, evaluation, decision }',
+      'IdeaValidationTask { id, schemaVersion, version, rawIdea, goalType, progressPercent, nodes, research, evaluation, evaluatorReport, decision, history }',
       'ResearchBundle { queryPlan, githubRepos, papers, competitors, evidenceItems }',
+      'ValidationEvaluatorReport { relatedOpenSourceProjects, borrowableApproaches, paperReferences, matureProjectAnalysis, worthDoingDecision }',
       'FinalValidationDecision { decision, recommendation, bestPositioning, nextValidationActions }',
     ].join('\n'),
     acceptanceCriteria: [

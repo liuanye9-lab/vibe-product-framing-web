@@ -47,6 +47,14 @@ export interface AITimingDiagnostic {
   upstreamBodyPreview?: string;
   /** V5.2: Raw response preview (for non-JSON) */
   rawResponsePreview?: string;
+  /** V7: Masked request debug snapshot. Never stores raw API keys. */
+  requestDebug?: {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    payload: Record<string, unknown>;
+    attempt?: number;
+  };
 }
 
 const LAST_AI_TIMING_KEY = 'vibepilot_last_ai_timing';

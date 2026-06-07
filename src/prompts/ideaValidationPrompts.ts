@@ -10,6 +10,7 @@ import type {
   IdeaValidationTask,
   ResearchBundle,
   OpportunityEvaluation,
+  ValidationEvaluatorReport,
 } from '../types/ideaValidation';
 
 // ─── 1. Clarification Prompt ──────────────────────────────────────────────────
@@ -259,13 +260,91 @@ ${competitorSummary || '无结果'}
 - 如果信息不足，分数应该偏低`;
 }
 
-// ─── 7. Decision Prompt ──────────────────────────────────────────────────────
+// ─── 7. Evaluator Report Prompt ──────────────────────────────────────────────
+
+export function buildEvaluatorReportPrompt(input: {
+  task: IdeaValidationTask;
+  draftReport: ValidationEvaluatorReport;
+}): string {
+  const { task, draftReport } = input;
+
+  return `你是一个严谨的 Agent 工作流 evaluator。请复核当前产品想法验证结果，输出结构化 JSON。
+
+产品想法：${task.clarifiedIdea ?? task.rawIdea}
+目标用户：${task.targetUser ?? '未指定'}
+使用场景：${task.useCase ?? '未指定'}
+成功标准：${task.successDefinition ?? '未指定'}
+
+当前机会评估：
+${JSON.stringify(task.evaluation ?? {}, null, 2)}
+
+研究结果摘要：
+- GitHub 项目数：${task.research.githubRepos.length}
+- 论文数：${task.research.papers.length}
+- 竞品数：${task.research.competitors.length}
+
+本地 evaluator 草稿：
+${JSON.stringify(draftReport, null, 2)}
+
+输出格式（严格 JSON，不要 markdown，不要解释文字）：
+{
+  "summary": "一句话总结",
+  "completenessScore": 0-100,
+  "feasibilityScore": 0-100,
+  "evidenceScore": 0-100,
+  "decisionReadinessScore": 0-100,
+  "overallScore": 0-100,
+  "relatedOpenSourceProjects": [
+    {
+      "name": "owner/repo",
+      "url": "https://github.com/...",
+      "stars": 123,
+      "whatToBorrow": ["可借鉴方案"],
+      "relevanceScore": 0-100
+    }
+  ],
+  "borrowableApproaches": ["可借鉴方案"],
+  "paperReferences": [
+    {
+      "title": "论文标题",
+      "url": "论文链接",
+      "year": 2024,
+      "usefulConcepts": ["概念"],
+      "howToUseInProject": "如何应用",
+      "relevanceScore": 0-100
+    }
+  ],
+  "matureProjectAnalysis": [
+    {
+      "name": "成熟项目或竞品",
+      "url": "链接",
+      "positioning": "定位",
+      "strengths": ["优势"],
+      "weaknesses": ["劣势"],
+      "opportunityGap": ["机会缺口"],
+      "relevanceScore": 0-100
+    }
+  ],
+  "worthDoingDecision": "do" | "do_not_do" | "validate_first" | "pivot",
+  "worthDoingReason": "是否值得做的理由",
+  "missingInputs": ["缺失输入"],
+  "evaluatorWarnings": ["风险提醒"]
+}
+
+规则：
+- 只能基于给定研究结果，不要编造不存在的项目、论文、公司。
+- 如果证据不足，overallScore 和 decisionReadinessScore 要保守。
+- 如果模型想输出代码块，也必须克制：只返回 JSON 对象。`;
+}
+
+// ─── 8. Decision Prompt ──────────────────────────────────────────────────────
 
 export function buildDecisionPrompt(input: {
   task: IdeaValidationTask;
   evaluation: OpportunityEvaluation;
+  evaluatorReport?: ValidationEvaluatorReport;
 }): string {
-  const { task, evaluation } = input;
+  const { task, evaluation, evaluatorReport } = input;
 
   return `基于以下评估结果，给出最终决策建议。
 
@@ -287,6 +366,19 @@ export function buildDecisionPrompt(input: {
 关键理由：${evaluation.keyReasons.join('；')}
 关键风险：${evaluation.keyRisks.join('；')}
 缺失证据：${evaluation.missingEvidence.join('；')}
+${evaluatorReport ? `
+
+Evaluator 复核：
+- 完整性：${evaluatorReport.completenessScore}/100
+- 可行性：${evaluatorReport.feasibilityScore}/100
+- 证据强度：${evaluatorReport.evidenceScore}/100
+- 决策准备度：${evaluatorReport.decisionReadinessScore}/100
+- 复核总分：${evaluatorReport.overallScore}/100
+- 值不值得做：${evaluatorReport.worthDoingDecision}
+- 理由：${evaluatorReport.worthDoingReason}
+- 缺失输入：${evaluatorReport.missingInputs.join('；')}
+- 警告：${evaluatorReport.evaluatorWarnings.join('；')}
+` : ''}
 
 请给出决策建议。
 

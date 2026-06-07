@@ -7,7 +7,7 @@
  * Flow:
  * idea_intake → clarification → query_planning → github_research →
  * paper_research → competitor_research → opportunity_evaluation →
- * decision → handoff
+ * evaluator → decision → handoff
  */
 
 import type {
@@ -18,6 +18,7 @@ import type {
   OpportunityEvaluation,
   FinalValidationDecision,
   IdeaValidationError,
+  ValidationEvaluatorReport,
 } from '../types/ideaValidation';
 import {
   getIdeaValidationTask,
@@ -28,10 +29,12 @@ import { searchGitHubReferences } from '../research/githubResearch';
 import { searchPaperReferences } from '../research/paperResearch';
 import { searchCompetitorReferences } from '../research/competitorResearch';
 import { evaluateOpportunity } from '../evaluators/opportunityEvaluator';
+import { buildValidationEvaluatorReport } from '../evaluators/validationEvaluatorReport';
 import {
   buildClarificationPrompt,
   buildResearchQueryPlanPrompt,
   buildOpportunityEvaluationPrompt,
+  buildEvaluatorReportPrompt,
   buildDecisionPrompt,
 } from '../prompts/ideaValidationPrompts';
 import { callCopilotJson } from '../api/evaluate';
@@ -46,6 +49,7 @@ export interface IdeaValidationTurnInput {
     | 'answer_clarification'
     | 'run_research'
     | 'evaluate'
+    | 'run_evaluator'
     | 'make_decision'
     | 'generate_handoff';
   onProgress?: (event: {
@@ -122,6 +126,8 @@ export async function runIdeaValidationTurn(
         return await handleResearch(task, progress);
       case 'evaluate':
         return await handleEvaluate(task, progress);
+      case 'run_evaluator':
+        return await handleEvaluator(task, progress);
       case 'make_decision':
         return await handleDecision(task, progress);
       case 'generate_handoff':
@@ -168,6 +174,7 @@ function mapNodeKeyToAction(key: IdeaValidationNodeKey): string {
     paper_research: 'run_research',
     competitor_research: 'run_research',
     opportunity_evaluation: 'evaluate',
+    evaluator: 'run_evaluator',
     decision: 'make_decision',
     handoff: 'generate_handoff',
   };
@@ -483,7 +490,43 @@ async function handleEvaluate(
 
   saveIdeaValidationTask(task);
 
-  // Auto-proceed to decision
+  // Auto-proceed to evaluator
+  return await handleEvaluator(task, progress);
+}
+
+// ─── Handler: Evaluator ──────────────────────────────────────────────────────
+
+async function handleEvaluator(
+  task: IdeaValidationTask,
+  progress: (p: number, phase: string, msg: string) => void,
+): Promise<IdeaValidationTurnOutput> {
+  progress(88, 'evaluator', '复核分析完整性与可行性...');
+
+  updateNodeStatus(task, 'evaluator', 'running', 50);
+
+  let evaluatorReport = buildValidationEvaluatorReport(task);
+
+  try {
+    const prompt = buildEvaluatorReportPrompt({
+      task,
+      draftReport: evaluatorReport,
+    });
+
+    evaluatorReport = await callCopilotJson<ValidationEvaluatorReport>(prompt, '', 2600);
+  } catch {
+    evaluatorReport = buildValidationEvaluatorReport(task);
+  }
+
+  task.evaluatorReport = evaluatorReport;
+  updateNodeStatus(task, 'evaluator', 'completed', 100, {
+    overallScore: evaluatorReport.overallScore,
+    completenessScore: evaluatorReport.completenessScore,
+    feasibilityScore: evaluatorReport.feasibilityScore,
+    worthDoingDecision: evaluatorReport.worthDoingDecision,
+  });
+
+  saveIdeaValidationTask(task);
+
   return await handleDecision(task, progress);
 }
 
@@ -500,6 +543,9 @@ async function handleDecision(
   if (!task.evaluation) {
     task.evaluation = evaluateOpportunity({ task });
   }
+  if (!task.evaluatorReport) {
+    task.evaluatorReport = buildValidationEvaluatorReport(task);
+  }
 
   let decision: FinalValidationDecision;
 
@@ -508,12 +554,13 @@ async function handleDecision(
     const prompt = buildDecisionPrompt({
       task,
       evaluation: task.evaluation,
+      evaluatorReport: task.evaluatorReport,
     });
 
     decision = await callCopilotJson<FinalValidationDecision>(prompt, '', 1500);
   } catch {
     // Fallback to rule-based decision
-    decision = generateRuleBasedDecision(task.evaluation);
+    decision = generateRuleBasedDecision(task.evaluation, task.evaluatorReport);
   }
 
   task.decision = decision;
@@ -607,15 +654,17 @@ ${task.decision.nextValidationActions.map((a) => `- ${a}`).join('\n')}
 
 function generateRuleBasedDecision(
   evaluation: OpportunityEvaluation,
+  evaluatorReport?: ValidationEvaluatorReport,
 ): FinalValidationDecision {
-  const score = evaluation.overallScore;
-  const missingCount = evaluation.missingEvidence.length;
+  const score = evaluatorReport?.overallScore ?? evaluation.overallScore;
+  const missingCount = evaluatorReport?.missingInputs.length ?? evaluation.missingEvidence.length;
+  const evaluatorDecision = evaluatorReport?.worthDoingDecision;
 
-  if (score >= 70 && missingCount <= 2) {
+  if ((evaluatorDecision === 'do' || score >= 70) && missingCount <= 2) {
     return {
       decision: 'do',
-      recommendation: '这个想法有较好的机会，建议开始 MVP 开发。',
-      bestPositioning: evaluation.keyReasons[0] ?? '待确定',
+      recommendation: evaluatorReport?.worthDoingReason ?? '这个想法有较好的机会，建议开始 MVP 开发。',
+      bestPositioning: evaluation.keyReasons[0] ?? evaluatorReport?.summary ?? '待确定',
       shouldBuildMVP: true,
       shouldGenerateDevSpec: true,
       nextValidationActions: [
@@ -623,27 +672,27 @@ function generateRuleBasedDecision(
         '生成 DEV_SPEC',
         '开始原型开发',
       ],
-      why: evaluation.keyReasons,
+      why: evaluation.keyReasons.length > 0 ? evaluation.keyReasons : [evaluatorReport?.summary ?? 'Evaluator 复核通过。'],
     };
   }
 
-  if (score >= 50) {
+  if (evaluatorDecision === 'validate_first' || score >= 50) {
     return {
       decision: 'validate_first',
-      recommendation: '想法有潜力，但需要先验证关键假设。',
-      bestPositioning: evaluation.keyReasons[0] ?? '待确定',
+      recommendation: evaluatorReport?.worthDoingReason ?? '想法有潜力，但需要先验证关键假设。',
+      bestPositioning: evaluation.keyReasons[0] ?? evaluatorReport?.summary ?? '待确定',
       shouldBuildMVP: false,
       shouldGenerateDevSpec: false,
       nextValidationActions: [
-        ...evaluation.missingEvidence.map((e) => `补充：${e}`),
+        ...(evaluatorReport?.missingInputs ?? evaluation.missingEvidence).map((e) => `补充：${e}`),
         '做用户访谈验证需求',
         '再重新评估',
       ],
-      why: [...evaluation.keyReasons, ...evaluation.keyRisks],
+      why: [...evaluation.keyReasons, ...evaluation.keyRisks, ...(evaluatorReport?.evaluatorWarnings ?? [])],
     };
   }
 
-  if (score >= 30 && evaluation.differentiationSpace >= 50) {
+  if (evaluatorDecision === 'pivot' || (score >= 30 && evaluation.differentiationSpace >= 50)) {
     return {
       decision: 'pivot',
       recommendation: '当前方向竞争激烈，建议调整定位。',
@@ -655,7 +704,7 @@ function generateRuleBasedDecision(
         '寻找未被满足的细分需求',
         '重新定义目标用户',
       ],
-      why: evaluation.keyRisks,
+      why: [...evaluation.keyRisks, ...(evaluatorReport?.evaluatorWarnings ?? [])],
     };
   }
 
@@ -670,7 +719,7 @@ function generateRuleBasedDecision(
       '寻找新的方向',
       '或者先做更深入的用户调研',
     ],
-    why: evaluation.keyRisks,
+    why: [...evaluation.keyRisks, ...(evaluatorReport?.evaluatorWarnings ?? [])],
   };
 }
 
@@ -711,6 +760,7 @@ function buildDecisionReply(
 - GitHub 项目：${task.research.githubRepos.length} 个
 - 学术论文：${task.research.papers.length} 篇
 - 竞品/公司：${task.research.competitors.length} 个
+${task.evaluatorReport ? `- Evaluator 准备度：${task.evaluatorReport.overallScore}/100` : ''}
 
 ${evaluation.keyReasons.length > 0 ? `### 关键理由\n${evaluation.keyReasons.map((r) => `- ${r}`).join('\n')}` : ''}
 

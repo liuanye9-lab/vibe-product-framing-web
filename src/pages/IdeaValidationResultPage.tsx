@@ -23,9 +23,12 @@ import {
   Download,
   ExternalLink,
   Copy,
+  Activity,
+  ShieldCheck,
 } from 'lucide-react';
 import { getIdeaValidationTask } from '../storage/ideaValidationStorage';
 import { ensureProductBriefFromIdeaValidationTask } from '../storage/ideaValidationHandoff';
+import { getLastAITiming } from '../api/aiDiagnostics';
 import type {
   IdeaValidationTask,
   GitHubReference,
@@ -38,6 +41,7 @@ import {
   IDEA_GOAL_LABELS,
   VALIDATION_DECISION_LABELS,
 } from '../types/ideaValidation';
+import ThemeToggle from '../components/ThemeToggle';
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -104,6 +108,7 @@ export default function IdeaValidationResultPage() {
           </button>
           <span style={{ fontSize: 14, fontWeight: 600 }}>验证报告</span>
           <div style={{ display: 'flex', gap: 4 }}>
+            <ThemeToggle />
             <button className="vp-btn-text" onClick={copyToClipboard} style={{ padding: '4px 6px' }}>
               <Copy size={16} />
             </button>
@@ -152,6 +157,14 @@ export default function IdeaValidationResultPage() {
           </div>
         </Section>
 
+        <Section title="API 状态" icon={<Activity size={16} />}>
+          <ApiStatusPanel />
+        </Section>
+
+        <Section title="Agent 节点进度" icon={<ShieldCheck size={16} />}>
+          <NodeProgressPanel task={task} />
+        </Section>
+
         {/* Decision */}
         {task.decision && (
           <Section title="最终决策" icon={<CheckCircle2 size={16} />}>
@@ -163,6 +176,12 @@ export default function IdeaValidationResultPage() {
         {task.evaluation && (
           <Section title="机会评估" icon={<BarChart3 size={16} />}>
             <EvaluationCard evaluation={task.evaluation} />
+          </Section>
+        )}
+
+        {task.evaluatorReport && (
+          <Section title="Evaluator 结构化输出" icon={<ShieldCheck size={16} />}>
+            <EvaluatorReportPanel task={task} />
           </Section>
         )}
 
@@ -292,6 +311,134 @@ function InfoItem({ label, value }: { label: string; value: string }) {
       <div style={{ fontSize: 12, color: 'var(--vp-text-secondary)', marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 13, color: 'var(--vp-text)' }}>{value}</div>
     </div>
+  );
+}
+
+function ApiStatusPanel() {
+  const timing = getLastAITiming();
+
+  if (!timing) {
+    return (
+      <div style={{ fontSize: 13, color: 'var(--vp-text-secondary)', lineHeight: 1.6 }}>
+        暂无 API 调用记录。请先在设置页运行「测试并保存 API」，或完成一次 Agent 分析。
+      </div>
+    );
+  }
+
+  const rows = [
+    ['状态', timing.ok ? 'OK' : 'Failed'],
+    ['HTTP', String(timing.status)],
+    ['模型', timing.model],
+    ['Endpoint', timing.normalizedEndpoint ?? timing.endpoint],
+    ['总耗时', `${timing.durationMs}ms`],
+    ['上游耗时', `${timing.upstreamDurationMs}ms`],
+    ['错误分类', timing.errorCategory ?? '-'],
+    ['更新时间', new Date(timing.timestamp).toLocaleString('zh-CN')],
+  ];
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+      {rows.map(([label, value]) => (
+        <InfoItem key={label} label={label} value={value} />
+      ))}
+      {timing.errorMessage && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <InfoItem label="错误信息" value={timing.errorMessage} />
+        </div>
+      )}
+      {timing.requestDebug && (
+        <div style={{ gridColumn: '1 / -1' }}>
+          <div style={{ fontSize: 12, color: 'var(--vp-text-secondary)', marginBottom: 6 }}>请求调试信息</div>
+          <JsonBlock value={timing.requestDebug} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NodeProgressPanel({ task }: { task: IdeaValidationTask }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {task.nodes.map((node) => (
+        <div
+          key={node.id}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '140px 1fr 80px',
+            alignItems: 'center',
+            gap: 10,
+            fontSize: 12,
+          }}
+        >
+          <span style={{ color: 'var(--vp-text)' }}>{node.title}</span>
+          <div
+            style={{
+              height: 6,
+              background: 'var(--vp-border)',
+              borderRadius: 3,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${node.progressPercent}%`,
+                height: '100%',
+                background: node.status === 'failed'
+                  ? 'var(--vp-error)'
+                  : node.status === 'completed'
+                    ? 'var(--vp-success)'
+                    : 'var(--vp-primary)',
+              }}
+            />
+          </div>
+          <span style={{ color: 'var(--vp-text-secondary)', textAlign: 'right' }}>
+            {node.status} · {node.progressPercent}%
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EvaluatorReportPanel({ task }: { task: IdeaValidationTask }) {
+  if (!task.evaluatorReport) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+        <InfoItem label="完整性" value={`${task.evaluatorReport.completenessScore}/100`} />
+        <InfoItem label="可行性" value={`${task.evaluatorReport.feasibilityScore}/100`} />
+        <InfoItem label="证据强度" value={`${task.evaluatorReport.evidenceScore}/100`} />
+        <InfoItem label="准备度" value={`${task.evaluatorReport.decisionReadinessScore}/100`} />
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--vp-text)', lineHeight: 1.6 }}>
+        {task.evaluatorReport.summary}
+      </div>
+      <JsonBlock value={task.evaluatorReport} />
+    </div>
+  );
+}
+
+function JsonBlock({ value }: { value: unknown }) {
+  return (
+    <pre
+      style={{
+        margin: 0,
+        padding: 12,
+        maxHeight: 420,
+        overflow: 'auto',
+        borderRadius: 8,
+        border: '1px solid var(--vp-border)',
+        background: 'var(--vp-surface)',
+        color: 'var(--vp-text-secondary)',
+        fontSize: 11,
+        lineHeight: 1.5,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}
+    >
+      {JSON.stringify(value, null, 2)}
+    </pre>
   );
 }
 
@@ -648,6 +795,19 @@ function buildMarkdownReport(task: IdeaValidationTask): string {
       task.evaluation.keyRisks.forEach((r) => lines.push(`- ${r}`));
       lines.push('');
     }
+  }
+
+  if (task.evaluatorReport) {
+    lines.push('## Evaluator 结构化输出');
+    lines.push('');
+    lines.push(`**准备度：** ${task.evaluatorReport.overallScore}/100`);
+    lines.push(`**是否值得做：** ${VALIDATION_DECISION_LABELS[task.evaluatorReport.worthDoingDecision]}`);
+    lines.push(`**理由：** ${task.evaluatorReport.worthDoingReason}`);
+    lines.push('');
+    lines.push('```json');
+    lines.push(JSON.stringify(task.evaluatorReport, null, 2));
+    lines.push('```');
+    lines.push('');
   }
 
   // GitHub References

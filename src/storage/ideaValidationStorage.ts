@@ -18,6 +18,7 @@ import type {
 
 const STORAGE_KEY = 'vibe_idea_validation_tasks_v1';
 const MAX_TASKS = 100;
+const CURRENT_SCHEMA_VERSION = 'idea-validation-v7';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ function createDefaultNodes(): IdeaValidationNode[] {
     'paper_research',
     'competitor_research',
     'opportunity_evaluation',
+    'evaluator',
     'decision',
     'handoff',
   ];
@@ -50,6 +52,7 @@ function createDefaultNodes(): IdeaValidationNode[] {
     paper_research: '论文研究',
     competitor_research: '竞品研究',
     opportunity_evaluation: '机会评估',
+    evaluator: 'Evaluator 复核',
     decision: '决策建议',
     handoff: '开发交接',
   };
@@ -62,6 +65,34 @@ function createDefaultNodes(): IdeaValidationNode[] {
     progressPercent: 0,
     input: {},
   }));
+}
+
+function normalizeTask(raw: IdeaValidationTask): IdeaValidationTask {
+  const defaultNodes = createDefaultNodes();
+  const nodeByKey = new Map(raw.nodes?.map((node) => [node.key, node]) ?? []);
+  const nodes = defaultNodes.map((defaultNode) => ({
+    ...defaultNode,
+    ...(nodeByKey.get(defaultNode.key) ?? {}),
+  }));
+
+  const version = typeof raw.version === 'number' && Number.isFinite(raw.version)
+    ? raw.version
+    : 1;
+
+  return {
+    ...raw,
+    schemaVersion: raw.schemaVersion ?? CURRENT_SCHEMA_VERSION,
+    version,
+    nodes,
+    research: {
+      githubRepos: raw.research?.githubRepos ?? [],
+      papers: raw.research?.papers ?? [],
+      competitors: raw.research?.competitors ?? [],
+      evidenceItems: raw.research?.evidenceItems ?? [],
+      queryPlan: raw.research?.queryPlan,
+    },
+    history: Array.isArray(raw.history) ? raw.history : [],
+  };
 }
 
 // ─── Read (safe) ──────────────────────────────────────────────────────────────
@@ -79,7 +110,7 @@ function loadRawTasks(): IdeaValidationTask[] {
         typeof t === 'object' &&
         typeof (t as IdeaValidationTask).id === 'string' &&
         typeof (t as IdeaValidationTask).rawIdea === 'string',
-    ) as IdeaValidationTask[];
+    ).map((t) => normalizeTask(t as IdeaValidationTask));
   } catch {
     return [];
   }
@@ -101,6 +132,8 @@ export function createIdeaValidationTask(input: {
 }): IdeaValidationTask {
   const task: IdeaValidationTask = {
     id: generateId(),
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    version: 1,
     rawIdea: input.rawIdea,
     goalType: input.goalType,
     status: 'pending',
@@ -112,6 +145,16 @@ export function createIdeaValidationTask(input: {
       competitors: [],
       evidenceItems: [],
     },
+    history: [
+      {
+        id: generateId(),
+        version: 1,
+        event: 'created',
+        nodeKey: 'idea_intake',
+        summary: '创建 Idea Validation 任务',
+        createdAt: nowISO(),
+      },
+    ],
     createdAt: nowISO(),
     updatedAt: nowISO(),
   };
@@ -136,7 +179,25 @@ export function getIdeaValidationTask(id: string): IdeaValidationTask | null {
 export function saveIdeaValidationTask(task: IdeaValidationTask): void {
   const tasks = loadRawTasks();
   const idx = tasks.findIndex((t) => t.id === task.id);
-  const updated = { ...task, updatedAt: nowISO() };
+  const previous = idx >= 0 ? tasks[idx] : null;
+  const nextVersion = (previous?.version ?? task.version ?? 1) + 1;
+  const updated = normalizeTask({
+    ...task,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    version: nextVersion,
+    updatedAt: nowISO(),
+    history: [
+      ...(task.history ?? []),
+      {
+        id: generateId(),
+        version: nextVersion,
+        event: 'saved',
+        nodeKey: task.currentNodeId as IdeaValidationNodeKey | undefined,
+        summary: `保存任务状态：${task.currentNodeId ?? 'unknown'}`,
+        createdAt: nowISO(),
+      },
+    ].slice(-80),
+  });
   if (idx >= 0) {
     tasks[idx] = updated;
   } else {

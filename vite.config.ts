@@ -21,6 +21,23 @@ function getAbortSignal(timeoutMs: number): AbortSignal {
   return controller.signal
 }
 
+const MAX_CONCURRENT_LOCAL_UPSTREAM_REQUESTS = 3
+let activeLocalUpstreamRequests = 0
+const localUpstreamQueue: Array<() => void> = []
+
+async function acquireLocalUpstreamSlot(): Promise<() => void> {
+  if (activeLocalUpstreamRequests >= MAX_CONCURRENT_LOCAL_UPSTREAM_REQUESTS) {
+    await new Promise<void>((resolve) => localUpstreamQueue.push(resolve))
+  }
+
+  activeLocalUpstreamRequests += 1
+  return () => {
+    activeLocalUpstreamRequests = Math.max(0, activeLocalUpstreamRequests - 1)
+    const next = localUpstreamQueue.shift()
+    if (next) next()
+  }
+}
+
 function sendJson(res: ServerResponse, statusCode: number, body: unknown) {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -36,6 +53,33 @@ function readRequestBody(req: IncomingMessage): Promise<string> {
     req.on('end', () => resolve(rawBody))
     req.on('error', reject)
   })
+}
+
+function validateChatPayload(body: unknown): string[] {
+  const errors: string[] = []
+  if (!body || typeof body !== 'object') return ['body 必须是对象。']
+
+  const b = body as Record<string, unknown>
+  if (typeof b.model !== 'string' || b.model.trim().length === 0) {
+    errors.push('body.model 必须是非空字符串。')
+  }
+  if (!Array.isArray(b.messages) || b.messages.length === 0) {
+    errors.push('body.messages 必须是非空数组。')
+  } else {
+    b.messages.forEach((message, index) => {
+      if (!message || typeof message !== 'object') {
+        errors.push(`body.messages[${index}] 必须是对象。`)
+        return
+      }
+      const m = message as Record<string, unknown>
+      if (typeof m.role !== 'string') errors.push(`body.messages[${index}].role 必须是字符串。`)
+      if (typeof m.content !== 'string' && !Array.isArray(m.content)) {
+        errors.push(`body.messages[${index}].content 必须是字符串或 content parts 数组。`)
+      }
+    })
+  }
+
+  return errors
 }
 
 async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 15000): Promise<Response> {
@@ -151,6 +195,7 @@ function localAiProxy(): Plugin {
         req.on('end', async () => {
           let endpoint = 'unknown-endpoint';
           let timeoutMs = 90000;
+          let releaseSlot: (() => void) | null = null;
           try {
             const payload = JSON.parse(rawBody || '{}') as {
               apiUrl?: string
@@ -197,7 +242,21 @@ function localAiProxy(): Plugin {
 
             endpoint = normalized.endpoint
             timeoutMs = normalizeTimeoutMs(payload.timeoutMs)
+            const payloadErrors = validateChatPayload(payload.body)
+            if (payloadErrors.length > 0) {
+              res.statusCode = 400
+              res.setHeader('Content-Type', 'application/json; charset=utf-8')
+              res.end(JSON.stringify({
+                error: payloadErrors.join('；'),
+                errorCategory: 'bad_request',
+                requestDiagnostics: {
+                  timeoutMs,
+                },
+              }))
+              return
+            }
 
+            releaseSlot = await acquireLocalUpstreamSlot()
             const upstream = await fetch(endpoint, {
               method: 'POST',
               headers: {
@@ -209,6 +268,8 @@ function localAiProxy(): Plugin {
             })
 
             const text = await upstream.text()
+            releaseSlot?.()
+            releaseSlot = null
 
             // V5.2: Structured upstream error response
             if (!upstream.ok) {
@@ -272,6 +333,7 @@ function localAiProxy(): Plugin {
             res.setHeader('X-Vibe-Endpoint-Warnings', normalized.warnings.join('; '))
             res.end(text)
           } catch (error) {
+            releaseSlot?.()
             const errorCategory = String(error instanceof Error ? error.name : error).toLowerCase().includes('timeout')
               || String(error instanceof Error ? error.message : error).toLowerCase().includes('abort')
               ? 'timeout'

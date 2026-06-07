@@ -26,6 +26,7 @@ import {
   Search,
   Target,
   Zap,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   createIdeaValidationTask,
@@ -45,6 +46,7 @@ import {
   VALIDATION_NODE_LABELS,
   VALIDATION_DECISION_LABELS,
 } from '../types/ideaValidation';
+import ThemeToggle from '../components/ThemeToggle';
 
 // ─── Goal Options ─────────────────────────────────────────────────────────────
 
@@ -67,6 +69,7 @@ const NODE_ICONS: Record<IdeaValidationNodeKey, typeof Lightbulb> = {
   paper_research: FileText,
   competitor_research: Building2,
   opportunity_evaluation: BarChart3,
+  evaluator: ShieldCheck,
   decision: CheckCircle2,
   handoff: Zap,
 };
@@ -124,6 +127,16 @@ export default function IdeaValidationPage() {
         content: `评估完成，总分：${t.evaluation.overallScore}/100`,
         timestamp: t.updatedAt,
         nodeKey: 'opportunity_evaluation',
+      });
+    }
+
+    if (t.evaluatorReport) {
+      msgs.push({
+        id: 'evaluator',
+        role: 'agent',
+        content: `Evaluator 复核完成，准备度：${t.evaluatorReport.overallScore}/100\n结论：${VALIDATION_DECISION_LABELS[t.evaluatorReport.worthDoingDecision]}\n${t.evaluatorReport.worthDoingReason}`,
+        timestamp: t.updatedAt,
+        nodeKey: 'evaluator',
       });
     }
 
@@ -311,6 +324,7 @@ export default function IdeaValidationPage() {
               <Home size={16} />
             </button>
             <span style={{ fontSize: 14, fontWeight: 600 }}>Idea Validation Agent</span>
+            <ThemeToggle />
             <button
               className="vp-btn-text"
               onClick={() => navigate('/history')}
@@ -519,6 +533,7 @@ export default function IdeaValidationPage() {
           <span style={{ fontSize: 14, fontWeight: 600 }}>
             {task.clarifiedIdea ?? task.rawIdea.slice(0, 30) + '...'}
           </span>
+          <ThemeToggle />
           <button
             className="vp-btn-text"
             onClick={() => navigate('/history')}
@@ -830,6 +845,12 @@ function MessageBubble({
             <EvaluationCard evaluation={task.evaluation} />
           </div>
         )}
+
+        {message.nodeKey === 'evaluator' && task.evaluatorReport && (
+          <div style={{ marginTop: 12 }}>
+            <JsonPreview value={task.evaluatorReport} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -971,5 +992,28 @@ function EvaluationCard({ evaluation }: { evaluation: OpportunityEvaluation }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function JsonPreview({ value }: { value: unknown }) {
+  return (
+    <pre
+      style={{
+        margin: 0,
+        padding: 12,
+        maxHeight: 280,
+        overflow: 'auto',
+        background: 'var(--vp-bg)',
+        border: '1px solid var(--vp-border)',
+        borderRadius: 8,
+        color: 'var(--vp-text-secondary)',
+        fontSize: 11,
+        lineHeight: 1.5,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}
+    >
+      {JSON.stringify(value, null, 2)}
+    </pre>
   );
 }

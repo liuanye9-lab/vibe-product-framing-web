@@ -40,6 +40,8 @@ export type ValidationNodeStatus =
 
 export interface IdeaValidationTask {
   id: string;
+  schemaVersion?: string;
+  version?: number;
   rawIdea: string;
   clarifiedIdea?: string;
   goalType: IdeaGoalType;
@@ -52,7 +54,9 @@ export interface IdeaValidationTask {
   nodes: IdeaValidationNode[];
   research: ResearchBundle;
   evaluation?: OpportunityEvaluation;
+  evaluatorReport?: ValidationEvaluatorReport;
   decision?: FinalValidationDecision;
+  history?: IdeaValidationHistoryEntry[];
   createdAt: string;
   updatedAt: string;
 }
@@ -67,6 +71,7 @@ export type IdeaValidationNodeKey =
   | 'paper_research'
   | 'competitor_research'
   | 'opportunity_evaluation'
+  | 'evaluator'
   | 'decision'
   | 'handoff';
 
@@ -173,6 +178,53 @@ export interface OpportunityEvaluation {
   missingEvidence: string[];
 }
 
+export interface ValidationEvaluatorReport {
+  summary: string;
+  completenessScore: number;
+  feasibilityScore: number;
+  evidenceScore: number;
+  decisionReadinessScore: number;
+  overallScore: number;
+  relatedOpenSourceProjects: Array<{
+    name: string;
+    url: string;
+    stars?: number;
+    whatToBorrow: string[];
+    relevanceScore: number;
+  }>;
+  borrowableApproaches: string[];
+  paperReferences: Array<{
+    title: string;
+    url?: string;
+    year?: number;
+    usefulConcepts: string[];
+    howToUseInProject: string;
+    relevanceScore: number;
+  }>;
+  matureProjectAnalysis: Array<{
+    name: string;
+    url?: string;
+    positioning: string;
+    strengths: string[];
+    weaknesses: string[];
+    opportunityGap: string[];
+    relevanceScore: number;
+  }>;
+  worthDoingDecision: ValidationDecision;
+  worthDoingReason: string;
+  missingInputs: string[];
+  evaluatorWarnings: string[];
+}
+
+export interface IdeaValidationHistoryEntry {
+  id: string;
+  version: number;
+  event: string;
+  nodeKey?: IdeaValidationNodeKey;
+  summary: string;
+  createdAt: string;
+}
+
 // ─── Decision ─────────────────────────────────────────────────────────────────
 
 export interface FinalValidationDecision {
@@ -229,6 +281,7 @@ export const VALIDATION_NODE_LABELS: Record<IdeaValidationNodeKey, string> = {
   paper_research: '论文研究',
   competitor_research: '竞品研究',
   opportunity_evaluation: '机会评估',
+  evaluator: 'Evaluator 复核',
   decision: '决策建议',
   handoff: '开发交接',
 };
@@ -241,6 +294,7 @@ export const VALIDATION_NODE_ICONS: Record<IdeaValidationNodeKey, string> = {
   paper_research: '📄',
   competitor_research: '🏢',
   opportunity_evaluation: '📊',
+  evaluator: '🔎',
   decision: '✅',
   handoff: '🚀',
 };

@@ -20,6 +20,23 @@ export const config = {
   maxDuration: 120, // seconds — actual ceiling depends on Vercel plan
 };
 
+const MAX_CONCURRENT_UPSTREAM_REQUESTS = 3;
+let activeUpstreamRequests = 0;
+const upstreamQueue: Array<() => void> = [];
+
+async function acquireUpstreamSlot(): Promise<() => void> {
+  if (activeUpstreamRequests >= MAX_CONCURRENT_UPSTREAM_REQUESTS) {
+    await new Promise<void>((resolve) => upstreamQueue.push(resolve));
+  }
+
+  activeUpstreamRequests += 1;
+  return () => {
+    activeUpstreamRequests = Math.max(0, activeUpstreamRequests - 1);
+    const next = upstreamQueue.shift();
+    if (next) next();
+  };
+}
+
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     ...init,
@@ -88,6 +105,39 @@ function extractRequestBodyShape(body: unknown): Record<string, unknown> {
     hasStreamField: 'stream' in b,
     topLevelKeys: Object.keys(b),
   };
+}
+
+function validateChatPayload(body: unknown): string[] {
+  const errors: string[] = [];
+  if (!body || typeof body !== 'object') {
+    return ['body 必须是对象。'];
+  }
+
+  const b = body as Record<string, unknown>;
+  if (typeof b.model !== 'string' || b.model.trim().length === 0) {
+    errors.push('body.model 必须是非空字符串。');
+  }
+  if (!Array.isArray(b.messages) || b.messages.length === 0) {
+    errors.push('body.messages 必须是非空数组。');
+  } else {
+    b.messages.forEach((message, index) => {
+      if (!message || typeof message !== 'object') {
+        errors.push(`body.messages[${index}] 必须是对象。`);
+        return;
+      }
+      const m = message as Record<string, unknown>;
+      if (typeof m.role !== 'string') {
+        errors.push(`body.messages[${index}].role 必须是字符串。`);
+      }
+      const content = m.content;
+      const validContent = typeof content === 'string' || Array.isArray(content);
+      if (!validContent) {
+        errors.push(`body.messages[${index}].content 必须是字符串或 content parts 数组。`);
+      }
+    });
+  }
+
+  return errors;
 }
 
 /**
@@ -272,8 +322,22 @@ async function handleProxyRequest(request: Request): Promise<Response> {
   const endpoint = normalized.endpoint;
   const timeoutMs = normalizeTimeoutMs(payload.timeoutMs);
   const maskedEndpoint = endpoint.replace(/\/\/[^@/]+@/, '//***@');
+  const payloadErrors = validateChatPayload(payload.body);
+  if (payloadErrors.length > 0) {
+    return jsonResponse({
+      error: payloadErrors.join('；'),
+      errorCategory: 'bad_request',
+      requestDiagnostics: {
+        model: extractModelFromPayload(payload.body),
+        timeoutMs,
+        requestBodyShape: extractRequestBodyShape(payload.body),
+      },
+    }, { status: 400 });
+  }
 
+  let releaseSlot: (() => void) | null = null;
   try {
+    releaseSlot = await acquireUpstreamSlot();
     const upstreamStartedAt = performance.now();
     const upstream = await fetch(endpoint, {
       method: 'POST',
@@ -397,6 +461,8 @@ async function handleProxyRequest(request: Request): Promise<Response> {
         },
       }
     );
+  } finally {
+    releaseSlot?.();
   }
 }
 

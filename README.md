@@ -4,7 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Product-Vibe%20Decision%20Copilot-111111?style=flat-square" alt="Product">
-  <img src="https://img.shields.io/badge/Stage-Frontend%20MVP-666666?style=flat-square" alt="Stage">
+  <img src="https://img.shields.io/badge/Stage-Agent%20Workflow%2088%25-666666?style=flat-square" alt="Stage">
   <img src="https://img.shields.io/badge/Stack-React%20%2B%20TypeScript%20%2B%20Vite-333333?style=flat-square" alt="Stack">
   <img src="https://img.shields.io/badge/Design-iOS%20Monochrome-f5f5f7?style=flat-square" alt="Design">
 </p>
@@ -206,6 +206,17 @@ CODEX_TASK_PACK
 ---
 
 ## Idea Validation Agent (V6.0)
+
+### 当前开发状态
+
+**进度：88%**
+
+- API 连接：已支持 OpenAI-compatible endpoint 归一化、HTTP 500 分类、timeout 重试、masked 请求调试快照。
+- 真实 API：已用 MiMo `mimo-v2.5-pro` 跑通 Quick Ping 和 JSON Test。
+- Agent 工作流：已从“研究 + 机会评分”升级为 `Research → Opportunity Evaluation → Evaluator → Decision`。
+- 结构化输出：已包含开源项目、可借鉴方案、论文引用、成熟项目分析、是否值得做决策。
+- 历史记录：Idea Validation 任务已有 `schemaVersion`、`version`、`history`，刷新后不丢失。
+- 待增强：真实竞品搜索质量依赖 `SEARCH_API_KEY`，后续可接更强搜索 provider。
 
 ### 为什么需要先验证想法？
 
