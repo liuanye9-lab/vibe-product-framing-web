@@ -69,10 +69,10 @@ const PRESETS = [
   },
   {
     name: 'MiMo / 小米',
-    apiUrl: 'https://token-plan-cn.xiaomimo.com',
-    model: '',
+    apiUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+    model: 'mimo-v2.5-pro',
     docUrl: '',
-    note: '请填写小米后台展示的精确 MiMo model id。不要填写 Kimi / Moonshot 模型名，除非该网关明确支持。',
+    note: '已预置小米 MiMo v1 入口与默认模型。你只需要填写 API Key 后测试保存。',
   },
   {
     name: 'Kimi / Moonshot',

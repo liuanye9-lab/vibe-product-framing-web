@@ -130,7 +130,7 @@ export async function runProviderSmokeTest(input: {
   // model before burning through chat variants. Some providers wrap model
   // misses or missing entitlements as HTTP 500 on /chat/completions.
   let modelListProbeResult: ModelListProbeResult | undefined;
-  const shouldPreflightModelList = providerDiag.providerId === 'stepfun';
+  const shouldPreflightModelList = providerDiag.providerId === 'stepfun' || providerDiag.providerId === 'xiaomi_mimo';
   if (shouldPreflightModelList && apiKey.trim()) {
     try {
       modelListProbeResult = await probeProviderModels({

@@ -41,7 +41,7 @@ const PROVIDER_PROFILES: ProviderProfile[] = [
   {
     id: 'xiaomi_mimo',
     label: 'Xiaomi MiMo',
-    hostPatterns: [/xiaomimo/i, /mimo/i],
+    hostPatterns: [/xiaomimimo/i, /xiaomimo/i, /mimo/i],
     likelyModelPatterns: [/mimo/i],
     unlikelyModelPatterns: [/kimi/i, /moonshot/i, /deepseek/i, /gpt-/i, /glm/i, /qwen/i, /claude/i],
     modelHint: '请填写小米后台显示的精确 MiMo model id，例如服务商后台展示的模型名称。',
